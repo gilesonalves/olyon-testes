@@ -1,6 +1,18 @@
+import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+  FieldSet,
+} from "@/components/ui/field"
+import { Input } from "@/components/ui/input"
+
 
 export default function Login() {
+  
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-white px-4">
       <div className="w-full max-w-md">
@@ -12,7 +24,28 @@ export default function Login() {
             />
           </picture>
         </div>
-        <div>
+        <form>
+          <FieldSet>
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="username">Username</FieldLabel>
+                <Input id="username" type="text" placeholder="Max Leiter" />
+                <FieldDescription>
+                  Choose a unique username for your account.
+                </FieldDescription>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="password">Password</FieldLabel>
+                <FieldDescription>
+                  Must be at least 8 characters long.
+                </FieldDescription>
+                <Input id="password" type="password" placeholder="••••••••" />
+              </Field>
+            </FieldGroup>
+            <Button type="submit" className="btn-primary mt-6">Entrar</Button>
+          </FieldSet>
+        </form>
+        {/* <div>
           <div className="space-y-2 pb-6">
             <label className="block text-sm font-medium">
               Email
@@ -49,9 +82,9 @@ export default function Login() {
             />
           </div>
 
-          <button type="submit" className="btn-primary mt-6">Entrar</button>
+          <Button type="submit" className="btn-primary mt-6">Entrar</Button>
 
-        </div>
+        </div> */}
         <p className="text-center text-base mt-6 font-medium">
           Ainda não é cadastrado?
           <Link href={"/cadastro"} className="text-sm text-verde text-right font-semibold hover:underline ml-2">
