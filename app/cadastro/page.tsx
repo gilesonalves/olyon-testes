@@ -1,17 +1,21 @@
 import Link from "next/link";
 
-export default function Login() {
+export default function Cadastro() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-white px-4">
       <div className="w-full max-w-md">
-        <div className="text-center pb-10">
+        <div className="text-center pb-6">
           <picture>
-            <img className="block mx-auto"
+            <img className="block mx-auto pb-4"
               src="/imagens/logo-login.svg"
               alt=""
             />
           </picture>
+          <h2 className="text-2xl text-center font-semibold">
+          Cadastro
+        </h2>
         </div>
+        
         <div>
           <div className="space-y-2 pb-6">
             <label className="block text-sm font-medium">
@@ -32,12 +36,7 @@ export default function Login() {
               <label className="text-sm font-medium">
                 Senha
               </label>
-              <a
-                href="/recuperar-senha"
-                className="text-sm text-verde text-right font-semibold hover:underline"
-              >
-                Esqueceu sua senha?
-              </a>
+             
             </div>
             <input
               id="password"
@@ -48,18 +47,15 @@ export default function Login() {
               required
             />
           </div>
-
-          <button type="submit" className="btn-primary mt-6">Entrar</button>
-
+          <button type="submit" className="btn-primary mt-6">Cadastrar-se</button>
         </div>
         <p className="text-center text-base mt-6 font-medium">
-          Ainda não é cadastrado?
-          <Link href={"/cadastro"} className="text-sm text-verde text-right font-semibold hover:underline ml-2">
-            Cadastre-se aqui
+          Já é cadastrado?
+          <Link href={"/login"} className="text-sm text-verde text-right font-semibold hover:underline ml-2">
+            Clique aqui
           </Link>
         </p>
       </div>
-
     </div>
   );
 }
