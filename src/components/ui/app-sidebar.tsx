@@ -11,8 +11,8 @@ export function AppSidebar() {
     <Sidebar>
       <SidebarHeader />
       <SidebarContent>
-        <SidebarGroup />
-        <SidebarGroup />
+        <a href="">asdasd</a>
+        <a href="">asdasd</a>
       </SidebarContent>
       <SidebarFooter />
     </Sidebar>
