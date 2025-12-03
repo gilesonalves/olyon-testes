@@ -1,63 +1,69 @@
 "use client"
-
-import * as React from "react"
-import { zodResolver } from "@hookform/resolvers/zod"
-import { Controller, useForm } from "react-hook-form"
-import * as z from "zod"
+import { Controller as ControllerForm } from "react-hook-form"
 import { Button } from "@/components/ui/button"
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { toast } from "sonner"
+import Link from "next/link"
+import {Controller} from './login/controllers'
 
-const formSchema = z.object({
-  username: z.string().min(2).max(50),
-})
-
-export default function Home() {
-  const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      username: ""
-    },
-  })
-
-  function onSubmit(data: z.infer<typeof formSchema>) {
-    toast("You submitted the following values:", {
-      description: (
-        <pre className="bg-code text-code-foreground mt-2 w-[320px] overflow-x-auto rounded-md p-4">
-          <code>{JSON.stringify(data, null, 2)}</code>
-        </pre>
-      ),
-      position: "bottom-right",
-      classNames: {
-        content: "flex flex-col gap-2",
-      },
-      style: {
-        "--border-radius": "calc(var(--radius)  + 4px)",
-      } as React.CSSProperties,
-    })
-  }
-
+export default function Login() {
+  const {form, onSubmit} = Controller()
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-
+    <div className="min-h-screen flex items-center justify-center bg-white px-4">
+      <div className="w-full max-w-md">
+        <div className="text-center pb-10">
+          <picture>
+            <img className="block mx-auto"
+              src="/imagens/logo-login.svg"
+              alt=""
+            />
+          </picture>
+        </div>
         <form onSubmit={form.handleSubmit(onSubmit)} className="w-full">
           <FieldGroup>
-            <Controller
-              name="username"
+            <ControllerForm
+              name="email"
               control={form.control}
               render={({ field, fieldState }) => (
                 <Field data-invalid={fieldState.invalid}>
-                  <FieldLabel htmlFor="form-rhf-demo-title">
-                    Nome
+                  <FieldLabel htmlFor="email">
+                    Email
                   </FieldLabel>
                   <Input
                     {...field}
-                    id="form-rhf-demo-title"
+                    id="email"
+                    type="email"
                     aria-invalid={fieldState.invalid}
-                    placeholder="Login button not working on mobile"
-                    autoComplete="off"
+                    placeholder="Digite aqui seu Email"
+
+                  />
+                  {fieldState.invalid && (
+                    <FieldError errors={[fieldState.error]} />
+                  )}
+                </Field>
+              )}
+            />
+
+            <ControllerForm
+              name="password"
+              control={form.control}
+              render={({ field, fieldState }) => (
+                <Field data-invalid={fieldState.invalid}>
+                  <div className="flex justify-between items-center">
+                    <FieldLabel htmlFor="password">
+                      Senha
+                    </FieldLabel>
+                    <Link href="/recuperar-senha" className="text-sm text-verde text-right font-semibold hover:underline">
+                      Esqueceu sua senha?
+                    </Link>
+                  </div>
+
+                  <Input
+                    {...field}
+                    id="password"
+                    type="password"
+                    aria-invalid={fieldState.invalid}
+                    placeholder="Digite aqui sua Senha"
                   />
                   {fieldState.invalid && (
                     <FieldError errors={[fieldState.error]} />
@@ -67,13 +73,17 @@ export default function Home() {
             />
 
           </FieldGroup>
-          <Button type="submit">
-            Submit
-          </Button>
+          <Button type="submit" variant={"primary"} className="w-full cursor-pointer mt-6">Entrar</Button>
         </form>
-
-
-      </main>
+        <div>
+          <p className="text-center text-base mt-6 font-medium">
+            Ainda não é cadastrado?
+            <Link href={"/cadastro"} className="text-sm text-verde text-right font-semibold hover:underline ml-2">
+              Cadastre-se aqui
+            </Link>
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
