@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import Link from "next/link"
-import {Controller} from './login/controllers'
+import {Controller} from './controllers'
 
 export default function Login() {
   const {form, onSubmit} = Controller()
