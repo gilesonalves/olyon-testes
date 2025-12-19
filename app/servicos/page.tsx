@@ -1,8 +1,6 @@
 "use client"
 import HeaderPage from "@/components/headerPage";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import {
   Dialog,
@@ -59,28 +57,7 @@ export default function Servicos() {
                       </Field>
                     )}
                   />
-                  <ControllerForm
-                    name="description"
-                    control={form.control}
-                    render={({ field, fieldState }) => (
-                      <Field data-invalid={fieldState.invalid}>
-                        <div className="flex justify-between items-center">
-                          <FieldLabel htmlFor="description">
-                            Descrição
-                          </FieldLabel>
-                        </div>
-                        <Textarea
-                          {...field}
-                          id="description"
-                          aria-invalid={fieldState.invalid}
-                          placeholder="Digite aqui a descrição do evento"
-                        />
-                        {fieldState.invalid && (
-                          <FieldError errors={[fieldState.error]} />
-                        )}
-                      </Field>
-                    )}
-                  />
+                  
                 </FieldGroup>
                 <div>
                   <Servicos title="Serviços" />
