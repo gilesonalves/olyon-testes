@@ -1,54 +1,101 @@
-import { Button } from "@/components/ui/button"
+"use client"
+import HeaderPage from "@/components/headerPage";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import {
   Dialog,
   DialogClose,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+import { Controller as ControllerForm } from "react-hook-form"
+import { Controller } from "./controllers";
+
+
+
+
 export default function Servicos() {
+  const { form, onSubmit } = Controller()
   return (
-    <div className="bg-white px-6 py-7">
-      <div className="flex justify-between items-center pb-6">
-        <p>
-          Serviços
-        </p>
-        {/* <button type="submit" className="btn-segundary">Novo</button> */}
-        <Dialog>
-      <form>
-        <DialogTrigger asChild>
-          <Button variant="primary">Novo</Button>
-        </DialogTrigger>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>Novo serviço</DialogTitle>
-            
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-3">
-              <Label htmlFor="name-1">Name</Label>
-              <Input id="name-1" name="name" defaultValue="Pedro Duarte" />
-            </div>
-            <div className="grid gap-3">
-              <Label htmlFor="username-1">Username</Label>
-              <Input id="username-1" name="username" defaultValue="@peduarte" />
-            </div>
-          </div>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">Cancel</Button>
-            </DialogClose>
-            <Button type="submit">Save changes</Button>
-          </DialogFooter>
-        </DialogContent>
-      </form>
-    </Dialog>
-      </div>
+    <>
+      <HeaderPage>
+        <div className="flex items-center justify-between">
+          <span className="text-foreground font-semibold">Tipos de Eventos</span>
+
+          <Dialog>
+            <form onSubmit={form.handleSubmit(onSubmit)}>
+              <DialogTrigger asChild>
+                <Button variant="primary">Novo item</Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[425px]">
+                <DialogHeader className="pb-4">
+                  <DialogTitle>Novo tipo de evento</DialogTitle>
+                </DialogHeader>
+                <FieldGroup>
+                  <ControllerForm
+                    name="name"
+                    control={form.control}
+                    render={({ field, fieldState }) => (
+                      <Field data-invalid={fieldState.invalid}>
+                        <FieldLabel htmlFor="name">
+                          Nome
+                        </FieldLabel>
+                        <Input
+                          {...field}
+                          id="name"
+                          type="text"
+                          aria-invalid={fieldState.invalid}
+                          placeholder="Digite aqui o nome do evento"
+                        />
+                        {fieldState.invalid && (
+                          <FieldError errors={[fieldState.error]} />
+                        )}
+                      </Field>
+                    )}
+                  />
+                  <ControllerForm
+                    name="description"
+                    control={form.control}
+                    render={({ field, fieldState }) => (
+                      <Field data-invalid={fieldState.invalid}>
+                        <div className="flex justify-between items-center">
+                          <FieldLabel htmlFor="description">
+                            Descrição
+                          </FieldLabel>
+                        </div>
+                        <Textarea
+                          {...field}
+                          id="description"
+                          aria-invalid={fieldState.invalid}
+                          placeholder="Digite aqui a descrição do evento"
+                        />
+                        {fieldState.invalid && (
+                          <FieldError errors={[fieldState.error]} />
+                        )}
+                      </Field>
+                    )}
+                  />
+                </FieldGroup>
+                <div>
+                  <Servicos title="Serviços" />
+                </div>
+                <DialogFooter>
+                  <DialogClose asChild>
+                    <Button variant="outline">Fechar</Button>
+                  </DialogClose>
+                  <Button type="submit">Salvar</Button>
+                </DialogFooter>
+              </DialogContent>
+            </form>
+          </Dialog>
+        </div>
+      </HeaderPage>
       <div className="space-y-3">
         <div className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
 
@@ -64,18 +111,15 @@ export default function Servicos() {
               <path d="M11.5 16.75C14.2614 16.75 16.5 14.5114 16.5 11.75C16.5 8.98858 14.2614 6.75 11.5 6.75C8.73858 6.75 6.5 8.98858 6.5 11.75C6.5 14.5114 8.73858 16.75 11.5 16.75Z" stroke="black" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
           </div>
-
           <div className="flex items-center justify-between gap-4 sm:justify-end">
-            
             <div className="flex items-center gap-2">
               <button type="submit" className="btn-segundary">Editar</button>
               <button type="submit" className="btn-delete">Cancelar</button>
             </div>
           </div>
         </div>
-
       </div>
+    </>
 
-    </div>
   );
 }
