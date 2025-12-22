@@ -26,7 +26,7 @@ const ALL_SERVICES: ServiceOption[] = [
   { id: "barba-40", name: "Barba", durationMin: 40 },
 ]
 
-export default function Servicos({ title }: { title: string }) {
+export default function NovoServicos({ title }: { title: string }) {
 
   const [pickerValue, setPickerValue] = useState<string>("")
 
