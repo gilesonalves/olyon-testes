@@ -1,36 +1,65 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Olyon
 
-## Getting Started
+Painel administrativo web para gestao de servicos, agenda, equipe e financeiro.
 
-First, run the development server:
+## Visao geral
+
+- App Router com paginas para agendamentos, servicos, eventos, equipe, usuarios e financeiro.
+- Layout principal com sidebar e componentes reutilizaveis.
+- Formularios com React Hook Form + Zod e notificacoes com Sonner.
+- UI com Tailwind CSS + shadcn/ui (Radix) e icones Lucide.
+
+## Stack
+
+- Next.js 16 (App Router)
+- React 19
+- TypeScript
+- Tailwind CSS v4
+- shadcn/ui + Radix UI
+- React Hook Form + Zod
+- Sonner
+
+## Como rodar
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Abra `http://localhost:3000` no navegador.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Scripts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `npm run dev` - inicia o ambiente de desenvolvimento
+- `npm run build` - gera o build de producao
+- `npm run start` - executa o build gerado
+- `npm run lint` - roda o linter
 
-## Learn More
+## Estrutura
 
-To learn more about Next.js, take a look at the following resources:
+```
+app/                rotas do App Router
+  agendamentos/
+  cadastro/
+  contas-a-pagar/
+  controle-pagamentos/
+  dashboard/
+  entradas-saidas/
+  equipe/
+  eventos/
+  horarios-de-atendimento/
+  login/
+  recuperar-senha/
+  servicos/
+  usuarios/
+src/
+  components/       layout e componentes compartilhados
+  hooks/
+  lib/
+public/
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Configuracoes
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Alias de import: `@/*` aponta para `src/*`.
+- Sem variaveis de ambiente obrigatorias no momento.
