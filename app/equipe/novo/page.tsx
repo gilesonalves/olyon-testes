@@ -4,15 +4,11 @@ import { Controller } from "react-hook-form"
 import { Button } from "@/components/ui/button"
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Label } from "@/components/ui/label"
 import Controllers from "../controllers/page"
-
+import { ServicesCheckboxGroup } from "../components/services-checkbox-group"
 
 export default function ItemNovo() {
   const { form, onSubmit } = Controllers()
-
-  
 
   return (
     <div className="bg-white px-6 py-7">
@@ -20,10 +16,8 @@ export default function ItemNovo() {
         <p>
           Equipe
         </p>
-
       </div>
       <form onSubmit={form.handleSubmit(onSubmit)} className="w-full">
-
         <FieldGroup>
           <Controller
             name="name"
@@ -49,24 +43,27 @@ export default function ItemNovo() {
           />
         </FieldGroup>
 
+        <FieldGroup>
+          <Controller
+            name="services"
+            control={form.control}
+            render={({ field }) => (
+              <ServicesCheckboxGroup
+                value={field.value ?? []}
+                onChange={field.onChange}
+              />
+            )}
+          />
+          {form.formState.errors.services && (
+            <p className="text-sm text-destructive -mt-3">
+              {form.formState.errors.services.message}
+            </p>
+          )}
+        </FieldGroup>
+        <div className="text-right pt-8">
+          <Button type="submit" variant={"primary"} className=" cursor-pointer">Salvar</Button>
+        </div>
       </form>
-      <div className="flex gap-6 mt-6">
-        <div className="flex items-center gap-3">
-          <Checkbox id="item-1" />
-          <Label htmlFor="item-1">Corte de cabelo</Label>
-        </div>
-        <div className="flex items-start gap-3">
-          <Checkbox id="item-2" />
-          <Label htmlFor="item-2">Barba</Label>
-        </div>
-        <div className="flex items-start gap-3">
-          <Checkbox id="item-3" />
-          <Label htmlFor="item-3">Sombrancelha</Label>
-        </div>
-      </div>
-      <div className="text-right pt-8">
-        <Button type="submit" variant={"primary"} className=" cursor-pointer">Salvar</Button>
-      </div>
     </div>
   );
 }
