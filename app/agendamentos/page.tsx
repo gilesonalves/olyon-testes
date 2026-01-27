@@ -14,7 +14,6 @@ export default function Agendamentos() {
         </div>
       </HeaderPage>
       <div className="bg-white px-6 py-7">
-
         <div className="space-y-3">
           <div className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
 
