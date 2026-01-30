@@ -11,13 +11,19 @@ export const Controller = () => {
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: "",
+      durationMin: 0,
       description: ""
     },
   })
 
   function onSubmit(data: z.infer<typeof formSchema>) {
+    const payload = {
+      name: data.name,
+      durationMin: data.durationMin,
+    }
+
     toast("You submitted the following values:", {
-      description: null,
+      description: `${payload.name} - ${payload.durationMin}min`,
       position: "bottom-right",
       classNames: {
         content: "flex flex-col gap-2",
