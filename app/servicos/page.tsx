@@ -61,7 +61,18 @@ export default function Servicos() {
 
                 </FieldGroup>
                 <div>
-                  <NovoServicos title="Duração" />
+                  <ControllerForm
+                    name="durationMin"
+                    control={form.control}
+                    render={({ field, fieldState }) => (
+                      <NovoServicos
+                        title="Duração"
+                        value={field.value}
+                        onChange={field.onChange}
+                        error={fieldState.error?.message}
+                      />
+                    )}
+                  />
                 </div>
                 <DialogFooter>
                   <DialogClose asChild>
