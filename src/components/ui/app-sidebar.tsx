@@ -1,7 +1,8 @@
 "use client"
 import { signOut } from "next-auth/react"
 import * as React from "react"
-
+import { useSession } from 'next-auth/react'
+import { useRouter } from 'next/navigation'
 import {
   Sidebar,
   SidebarContent,
@@ -17,6 +18,8 @@ import {
 } from "@/components/ui/sidebar"
 import { LogOut } from "lucide-react"
 import { Select, SelectContent, SelectGroup, SelectTrigger, SelectValue } from "./select"
+import { SelectItem } from "./select"
+import { Store } from "../../../types/store"
 
 // This is sample data.
 const data = {
@@ -109,6 +112,27 @@ function handleLogout() {
 }
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const [activeStoreId, setActiveStoreId] = React.useState('')
+  const [stores, setStores] = React.useState<Store[]>([])
+  const { data: session } = useSession()
+  const router = useRouter()
+
+  React.useEffect(() => {
+    if (session?.user.storeId && stores.length > 0) {
+      setActiveStoreId(session.user.storeId)
+    }
+  }, [session?.user.storeId, stores.length])
+
+  React.useEffect(() => {
+    async function loadStores() {
+      const res = await fetch('/api/store/list')
+      const data = await res.json()
+      setStores(data)
+    }
+
+    loadStores()
+  }, [])
+
   return (
     <Sidebar {...props}>
       <SidebarHeader>
@@ -120,13 +144,28 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           />
         </picture>
         <div className="mt-4 flex-1">
-          <Select>
+          <Select
+            value={activeStoreId}
+            onValueChange={async (storeId) => {
+              await fetch('/api/store/switch', {
+                method: 'POST',
+                body: JSON.stringify({ storeId }),
+              })
+
+              setActiveStoreId(storeId)
+              router.refresh()
+            }}
+          >
             <SelectTrigger className="mb-4 bg-white text-black w-full">
               <SelectValue placeholder="Selecione uma loja" />
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
-
+                {stores.map((store) => (
+                  <SelectItem key={store.id} value={store.id}>
+                    {store.name}
+                  </SelectItem>
+                ))}
               </SelectGroup>
             </SelectContent>
           </Select>
