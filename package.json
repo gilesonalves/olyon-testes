@@ -7,8 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
-    "rename:cards": "node scripts/rename-card-assets.mjs"
+    "lint": "eslint"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
