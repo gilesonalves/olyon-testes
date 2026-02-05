@@ -1,3 +1,5 @@
+"use client"
+import { signOut } from "next-auth/react"
 import * as React from "react"
 
 import {
@@ -63,7 +65,7 @@ const data = {
           title: "Serviços",
           url: "/servicos",
         },
-        
+
       ],
     },
     {
@@ -96,10 +98,14 @@ const data = {
           title: "Clientes",
           url: "/",
         },
-        
+
       ],
     },
   ],
+}
+
+function handleLogout() {
+  signOut({ callbackUrl: "/login" })
 }
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
@@ -145,11 +151,15 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           </SidebarGroup>
         ))}
       </SidebarContent>
-      <SidebarFooter className="">
-        <div className="flex items-center py-2 text-sm border-t-black">
+      <SidebarFooter>
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="flex items-center gap-2 py-2 text-sm cursor-pointer w-full"
+        >
           <LogOut size={20} />
-          <span className="cursor-pointer block ml-2">Logout</span>
-        </div>
+          <span>Logout</span>
+        </button>
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
