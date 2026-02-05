@@ -8,21 +8,37 @@ datasource db {
   provider = "postgresql"
 }
 
+enum Role {
+  ADMIN
+  STAFF
+}
+
 model User {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
-  name      String?
-  createdAt DateTime @default(now())
-  posts     Post[]
+  id          String        @id @default(cuid())
+  name        String
+  email       String        @unique
+  password    String
+  memberships Membership[]
+  createdAt   DateTime      @default(now())
 }
 
-model Post {
-  id        Int      @id @default(autoincrement())
-  title     String
-  content   String?
-  published Boolean  @default(false)
-
-  author    User     @relation(fields: [authorId], references: [id])
-  authorId  Int
+model Store {
+  id          String        @id @default(cuid())
+  name        String
+  memberships Membership[]
+  createdAt   DateTime      @default(now())
 }
+
+model Membership {
+  id        String   @id @default(cuid())
+  role      Role
+  userId    String
+  storeId   String
+
+  user      User    @relation(fields: [userId], references: [id])
+  store     Store   @relation(fields: [storeId], references: [id])
+
+  @@unique([userId, storeId])
+}
+
 
