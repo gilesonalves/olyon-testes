@@ -17,7 +17,7 @@ export const Controller = () => {
     email: data.email,
     password: data.password,
     redirect: true,
-    callbackUrl: "/dashboard",
+    callbackUrl: "/",
   })
 }
 

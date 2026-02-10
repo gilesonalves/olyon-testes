@@ -1,14 +1,18 @@
 "use client"
 import { Controller as ControllerForm } from "react-hook-form"
 import Link from "next/link"
-import {Controller} from './controllers'
-import { Field, FieldError, FieldGroup, FieldLabel } from "../../../src/components/ui/field"
-import { Input } from "../../../../olyon-admin/src/components/ui/input"
-import { Button } from "../../../../olyon-admin/src/components/ui/button"
+import { useSearchParams } from "next/navigation"
+import { Controller } from "./controllers"
+import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
 
 
 export default function Login() {
-  const {form, onSubmit} = Controller()
+  const { form, onSubmit } = Controller()
+  const searchParams = useSearchParams()
+  const errorParam = searchParams.get("error")
+  const showError = Boolean(errorParam)
   return (
     <div className="min-h-screen flex items-center justify-center bg-white px-4">
       <div className="w-full max-w-md">
@@ -74,7 +78,14 @@ export default function Login() {
             />
 
           </FieldGroup>
-          <Button type="submit" variant={"primary"} className="w-full cursor-pointer mt-6">Entrar</Button>
+          {showError && (
+            <p className="text-sm text-red-600 font-medium mt-4">
+              Credenciais invalidas ou acesso negado.
+            </p>
+          )}
+          <Button type="submit" variant={"primary"} className="w-full cursor-pointer mt-6">
+            Entrar
+          </Button>
         </form>
         <div>
           <p className="text-center text-base mt-6 font-medium">

@@ -1,42 +1,96 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 import { getToken } from "next-auth/jwt"
-import { canAccessApp } from "./src/lib/auth"
+import {
+  SUPER_ADMIN_ROLE,
+  canAccessAdmin,
+  canAccessApp,
+} from "./src/lib/auth"
 
-/**
- * Middleware do olyon-app (cliente).
- * - Exige autenticação
- * - Bloqueia SUPER_ADMIN
- * - Exige membership válida (role + storeId)
- * - Preserva rota original (callbackUrl)
- */
 export async function middleware(req: NextRequest) {
-  const token = await getToken({ req })
   const { pathname } = req.nextUrl
+  const token = await getToken({ req })
 
-  // 🔒 Não autenticado → login
+  const isLogin = pathname === "/login"
+  const isAdminRoute = pathname.startsWith("/admin")
+  const isAppRoute = [
+    "/dashboard",
+    "/usuarios",
+    "/servicos",
+    "/eventos",
+    "/agendamentos",
+    "/horarios-de-atendimento",
+    "/entradas-saidas",
+    "/contas-a-pagar",
+    "/controle-pagamentos",
+    "/equipe",
+  ].some(route => pathname.startsWith(route))
+
+  // ─────────────────────────────────────────────
+  // 🔓 LOGIN (rota pública)
+  // ─────────────────────────────────────────────
+  if (isLogin) {
+    if (!token) return NextResponse.next()
+
+    const globalRole = token.globalRole as string | undefined
+
+    if (globalRole === SUPER_ADMIN_ROLE) {
+      return NextResponse.redirect(new URL("/admin/dashboard", req.url))
+    }
+
+    return NextResponse.redirect(new URL("/dashboard", req.url))
+  }
+
+  // ─────────────────────────────────────────────
+  // 🔒 NÃO AUTENTICADO
+  // ─────────────────────────────────────────────
   if (!token) {
     const loginUrl = new URL("/login", req.url)
     loginUrl.searchParams.set("callbackUrl", pathname)
     return NextResponse.redirect(loginUrl)
   }
 
-  // 🧠 Regras de negócio
-  const role = token.role as string | undefined
-  const hasMembership = Boolean(token.storeId)
+  const globalRole = token.globalRole as string | undefined
 
-  if (!canAccessApp(role, hasMembership)) {
-    const deniedUrl = new URL("/login", req.url)
-    deniedUrl.searchParams.set("error", "AppAccessDenied")
-    return NextResponse.redirect(deniedUrl)
+  // ─────────────────────────────────────────────
+  // 🔐 ADMIN
+  // ─────────────────────────────────────────────
+  if (isAdminRoute) {
+    if (!canAccessAdmin(globalRole)) {
+      return NextResponse.redirect(new URL("/", req.url))
+    }
+
+    return NextResponse.next()
   }
 
-  // ✅ Tudo certo
+  // ─────────────────────────────────────────────
+  // 🏪 APP (LOJA)
+  // ─────────────────────────────────────────────
+  if (isAppRoute) {
+    // SUPER_ADMIN nunca usa o app
+    if (globalRole === SUPER_ADMIN_ROLE) {
+      return NextResponse.redirect(new URL("/admin/dashboard", req.url))
+    }
+
+    const role = token.role as string | undefined
+    const hasMembership = Boolean(token.storeId)
+
+    if (!canAccessApp(role, hasMembership)) {
+      return NextResponse.redirect(
+        new URL("/login?error=AppAccessDenied", req.url)
+      )
+    }
+
+    return NextResponse.next()
+  }
+
   return NextResponse.next()
 }
 
 export const config = {
   matcher: [
+    "/login",
+    "/admin/:path*",
     "/dashboard/:path*",
     "/usuarios/:path*",
     "/servicos/:path*",
