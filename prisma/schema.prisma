@@ -1,3 +1,5 @@
+// Olyon - Multi-tenant SaaS
+// Schema compartilhado entre olyon-admin e olyon-app
 
 generator client {
   provider = "prisma-client"
@@ -8,9 +10,16 @@ datasource db {
   provider = "postgresql"
 }
 
-enum Role {
-  ADMIN
-  STAFF
+// Role global do usuário (acesso ao olyon-admin). SUPER_ADMIN não possui membership.
+enum GlobalRole {
+  SUPER_ADMIN
+}
+
+// Role dentro de uma loja (Membership). Usado no olyon-app.
+enum MembershipRole {
+  OWNER  // dono da loja
+  ADMIN  // gerente
+  STAFF  // funcionário
 }
 
 model User {
@@ -18,27 +27,30 @@ model User {
   name        String
   email       String        @unique
   password    String
+  globalRole  GlobalRole?   // SUPER_ADMIN => sem membership, acesso apenas olyon-admin
   memberships Membership[]
   createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
 }
 
 model Store {
   id          String        @id @default(cuid())
   name        String
+  slug        String        @unique
+  active      Boolean       @default(true) // toda loja nasce ativa
   memberships Membership[]
   createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
 }
 
 model Membership {
-  id        String   @id @default(cuid())
-  role      Role
+  id        String         @id @default(cuid())
+  role      MembershipRole
   userId    String
   storeId   String
 
-  user      User    @relation(fields: [userId], references: [id])
-  store     Store   @relation(fields: [storeId], references: [id])
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  store     Store   @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
   @@unique([userId, storeId])
 }
-
-
