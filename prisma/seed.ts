@@ -1,6 +1,6 @@
 import { Pool } from 'pg'
 import { PrismaPg } from '@prisma/adapter-pg'
-import { PrismaClient, Role } from '../generated/prisma/client'
+import { PrismaClient, GlobalRole, MembershipRole } from '../generated/prisma/client'
 import bcrypt from 'bcryptjs'
 
 const pool = new Pool({
@@ -14,43 +14,56 @@ const prisma = new PrismaClient({ adapter })
 async function main() {
   const passwordHash = await bcrypt.hash('admin123', 10)
 
-  const user = await prisma.user.upsert({
+  // SUPER_ADMIN: acesso exclusivo ao olyon-admin (sem membership)
+  await prisma.user.upsert({
+    where: { email: 'superadmin@olyon.com' },
+    update: {},
+    create: {
+      name: 'Super Admin',
+      email: 'superadmin@olyon.com',
+      password: passwordHash,
+      globalRole: GlobalRole.SUPER_ADMIN,
+    },
+  })
+
+  // Usuário OWNER da loja (acesso ao olyon-app)
+  const owner = await prisma.user.upsert({
     where: { email: 'admin@olyon.com' },
     update: {},
     create: {
-      name: 'Admin',
+      name: 'Admin Loja',
       email: 'admin@olyon.com',
       password: passwordHash,
     },
   })
 
   const store = await prisma.store.upsert({
-    where: { id: '1' },
+    where: { id: 'store-loja-principal' },
     update: {},
     create: {
-      id: '1',
+      id: 'store-loja-principal',
       name: 'Loja Principal',
+      slug: 'loja-principal',
+      active: true,
     },
   })
 
   await prisma.membership.upsert({
     where: {
       userId_storeId: {
-        userId: user.id,
+        userId: owner.id,
         storeId: store.id,
       },
     },
-    update: {
-      role: Role.ADMIN,
-    },
+    update: { role: MembershipRole.OWNER },
     create: {
-      userId: user.id,
+      userId: owner.id,
       storeId: store.id,
-      role: Role.ADMIN,
+      role: MembershipRole.OWNER,
     },
   })
 
-  console.log('Seed finalizado com sucesso')
+  console.log('Seed finalizado: superadmin@olyon.com (SUPER_ADMIN), admin@olyon.com (OWNER)')
 }
 
 main()

@@ -10,11 +10,11 @@ export async function GET(req: NextRequest) {
   }
 
   const memberships = await prisma.membership.findMany({
-    where: { userId: token.userId },
+    where: { userId: token.userId, store: { active: true } },
     include: { store: true },
   })
 
-  const stores = memberships.map(m => m.store)
+  const stores = memberships.map((m) => m.store)
 
   return NextResponse.json(stores)
 }
