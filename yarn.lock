@@ -658,26 +658,26 @@
   resolved "https://registry.yarnpkg.com/@panva/hkdf/-/hkdf-1.2.1.tgz#cb0d111ef700136f4580349ff0226bf25c853f23"
 
 "@prisma/adapter-pg@^7.3.0":
-  version "7.3.0"
-  resolved "https://registry.yarnpkg.com/@prisma/adapter-pg/-/adapter-pg-7.3.0.tgz#4672c13dd62e7720f71e651a42707d7370db65ca"
+  version "7.4.0"
+  resolved "https://registry.yarnpkg.com/@prisma/adapter-pg/-/adapter-pg-7.4.0.tgz#61591a22c189d3f9b56f524c46cc3a905350fe2e"
   dependencies:
-    "@prisma/driver-adapter-utils" "7.3.0"
+    "@prisma/driver-adapter-utils" "7.4.0"
     pg "^8.16.3"
     postgres-array "3.0.4"
 
-"@prisma/client-runtime-utils@7.3.0":
-  version "7.3.0"
-  resolved "https://registry.yarnpkg.com/@prisma/client-runtime-utils/-/client-runtime-utils-7.3.0.tgz#80b4557315f6ca06dbc33725bac6d2cbd8aa394e"
+"@prisma/client-runtime-utils@7.4.0":
+  version "7.4.0"
+  resolved "https://registry.yarnpkg.com/@prisma/client-runtime-utils/-/client-runtime-utils-7.4.0.tgz#feeb5a09f247ce1f0f8ef4cc817e9ccd6c8f46c3"
 
-"@prisma/client@^7.3.0":
-  version "7.3.0"
-  resolved "https://registry.yarnpkg.com/@prisma/client/-/client-7.3.0.tgz#6da3ce73b133bcca520a38f05580d2cf404ca3fe"
+"@prisma/client@^7.4.0":
+  version "7.4.0"
+  resolved "https://registry.yarnpkg.com/@prisma/client/-/client-7.4.0.tgz#c3f19a15d4a678807035987b251293474639f1cc"
   dependencies:
-    "@prisma/client-runtime-utils" "7.3.0"
+    "@prisma/client-runtime-utils" "7.4.0"
 
-"@prisma/config@7.3.0":
-  version "7.3.0"
-  resolved "https://registry.yarnpkg.com/@prisma/config/-/config-7.3.0.tgz#7c3cc2198806237eb4e92d59fcc2a93396711be8"
+"@prisma/config@7.4.0":
+  version "7.4.0"
+  resolved "https://registry.yarnpkg.com/@prisma/config/-/config-7.4.0.tgz#8e3bbe7f37e9d98a9772556515d0799330e8ce9b"
   dependencies:
     c12 "3.1.0"
     deepmerge-ts "7.1.5"
@@ -688,9 +688,9 @@
   version "7.2.0"
   resolved "https://registry.yarnpkg.com/@prisma/debug/-/debug-7.2.0.tgz#569b1cbc10eb3e8cae798b40075fd11d21f6b533"
 
-"@prisma/debug@7.3.0":
-  version "7.3.0"
-  resolved "https://registry.yarnpkg.com/@prisma/debug/-/debug-7.3.0.tgz#b953ee8263b26af54ddb2c1799953009d51ec814"
+"@prisma/debug@7.4.0":
+  version "7.4.0"
+  resolved "https://registry.yarnpkg.com/@prisma/debug/-/debug-7.4.0.tgz#447c09556b3b530900255d0df3b637e1cd9715c2"
 
 "@prisma/dev@0.20.0":
   version "0.20.0"
@@ -714,32 +714,32 @@
     valibot "1.2.0"
     zeptomatch "2.1.0"
 
-"@prisma/driver-adapter-utils@7.3.0":
-  version "7.3.0"
-  resolved "https://registry.yarnpkg.com/@prisma/driver-adapter-utils/-/driver-adapter-utils-7.3.0.tgz#3242f206a8749846db1c611a5cb283c547da7c0f"
+"@prisma/driver-adapter-utils@7.4.0":
+  version "7.4.0"
+  resolved "https://registry.yarnpkg.com/@prisma/driver-adapter-utils/-/driver-adapter-utils-7.4.0.tgz#d4a865a59d8aa64d77a10d21279976ae6a054b91"
   dependencies:
-    "@prisma/debug" "7.3.0"
+    "@prisma/debug" "7.4.0"
 
-"@prisma/engines-version@7.3.0-16.9d6ad21cbbceab97458517b147a6a09ff43aa735":
-  version "7.3.0-16.9d6ad21cbbceab97458517b147a6a09ff43aa735"
-  resolved "https://registry.yarnpkg.com/@prisma/engines-version/-/engines-version-7.3.0-16.9d6ad21cbbceab97458517b147a6a09ff43aa735.tgz#e595b90d5afe5ee8312b14efb68a2815fda67998"
+"@prisma/engines-version@7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57":
+  version "7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57"
+  resolved "https://registry.yarnpkg.com/@prisma/engines-version/-/engines-version-7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57.tgz#eacd6b7e75e837530c632af5feb10ec248ac8aea"
 
-"@prisma/engines@7.3.0":
-  version "7.3.0"
-  resolved "https://registry.yarnpkg.com/@prisma/engines/-/engines-7.3.0.tgz#4db30abcb4d20958d643b7370991352807ac60b0"
+"@prisma/engines@7.4.0":
+  version "7.4.0"
+  resolved "https://registry.yarnpkg.com/@prisma/engines/-/engines-7.4.0.tgz#4e3ebb4a172b032e4cd690fb79e60bf760dcce80"
   dependencies:
-    "@prisma/debug" "7.3.0"
-    "@prisma/engines-version" "7.3.0-16.9d6ad21cbbceab97458517b147a6a09ff43aa735"
-    "@prisma/fetch-engine" "7.3.0"
-    "@prisma/get-platform" "7.3.0"
+    "@prisma/debug" "7.4.0"
+    "@prisma/engines-version" "7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57"
+    "@prisma/fetch-engine" "7.4.0"
+    "@prisma/get-platform" "7.4.0"
 
-"@prisma/fetch-engine@7.3.0":
-  version "7.3.0"
-  resolved "https://registry.yarnpkg.com/@prisma/fetch-engine/-/fetch-engine-7.3.0.tgz#89ade55468c14904a28ff3b46a2d285fb7959ac6"
+"@prisma/fetch-engine@7.4.0":
+  version "7.4.0"
+  resolved "https://registry.yarnpkg.com/@prisma/fetch-engine/-/fetch-engine-7.4.0.tgz#93ec841021b97f87aa9b114b5c12e038dee00020"
   dependencies:
-    "@prisma/debug" "7.3.0"
-    "@prisma/engines-version" "7.3.0-16.9d6ad21cbbceab97458517b147a6a09ff43aa735"
-    "@prisma/get-platform" "7.3.0"
+    "@prisma/debug" "7.4.0"
+    "@prisma/engines-version" "7.4.0-20.ab56fe763f921d033a6c195e7ddeb3e255bdbb57"
+    "@prisma/get-platform" "7.4.0"
 
 "@prisma/get-platform@7.2.0":
   version "7.2.0"
@@ -747,11 +747,11 @@
   dependencies:
     "@prisma/debug" "7.2.0"
 
-"@prisma/get-platform@7.3.0":
-  version "7.3.0"
-  resolved "https://registry.yarnpkg.com/@prisma/get-platform/-/get-platform-7.3.0.tgz#f2325b9978d15ab3e6c806449d7d4239df9f7fdc"
+"@prisma/get-platform@7.4.0":
+  version "7.4.0"
+  resolved "https://registry.yarnpkg.com/@prisma/get-platform/-/get-platform-7.4.0.tgz#d1de860ae4da8abc6f5d63ad0f120dc5b499ec73"
   dependencies:
-    "@prisma/debug" "7.3.0"
+    "@prisma/debug" "7.4.0"
 
 "@prisma/query-plan-executor@7.2.0":
   version "7.2.0"
@@ -1211,8 +1211,8 @@
   resolved "https://registry.yarnpkg.com/@types/json5/-/json5-0.0.29.tgz#ee28707ae94e11d2b827bcbe5270bcea7f3e71ee"
 
 "@types/node@*":
-  version "25.2.2"
-  resolved "https://registry.yarnpkg.com/@types/node/-/node-25.2.2.tgz#0ddfe326c326afcb3422d32bfe5eb2938e1cb5db"
+  version "25.2.3"
+  resolved "https://registry.yarnpkg.com/@types/node/-/node-25.2.3.tgz#9c18245be768bdb4ce631566c7da303a5c99a7f8"
   dependencies:
     undici-types "~7.16.0"
 
@@ -1235,8 +1235,8 @@
   resolved "https://registry.yarnpkg.com/@types/react-dom/-/react-dom-19.2.3.tgz#c1e305d15a52a3e508d54dca770d202cb63abf2c"
 
 "@types/react@^19":
-  version "19.2.13"
-  resolved "https://registry.yarnpkg.com/@types/react/-/react-19.2.13.tgz#7cea30d7f60a01d97e4ece039c04e9056682218a"
+  version "19.2.14"
+  resolved "https://registry.yarnpkg.com/@types/react/-/react-19.2.14.tgz#39604929b5e3957e3a6fa0001dafb17c7af70bad"
   dependencies:
     csstype "^3.2.2"
 
@@ -1680,8 +1680,8 @@ citty@^0.1.6:
     consola "^3.2.3"
 
 citty@^0.2.0:
-  version "0.2.0"
-  resolved "https://registry.yarnpkg.com/citty/-/citty-0.2.0.tgz#2426b145c4bf2a2c5c33bd66a634dfe3d5ea67ea"
+  version "0.2.1"
+  resolved "https://registry.yarnpkg.com/citty/-/citty-0.2.1.tgz#1b150777a3357b7b92e173fff38ea0d6ad2d08da"
 
 class-variance-authority@^0.7.1:
   version "0.7.1"
@@ -3335,13 +3335,13 @@ pretty-format@^3.8.0:
   version "3.8.0"
   resolved "https://registry.yarnpkg.com/pretty-format/-/pretty-format-3.8.0.tgz#bfbed56d5e9a776645f4b1ff7aa1a3ac4fa3c385"
 
-prisma@^7.3.0:
-  version "7.3.0"
-  resolved "https://registry.yarnpkg.com/prisma/-/prisma-7.3.0.tgz#61c5c3377455e308406d57187497053dd8dfd440"
+prisma@^7.4.0:
+  version "7.4.0"
+  resolved "https://registry.yarnpkg.com/prisma/-/prisma-7.4.0.tgz#f0b75439816769a0f595207ba182b7b78ad493c5"
   dependencies:
-    "@prisma/config" "7.3.0"
+    "@prisma/config" "7.4.0"
     "@prisma/dev" "0.20.0"
-    "@prisma/engines" "7.3.0"
+    "@prisma/engines" "7.4.0"
     "@prisma/studio-core" "0.13.1"
     mysql2 "3.15.3"
     postgres "3.4.7"
