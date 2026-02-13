@@ -39,6 +39,7 @@ model Store {
   slug        String        @unique
   active      Boolean       @default(true) // toda loja nasce ativa
   memberships Membership[]
+  services    Service[]
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 }
@@ -53,4 +54,21 @@ model Membership {
   store     Store   @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
   @@unique([userId, storeId])
+}
+
+model Service {
+  id          String   @id @default(cuid())
+  storeId     String
+  name        String
+  description String?
+  durationMin Int
+  active      Boolean  @default(true)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId])
+  @@unique([storeId, name])
 }
