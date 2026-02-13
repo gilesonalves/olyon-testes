@@ -2,7 +2,8 @@ import { prisma } from "@/lib/prisma"
 import { requireStoreId } from "@/lib/current-store"
 import { ServiceCreateSchema } from "@/lib/validators/service"
 import { badRequest, created, ok, serverError, unauthorized } from "@/lib/api/response"
-import { Prisma } from "@prisma/client"
+import { Prisma } from "../../../generated/prisma/client"
+
 
 export async function GET() {
   try {
