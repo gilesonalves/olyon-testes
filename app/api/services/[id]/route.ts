@@ -1,13 +1,7 @@
 import { prisma } from "@/lib/prisma"
-import { requireStoreId } from "@/lib/current-store"
 import { ServiceUpdateSchema } from "@/lib/validators/service"
-import {
-  badRequest,
-  notFound,
-  ok,
-  serverError,
-  unauthorized,
-} from "@/lib/api/response"
+import { badRequest, notFound, ok, serverError, unauthorized, forbidden } from "@/lib/api/response"
+import { requireMembershipRole } from "@/lib/guards/require-membership-role"
 
 type Params = {
   params: Promise<{ id: string }>
@@ -15,14 +9,13 @@ type Params = {
 
 export async function PUT(req: Request, { params }: Params) {
   try {
-    const storeId = await requireStoreId()
-
-    if (!storeId) {
-      return unauthorized()
+    const guard = await requireMembershipRole("ADMIN")
+    if (!guard.ok) {
+      return guard.status === 401 ? unauthorized(guard.error) : forbidden(guard.error)
     }
 
     const { id } = await params
-    const existing = await prisma.service.findFirst({ where: { id, storeId } })
+    const existing = await prisma.service.findFirst({ where: { id, storeId: guard.storeId } })
 
     if (!existing) {
       return notFound("Serviço não encontrado")
@@ -48,14 +41,13 @@ export async function PUT(req: Request, { params }: Params) {
 
 export async function DELETE(_: Request, { params }: Params) {
   try {
-    const storeId = await requireStoreId()
-
-    if (!storeId) {
-      return unauthorized()
+    const guard = await requireMembershipRole("ADMIN")
+    if (!guard.ok) {
+      return guard.status === 401 ? unauthorized(guard.error) : forbidden(guard.error)
     }
 
     const { id } = await params
-    const existing = await prisma.service.findFirst({ where: { id, storeId } })
+    const existing = await prisma.service.findFirst({ where: { id, storeId: guard.storeId } })
 
     if (!existing) {
       return notFound("Serviço não encontrado")

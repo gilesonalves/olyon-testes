@@ -1,9 +1,9 @@
 import { prisma } from "@/lib/prisma"
 import { requireStoreId } from "@/lib/current-store"
 import { ServiceCreateSchema } from "@/lib/validators/service"
-import { badRequest, created, ok, serverError, unauthorized } from "@/lib/api/response"
+import { badRequest, created, ok, serverError, unauthorized, forbidden } from "@/lib/api/response"
 import { Prisma } from "../../../generated/prisma/client"
-
+import { requireMembershipRole } from "@/lib/guards/require-membership-role"
 
 export async function GET() {
   try {
@@ -24,18 +24,22 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const storeId = await requireStoreId()
-    if (!storeId) return unauthorized("Selecione uma loja para continuar.")
+    const guard = await requireMembershipRole("ADMIN")
+    if (!guard.ok) {
+      return guard.status === 401 ? unauthorized(guard.error) : forbidden(guard.error)
+    }
 
     const body = await req.json()
     const parsed = ServiceCreateSchema.safeParse(body)
 
     if (!parsed.success) {
-      return badRequest(parsed.error.issues.map(i => i.message).join(" • ") || "Payload inválido")
+      return badRequest(
+        parsed.error.issues.map((i) => i.message).join(" • ") || "Payload inválido"
+      )
     }
 
     const service = await prisma.service.create({
-      data: { storeId, ...parsed.data },
+      data: { storeId: guard.storeId, ...parsed.data },
     })
 
     return created(service)
