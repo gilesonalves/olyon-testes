@@ -33,3 +33,7 @@ export function notFound(error = "Não encontrado") {
 export function serverError(error = "Erro interno do servidor") {
   return NextResponse.json<ApiError>({ ok: false, error }, { status: 500 })
 }
+
+export function forbidden(error = "Sem permissão") {
+  return NextResponse.json<ApiError>({ ok: false, error }, { status: 403 })
+}
