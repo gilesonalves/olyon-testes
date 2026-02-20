@@ -29,6 +29,8 @@ model User {
   password    String
   globalRole  GlobalRole?   // SUPER_ADMIN => sem membership, acesso apenas olyon-admin
   memberships Membership[]
+  profile     UserProfile?
+  contacts    UserContact[]
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 }
@@ -71,4 +73,40 @@ model Service {
 
   @@index([storeId])
   @@unique([storeId, name])
+}
+
+model UserProfile {
+  userId        String    @id
+  cpf           String?   @unique // opcional, mas único se existir
+  phone         String?
+  secondaryPhone String?
+  gender        String?   // storage do JSON { _id, value } ou simples string
+  birthDate     DateTime?
+  zipcode       String?
+  state         String?
+  city          String?
+  neighborhood  String?
+  address       String?
+  number        String?
+  complement    String?
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UserContact {
+  id            String    @id @default(cuid())
+  userId        String
+  name          String
+  phone         String
+  relationship  String
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }

@@ -5,13 +5,17 @@ import { toast } from "sonner"
 import * as z from "zod"
 import { maskPhone } from "@/lib/utils/maskPhone"
 import { formSchema } from "../schemas"
-
+import { useRouter } from "next/navigation"
 export const Controller = () => {
-  const form = useForm<z.infer<typeof formSchema>>({
+  type FormValues = z.input<typeof formSchema>
+  const router = useRouter()
+  const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: "",
       email: "",
+      role: "STAFF",
+      password: "",
       gender: null,
       birthDate: "",
       cpf: "",
@@ -28,7 +32,7 @@ export const Controller = () => {
     },
   })
 
-  type Contact = z.infer<typeof formSchema>["contacts"][number]
+  type Contact = FormValues["contacts"][number]
 
   const emptyContact: Contact = {
     name: "",
@@ -72,17 +76,35 @@ export const Controller = () => {
     remove(index)
   }
 
-  function onSubmit(data: z.infer<typeof formSchema>) {
-    toast("You submitted the following values:", {
-      description: null,
-      position: "bottom-right",
-      classNames: {
-        content: "flex flex-col gap-2",
-      },
-      style: {
-        "--border-radius": "calc(var(--radius)  + 4px)",
-      } as React.CSSProperties,
-    })
+  async function onSubmit(data: FormValues) {
+    try {
+      const payload = {
+        name: data.name,
+        email: data.email,
+        password: data.password,
+        role: data.role,
+      }
+
+      const res = await fetch("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+
+      const json = await res.json()
+
+      if (!res.ok || !json?.ok) {
+        toast.error(json?.error ?? "Falha ao criar usuário.")
+        return
+      }
+
+      toast.success("Usuário criado com sucesso!")
+      router.push("/usuarios")
+      router.refresh()
+      form.reset()
+    } catch {
+      toast.error("Erro ao criar usuário.")
+    }
   }
 
   return {
