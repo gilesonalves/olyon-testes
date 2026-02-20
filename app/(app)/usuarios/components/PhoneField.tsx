@@ -15,7 +15,7 @@ export function PhoneField<T extends FieldValues>({
   name,
   control,
   label = "Whatsapp",
-  placeholder = "(27) 91234-5678",
+  placeholder = "(xx) xxxxx-xxxx",
 }: PhoneFieldProps<T>) {
   return (
     <ControllerForm

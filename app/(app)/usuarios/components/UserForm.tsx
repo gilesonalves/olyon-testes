@@ -82,10 +82,8 @@ export function UserForm({ mode, userId }: UserFormProps) {
   type EditValues = z.input<typeof editSchema>
   type Values = CreateValues | EditValues
 
-  // ✅ sem useMemo (evita warning de deps)
   const schema = mode === "create" ? createSchema : editSchema
 
-  // ✅ defaults estáveis (não recriam a cada render)
   const DEFAULT_VALUES = useMemo(
     () =>
       ({
@@ -115,10 +113,8 @@ export function UserForm({ mode, userId }: UserFormProps) {
     defaultValues: DEFAULT_VALUES,
   })
 
-  // ✅ Contact blindado (contacts nunca undefined pelo schema, mas mantém seguro)
   type Contact = NonNullable<Values["contacts"]>[number]
 
-  // ✅ emptyContact estável (não recria sempre)
   const emptyContact = useMemo(
     () =>
       ({
@@ -140,9 +136,6 @@ export function UserForm({ mode, userId }: UserFormProps) {
     | { message?: string }
     | undefined
 
-  /**
-   * Reset ao entrar em CREATE (evita vazar dados do edit)
-   */
   useEffect(() => {
     if (mode !== "create") return
 
@@ -151,9 +144,6 @@ export function UserForm({ mode, userId }: UserFormProps) {
     setNewContact(emptyContact)
   }, [mode, form, DEFAULT_VALUES, emptyContact])
 
-  /**
-   * Carregar dados no EDIT (com loading=true sempre que mudar id)
-   */
   useEffect(() => {
     if (mode !== "edit" || !userId) return
 
@@ -172,7 +162,6 @@ export function UserForm({ mode, userId }: UserFormProps) {
         }
 
         const user = json.data
-
         if (cancelled) return
 
         form.reset({
@@ -188,6 +177,8 @@ export function UserForm({ mode, userId }: UserFormProps) {
           secondaryPhone: user.profile?.secondaryPhone
             ? maskPhone(user.profile.secondaryPhone)
             : "",
+
+          // ✅ ENDEREÇO volta preenchendo do profile
           zipcode: user.profile?.zipcode ?? "",
           state: user.profile?.state ?? "",
           city: user.profile?.city ?? "",
@@ -195,6 +186,7 @@ export function UserForm({ mode, userId }: UserFormProps) {
           address: user.profile?.address ?? "",
           number: user.profile?.number ?? "",
           complement: user.profile?.complement ?? "",
+
           contacts: (user.contacts ?? []).map((c) => ({
             ...c,
             phone: c.phone ? maskPhone(c.phone) : "",
@@ -210,7 +202,6 @@ export function UserForm({ mode, userId }: UserFormProps) {
     }
 
     loadUser()
-
     return () => {
       cancelled = true
     }
@@ -219,7 +210,6 @@ export function UserForm({ mode, userId }: UserFormProps) {
   const handleNewContactChange = (field: keyof Contact, value: string) => {
     const nextValue = field === "phone" ? maskPhone(value) : value
 
-    // ✅ prev tipado (mata ts7006)
     setNewContact((prev: Contact) => ({
       ...prev,
       [field]: nextValue,
@@ -258,7 +248,7 @@ export function UserForm({ mode, userId }: UserFormProps) {
 
       const contactsPayload =
         mode === "edit"
-          ? (data.contacts ?? []) // permite remover todos ([])
+          ? (data.contacts ?? [])
           : data.contacts && data.contacts.length > 0
             ? data.contacts
             : undefined
@@ -273,6 +263,8 @@ export function UserForm({ mode, userId }: UserFormProps) {
           secondaryPhone: data.secondaryPhone || undefined,
           gender: data.gender ?? undefined,
           birthDate: data.birthDate || undefined,
+
+          // ✅ ENDEREÇO indo no payload de profile
           zipcode: data.zipcode || undefined,
           state: data.state || undefined,
           city: data.city || undefined,
@@ -337,10 +329,7 @@ export function UserForm({ mode, userId }: UserFormProps) {
             render={({ field, fieldState }) => (
               <Field data-invalid={fieldState.invalid}>
                 <FieldLabel>Permissão</FieldLabel>
-                <Select
-                  value={(field.value as string) ?? "STAFF"}
-                  onValueChange={field.onChange}
-                >
+                <Select value={(field.value as string) ?? "STAFF"} onValueChange={field.onChange}>
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione a permissão" />
                   </SelectTrigger>
@@ -384,13 +373,7 @@ export function UserForm({ mode, userId }: UserFormProps) {
             render={({ field, fieldState }) => (
               <Field data-invalid={fieldState.invalid}>
                 <FieldLabel htmlFor="name">Nome</FieldLabel>
-                <Input
-                  {...field}
-                  id="name"
-                  type="text"
-                  aria-invalid={fieldState.invalid}
-                  placeholder="Digite aqui seu Nome"
-                />
+                <Input {...field} id="name" type="text" aria-invalid={fieldState.invalid} placeholder="Digite aqui seu Nome" />
                 {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
               </Field>
             )}
@@ -405,8 +388,7 @@ export function UserForm({ mode, userId }: UserFormProps) {
                 <Select
                   value={field.value?._id ?? ""}
                   onValueChange={(value) => {
-                    const selected: Gender | null =
-                      GENDERS.find((item) => item._id === value) ?? null
+                    const selected: Gender | null = GENDERS.find((item) => item._id === value) ?? null
                     field.onChange(selected)
                   }}
                 >
@@ -447,14 +429,7 @@ export function UserForm({ mode, userId }: UserFormProps) {
             render={({ field, fieldState }) => (
               <Field data-invalid={fieldState.invalid}>
                 <FieldLabel htmlFor="email">Email</FieldLabel>
-                <Input
-                  {...field}
-                  id="email"
-                  type="email"
-                  aria-invalid={fieldState.invalid}
-                  placeholder="Digite aqui seu Email"
-                  disabled={mode === "edit"}
-                />
+                <Input {...field} id="email" type="email" aria-invalid={fieldState.invalid} placeholder="Digite aqui seu Email" disabled={mode === "edit"} />
                 {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
               </Field>
             )}
@@ -512,32 +487,17 @@ export function UserForm({ mode, userId }: UserFormProps) {
             <FieldGroup className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <Field>
                 <FieldLabel htmlFor="new-contact-name">Nome</FieldLabel>
-                <Input
-                  id="new-contact-name"
-                  type="text"
-                  value={newContact.name}
-                  onChange={(e) => handleNewContactChange("name", e.target.value)}
-                  placeholder="Nome do contato"
-                />
+                <Input id="new-contact-name" type="text" value={newContact.name} onChange={(e) => handleNewContactChange("name", e.target.value)} placeholder="Nome do contato" />
               </Field>
 
               <Field>
                 <FieldLabel htmlFor="new-contact-phone">Telefone</FieldLabel>
-                <Input
-                  id="new-contact-phone"
-                  type="text"
-                  value={newContact.phone}
-                  onChange={(e) => handleNewContactChange("phone", e.target.value)}
-                  placeholder="(xx) xxxxx-xxxx"
-                />
+                <Input id="new-contact-phone" type="text" value={newContact.phone} onChange={(e) => handleNewContactChange("phone", e.target.value)} placeholder="(xx) xxxxx-xxxx" />
               </Field>
 
               <Field>
                 <FieldLabel>Relação</FieldLabel>
-                <Select
-                  value={newContact.relationship}
-                  onValueChange={(value) => handleNewContactChange("relationship", value)}
-                >
+                <Select value={newContact.relationship} onValueChange={(value) => handleNewContactChange("relationship", value)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione a relação" />
                   </SelectTrigger>
@@ -562,10 +522,7 @@ export function UserForm({ mode, userId }: UserFormProps) {
 
             <div className="flex flex-col gap-4">
               {contactFields.map((contact, index) => (
-                <div
-                  key={contact.id}
-                  className="rounded-md border p-4 flex flex-col gap-4"
-                >
+                <div key={contact.id} className="rounded-md border p-4 flex flex-col gap-4">
                   <FieldGroup className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <ControllerForm
                       name={`contacts.${index}.name`}
@@ -573,13 +530,7 @@ export function UserForm({ mode, userId }: UserFormProps) {
                       render={({ field, fieldState }) => (
                         <Field data-invalid={fieldState.invalid}>
                           <FieldLabel htmlFor={`contacts-${index}-name`}>Nome</FieldLabel>
-                          <Input
-                            {...field}
-                            id={`contacts-${index}-name`}
-                            type="text"
-                            aria-invalid={fieldState.invalid}
-                            placeholder="Nome do contato"
-                          />
+                          <Input {...field} id={`contacts-${index}-name`} type="text" aria-invalid={fieldState.invalid} placeholder="Nome do contato" />
                           {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
                         </Field>
                       )}
@@ -610,10 +561,7 @@ export function UserForm({ mode, userId }: UserFormProps) {
                       render={({ field, fieldState }) => (
                         <Field data-invalid={fieldState.invalid}>
                           <FieldLabel>Relação</FieldLabel>
-                          <Select
-                            value={(field.value as string) ?? ""}
-                            onValueChange={(value) => field.onChange(value)}
-                          >
+                          <Select value={(field.value as string) ?? ""} onValueChange={(value) => field.onChange(value)}>
                             <SelectTrigger>
                               <SelectValue placeholder="Selecione a relação" />
                             </SelectTrigger>
@@ -632,18 +580,108 @@ export function UserForm({ mode, userId }: UserFormProps) {
                   </FieldGroup>
 
                   <div className="flex justify-end">
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => handleRemoveContact(index)}
-                    >
+                    <Button type="button" variant="destructive" size="sm" onClick={() => handleRemoveContact(index)}>
                       Remover
                     </Button>
                   </div>
                 </div>
               ))}
             </div>
+          </FieldGroup>
+        </div>
+
+        {/* ✅ ENDEREÇO (RESTaurado) */}
+        <div>
+          <h2 className="text-xl font-semibold pb-4">Endereço</h2>
+
+          <FieldGroup className="grid grid-cols-1 md:grid-cols-3 gap-6 pb-4">
+            <ControllerForm
+              name="zipcode"
+              control={form.control}
+              render={({ field, fieldState }) => (
+                <Field data-invalid={fieldState.invalid}>
+                  <FieldLabel htmlFor="zipcode">CEP</FieldLabel>
+                  <Input {...field} id="zipcode" type="text" aria-invalid={fieldState.invalid} placeholder="Digite o CEP" />
+                  {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+                </Field>
+              )}
+            />
+
+            <ControllerForm
+              name="state"
+              control={form.control}
+              render={({ field, fieldState }) => (
+                <Field data-invalid={fieldState.invalid}>
+                  <FieldLabel htmlFor="state">Estado</FieldLabel>
+                  <Input {...field} id="state" type="text" aria-invalid={fieldState.invalid} placeholder="UF" />
+                  {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+                </Field>
+              )}
+            />
+
+            <ControllerForm
+              name="city"
+              control={form.control}
+              render={({ field, fieldState }) => (
+                <Field data-invalid={fieldState.invalid}>
+                  <FieldLabel htmlFor="city">Cidade</FieldLabel>
+                  <Input {...field} id="city" type="text" aria-invalid={fieldState.invalid} placeholder="Cidade" />
+                  {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+                </Field>
+              )}
+            />
+          </FieldGroup>
+
+          <FieldGroup className="grid grid-cols-1 md:grid-cols-3 gap-6 pb-4">
+            <ControllerForm
+              name="neighborhood"
+              control={form.control}
+              render={({ field, fieldState }) => (
+                <Field data-invalid={fieldState.invalid}>
+                  <FieldLabel htmlFor="neighborhood">Bairro</FieldLabel>
+                  <Input {...field} id="neighborhood" type="text" aria-invalid={fieldState.invalid} placeholder="Bairro" />
+                  {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+                </Field>
+              )}
+            />
+
+            <ControllerForm
+              name="address"
+              control={form.control}
+              render={({ field, fieldState }) => (
+                <Field data-invalid={fieldState.invalid}>
+                  <FieldLabel htmlFor="address">Endereço</FieldLabel>
+                  <Input {...field} id="address" type="text" aria-invalid={fieldState.invalid} placeholder="Rua / Av." />
+                  {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+                </Field>
+              )}
+            />
+
+            <ControllerForm
+              name="number"
+              control={form.control}
+              render={({ field, fieldState }) => (
+                <Field data-invalid={fieldState.invalid}>
+                  <FieldLabel htmlFor="number">Número</FieldLabel>
+                  <Input {...field} id="number" type="text" aria-invalid={fieldState.invalid} placeholder="Número" />
+                  {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+                </Field>
+              )}
+            />
+          </FieldGroup>
+
+          <FieldGroup className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <ControllerForm
+              name="complement"
+              control={form.control}
+              render={({ field, fieldState }) => (
+                <Field data-invalid={fieldState.invalid}>
+                  <FieldLabel htmlFor="complement">Complemento</FieldLabel>
+                  <Input {...field} id="complement" type="text" aria-invalid={fieldState.invalid} placeholder="Complemento" />
+                  {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+                </Field>
+              )}
+            />
           </FieldGroup>
         </div>
 
