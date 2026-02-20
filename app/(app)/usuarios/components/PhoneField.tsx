@@ -2,6 +2,7 @@ import { Controller as ControllerForm } from "react-hook-form"
 import { Field, FieldError, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import type { Control, FieldValues, Path } from "react-hook-form"
+import { maskPhone } from "@/lib/utils/maskPhone"
 
 type PhoneFieldProps<T extends FieldValues> = {
   name: Path<T>
@@ -9,8 +10,6 @@ type PhoneFieldProps<T extends FieldValues> = {
   label?: string
   placeholder?: string
 }
-
-
 
 export function PhoneField<T extends FieldValues>({
   name,
@@ -27,17 +26,18 @@ export function PhoneField<T extends FieldValues>({
           <FieldLabel htmlFor={name}>{label}</FieldLabel>
 
           <Input
-            {...field}
             id={name}
             placeholder={placeholder}
+            value={(field.value as string) ?? ""}
+            onChange={(e) => field.onChange(maskPhone(e.target.value))}
+            onBlur={field.onBlur}
+            name={field.name}
+            ref={field.ref}
           />
 
-          {fieldState.invalid && (
-            <FieldError errors={[fieldState.error]} />
-          )}
+          {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
         </Field>
       )}
     />
   )
 }
-
