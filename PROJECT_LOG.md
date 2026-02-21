@@ -315,3 +315,12 @@ export default function UsuarioEditPage() {
 ---
 
 *Fim do log — 19 de fevereiro de 2026*
+
+## 2026-02-20
+- Usuários: ajustes finais no fluxo create/edit no mesmo formulário:
+  - Reset explícito ao entrar em mode="create" para evitar vazamento de estado do edit
+  - Loading controlado ao trocar userId no mode="edit" para garantir reidratação do form
+  - Tipagem: contacts com default [] + correção de tipos (evita undefined e erros TS)
+  - Persistência de contatos no edit: enviar `contacts: []` para permitir remover todos (backend faz replace com deleteMany/createMany)
+  - UX: navegação na listagem usando `router.push` em vez de `window.location.href`
+- Validação: schemas separados create/edit consolidados (senha obrigatória no create e opcional no edit).

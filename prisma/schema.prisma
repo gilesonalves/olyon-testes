@@ -22,6 +22,12 @@ enum MembershipRole {
   STAFF  // funcionário
 }
 
+enum MembershipType {
+  PROFISSIONAL
+  FINANCEIRO
+  ATENDENTE
+}
+
 model User {
   id          String        @id @default(cuid())
   name        String
@@ -44,6 +50,7 @@ model Store {
   services    Service[]
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
+  
 }
 
 model Membership {
@@ -55,7 +62,31 @@ model Membership {
   user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   store     Store   @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
+  types     MembershipTypeLink[]
+  services  MembershipService[]
+
   @@unique([userId, storeId])
+}
+
+model MembershipTypeLink {
+  membershipId String
+  type         MembershipType
+
+  membership   Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  @@id([membershipId, type])
+  @@index([type])
+}
+
+model MembershipService {
+  membershipId String
+  serviceId    String
+
+  membership   Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  service      Service    @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@id([membershipId, serviceId])
+  @@index([serviceId])
 }
 
 model Service {
@@ -70,6 +101,7 @@ model Service {
   updatedAt   DateTime @updatedAt
 
   store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  membershipServices MembershipService[]
 
   @@index([storeId])
   @@unique([storeId, name])
