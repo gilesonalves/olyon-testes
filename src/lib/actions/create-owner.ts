@@ -1,12 +1,11 @@
 "use server"
 
-import { Prisma } from "../../../../../generated/prisma/client"
 import { getServerSession } from "next-auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
 import { authOptions } from "@/lib/auth-options"
 import { createOwnerSchema } from "./create-owner.schema"
-import { hashDefaultOwnerPassword } from "./create-owner.utils"
+import { hashPassword } from "./create-owner.utils"
 import type { CreateOwnerInput, CreateOwnerResult } from "./create-owner.types"
 
 export async function createOwner(
@@ -29,7 +28,7 @@ export async function createOwner(
 
   const parsed = createOwnerSchema.safeParse(input)
   if (!parsed.success) {
-    const message = parsed.error.issues[0]?.message ?? "Informe o nome"
+    const message = parsed.error.issues[0]?.message ?? "Dados invalidos"
     return { success: false, error: "INVALID_INPUT", message }
   }
 
@@ -55,7 +54,7 @@ export async function createOwner(
     }
   }
 
-  const { name, email } = parsed.data
+  const { name, email, password } = parsed.data
 
   const existingUser = await prisma.user.findUnique({
     where: { email },
@@ -71,14 +70,14 @@ export async function createOwner(
   }
 
   try {
-    const password = await hashDefaultOwnerPassword()
+    const hashed = await hashPassword(password)
 
     await prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: {
           name,
           email,
-          password,
+          password: hashed,
         },
       })
 
@@ -92,22 +91,22 @@ export async function createOwner(
     })
 
     return { success: true }
-  } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      if (error.code === "P2002") {
-        return {
-          success: false,
-          error: "EMAIL_ALREADY_EXISTS",
-          message: "Email ja cadastrado",
-        }
-      }
+  } catch (error: unknown) {
+    const e = error as { code?: string }
 
-      if (error.code === "P2003") {
-        return {
-          success: false,
-          error: "STORE_NOT_FOUND",
-          message: "Loja nao encontrada",
-        }
+    if (e?.code === "P2002") {
+      return {
+        success: false,
+        error: "EMAIL_ALREADY_EXISTS",
+        message: "Email ja cadastrado",
+      }
+    }
+
+    if (e?.code === "P2003") {
+      return {
+        success: false,
+        error: "STORE_NOT_FOUND",
+        message: "Loja nao encontrada",
       }
     }
 

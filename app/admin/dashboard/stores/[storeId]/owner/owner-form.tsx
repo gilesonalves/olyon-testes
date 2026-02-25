@@ -6,9 +6,11 @@ import { useRouter } from "next/navigation"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { toast } from "sonner"
+
 import { createOwner } from "@/lib/actions/create-owner"
 import { createOwnerSchema } from "@/lib/actions/create-owner.schema"
 import type { CreateOwnerInput } from "@/lib/actions/create-owner.types"
+
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -20,10 +22,16 @@ type NewOwnerFormProps = {
 export function NewOwnerForm({ storeId }: NewOwnerFormProps) {
   const router = useRouter()
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
 
   const form = useForm<CreateOwnerInput>({
     resolver: zodResolver(createOwnerSchema),
-    defaultValues: { name: "", email: "" },
+    defaultValues: {
+      name: "",
+      email: "",
+      password: "",
+      confirmPassword: "",
+    },
   })
 
   async function onSubmit(data: CreateOwnerInput) {
@@ -41,23 +49,30 @@ export function NewOwnerForm({ storeId }: NewOwnerFormProps) {
       switch (result.error) {
         case "INVALID_INPUT":
           toast.error(result.message)
+
+          // mapeia mensagens comuns para campos
           if (result.message === "Informe o nome") {
             form.setError("name", { message: result.message })
-          }
-          if (result.message === "Informe um email valido") {
+          } else if (result.message === "Informe um email valido") {
             form.setError("email", { message: result.message })
+          } else if (result.message.includes("Senha")) {
+            form.setError("password", { message: result.message })
+          } else if (result.message.includes("senhas")) {
+            form.setError("confirmPassword", { message: result.message })
           }
+
           break
+
         case "EMAIL_ALREADY_EXISTS":
           toast.error(result.message)
           form.setError("email", { message: result.message })
           break
+
         case "STORE_NOT_FOUND":
-          toast.error(result.message)
-          break
         case "FORBIDDEN":
           toast.error(result.message)
           break
+
         default:
           toast.error("Erro ao criar proprietario")
       }
@@ -113,6 +128,47 @@ export function NewOwnerForm({ storeId }: NewOwnerFormProps) {
                 {form.formState.errors.email.message}
               </p>
             )}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="password">Senha inicial</Label>
+            <Input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              placeholder="Min. 6 caracteres"
+              {...form.register("password")}
+              aria-invalid={!!form.formState.errors.password}
+            />
+            {form.formState.errors.password && (
+              <p className="text-sm text-red-600">
+                {form.formState.errors.password.message}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="confirmPassword">Confirmar senha</Label>
+            <Input
+              id="confirmPassword"
+              type={showPassword ? "text" : "password"}
+              placeholder="Repita a senha"
+              {...form.register("confirmPassword")}
+              aria-invalid={!!form.formState.errors.confirmPassword}
+            />
+            {form.formState.errors.confirmPassword && (
+              <p className="text-sm text-red-600">
+                {form.formState.errors.confirmPassword.message}
+              </p>
+            )}
+
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full"
+              onClick={() => setShowPassword((v) => !v)}
+            >
+              {showPassword ? "Ocultar senha" : "Mostrar senha"}
+            </Button>
           </div>
 
           <Button
