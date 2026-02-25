@@ -1,6 +1,2 @@
-import * as z from "zod"
-
-export const formSchema = z.object({
-  name: z.string().min(1, "O nome é obrigatório"),
-  description: z.string(),
-})
+export { EventCreateSchema, EventUpdateSchema } from "./event"
+export type { EventCreateInput, EventUpdateInput } from "./event"

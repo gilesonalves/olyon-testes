@@ -51,6 +51,8 @@ model Store {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
   
+
+  events Event[]
 }
 
 model Membership {
@@ -101,7 +103,9 @@ model Service {
   updatedAt   DateTime @updatedAt
 
   store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
   membershipServices MembershipService[]
+  eventServices      EventService[]   // ✅ ADD
 
   @@index([storeId])
   @@unique([storeId, name])
@@ -141,4 +145,34 @@ model UserContact {
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+model Event {
+  id          String   @id @default(cuid())
+  storeId     String
+  name        String
+  description String?
+  durationMin Int?
+  active      Boolean  @default(true)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  services    EventService[]          // ✅ ADD
+
+  @@index([storeId])
+  @@unique([storeId, name])
+}
+
+model EventService {
+  eventId   String
+  serviceId String
+
+  event     Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  service   Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@id([eventId, serviceId])
+  @@index([serviceId])
 }
