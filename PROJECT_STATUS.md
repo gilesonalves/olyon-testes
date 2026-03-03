@@ -185,3 +185,25 @@ O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth) possui ago
 | 20/02/2026 | ✅ Ajustes finais no CRUD de Usuários + consolidação de status |
 | 19/02/2026 | ✅ CRUD de Usuários com Perfil e Contatos - Implementado |
 | 13/02/2026 | ✅ CRUD de Serviços - Implementado |
+
+Branch: agendamentos
+
+Último commit: não informado
+
+O que está pronto:
+
+CRUDs existentes: Usuários, Serviços, Equipe, Eventos (com serviços)
+
+Admin: Stores list/new/details/owner + troca de owner (1 owner) + hard delete
+
+Base WhatsApp: webhook + models + persistência (Conversation/Message/Draft/Appointment)
+
+Blocked schedule: endpoints + validações + testes OK
+
+O que está quebrado / pendente:
+
+GET /api/schedule/weekly retornando days=[] apesar de dados existirem (precisa ajustar query/shape do retorno)
+
+UI horarios-de-atendimento ainda mostra “Store não selecionada” em alguns fluxos → precisa padronizar storeId vindo da sessão (sem depender de localStorage)
+
+Próximo passo: corrigir GET /api/schedule/weekly para retornar os dias/intervalos corretamente + alinhar UI com store atual

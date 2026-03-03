@@ -1,6 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
-import { toast } from "sonner"
 
 import {
   blockedScheduleSchema,
@@ -9,7 +8,7 @@ import {
 } from "../schemas"
 
 type UseBlockedScheduleFormControllerProps = {
-  onSuccess?: (data: BlockedScheduleFormValues) => void
+  onSuccess?: (data: BlockedScheduleFormValues) => Promise<void> | void
 }
 
 export function useBlockedScheduleFormController(
@@ -23,20 +22,13 @@ export function useBlockedScheduleFormController(
   // eslint-disable-next-line react-hooks/incompatible-library
   const allDay = form.watch("allDay")
 
-  function onSubmit(data: BlockedScheduleFormValues) {
-    props?.onSuccess?.(data)
-
-    toast.success("Horário bloqueado com sucesso", {
-      position: "bottom-right",
-    })
+  async function onSubmit(data: BlockedScheduleFormValues) {
+    await props?.onSuccess?.(data)
   }
 
   function resetForm() {
     form.reset(defaultBlockedScheduleValues)
   }
-
-
-
 
   return {
     form,

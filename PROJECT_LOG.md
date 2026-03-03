@@ -48,4 +48,43 @@
 
 **Resultado:** Eventos agora é CRUD real completo, multi-tenant e com seleção/persistência de serviços.
 
+CHANGELOG DA SESSÃO
+
+Admin (SUPER_ADMIN)
+
+Rotas padronizadas e funcionando:
+
+/admin/dashboard (dashboard)
+
+/admin/dashboard/stores (listagem de lojas)
+
+/admin/dashboard/stores/new (criação de loja)
+
+/admin/dashboard/stores/[id] (detalhes da loja)
+
+/admin/dashboard/stores/[id]/owner (gerenciar proprietário)
+
+Criação de loja com OWNER (senha definida no fluxo)
+
+Troca de OWNER: ao criar novo proprietário, o anterior é rebaixado para ADMIN (regra “1 owner por loja”)
+
+Hard delete de loja implementado e testado (cascade)
+
+Delete UI melhorada (modal/confirm por nome da loja); DeleteStoreButton antigo pode ser removido se não usado
+
+Agendamentos / WhatsApp (fundação)
+
+Models adicionados: Conversation, ConversationMessage, AppointmentDraft, Appointment
+
+Webhook /api/webhooks/whatsapp funcionando com upsert de conversation + persistência de messages (idempotência por providerMessageId)
+
+Seeds criaram registros e testes via PowerShell confirmaram persistência no Prisma Studio
+
+Início de fluxo “quero agendar” e respostas bot registradas como OUT em ConversationMessage
+
+Horários
+
+APIs de bloqueio (/api/schedule/blocked) testadas: create/list/update/delete + validação de horário (endTime > startTime)
+
+Weekly schedule: persistiu no banco (Prisma Studio mostra WeekScheduleDay/WeekScheduleInterval); GET retornando days=[] indica ajuste pendente no retorno/serializer do endpoint (próximo item de correção)
 ---
