@@ -3,165 +3,173 @@
 import { Switch } from "@/components/ui/switch"
 import { Input } from "@/components/ui/input"
 import { toast } from "sonner"
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 
 type Horario = {
-    horaInicial: string
-    horaFinal: string
+  horaInicial: string
+  horaFinal: string
 }
 
-
 const ROW_GRID =
-    "grid grid-cols-[40px_96px_96px_16px_96px_28px] items-center gap-3"
+  "grid grid-cols-[40px_96px_96px_16px_96px_28px] items-center gap-3"
+
+export type HorariosDayValue = {
+  enabled: boolean
+  horarios: Horario[]
+}
 
 type HorariosProps = {
-    title: string
-    disabledByBlock?: boolean
-    blockedIntervals?: Array<{ startTime: string; endTime: string; date?: string }>
+  title: string
+  value: HorariosDayValue
+  onChange: (next: HorariosDayValue) => void
+
+  disabledByBlock?: boolean
+  blockedIntervals?: Array<{ startTime: string; endTime: string; date?: string }>
 }
 
 export default function Horarios({
-    title,
-    disabledByBlock = false,
-    blockedIntervals,
+  title,
+  value,
+  onChange,
+  disabledByBlock = false,
+  blockedIntervals,
 }: HorariosProps) {
-    const [horaInicial, setHoraInicial] = useState("")
-    const [horaFinal, setHoraFinal] = useState("")
-    const [horarios, setHorarios] = useState<Horario[]>([])
-    const [enabled, setEnabled] = useState(false)
-    const blockedIntervalsCount = blockedIntervals?.length ?? 0
-    const switchId = `habilitar-${title}`.replace(/\s+/g, "-").toLowerCase()
+  const [horaInicial, setHoraInicial] = useState("")
+  const [horaFinal, setHoraFinal] = useState("")
 
-    useEffect(() => {
-        if (disabledByBlock) {
-            setEnabled(false)
-        }
-    }, [disabledByBlock])
+  const blockedIntervalsCount = blockedIntervals?.length ?? 0
+  const switchId = useMemo(
+    () => `habilitar-${title}`.replace(/\s+/g, "-").toLowerCase(),
+    [title]
+  )
 
-  
-    function addHorario() {
-        if (!enabled) {
-            toast.error("Ative o dia para adicionar horários")
-            return
-        }
+  // se o dia está bloqueado "allDay", força disabled no weekly
+  useEffect(() => {
+    if (disabledByBlock && value.enabled) {
+      onChange({ ...value, enabled: false })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [disabledByBlock])
 
-        if (!horaInicial || !horaFinal) {
-            toast.error("Selecione horário inicial e final")
-            return
-        }
-
-        if (horaInicial >= horaFinal) {
-            toast.error("O horário final deve ser maior que o inicial")
-            return
-        }
-
-        setHorarios((prev) => [...prev, { horaInicial, horaFinal }])
-        setHoraInicial("")
-        setHoraFinal("")
+  function addHorario() {
+    if (!value.enabled) {
+      toast.error("Ative o dia para adicionar horários")
+      return
     }
 
-
-    function handleChangeHorario(
-        index: number,
-        field: keyof Horario,
-        value: string
-    ) {
-        setHorarios((prev) =>
-            prev.map((h, i) =>
-                i === index ? { ...h, [field]: value } : h
-            )
-        )
+    if (!horaInicial || !horaFinal) {
+      toast.error("Selecione horário inicial e final")
+      return
     }
 
-    function handleRemoveHorario(index: number) {
-        setHorarios((prev) => prev.filter((_, i) => i !== index))
+    if (horaInicial >= horaFinal) {
+      toast.error("O horário final deve ser maior que o inicial")
+      return
     }
 
-    const inputsDisabled = disabledByBlock || !enabled
+    onChange({
+      ...value,
+      horarios: [...value.horarios, { horaInicial, horaFinal }],
+    })
 
-    return (
-        
-        <div className="space-y-3" data-blocked-intervals={blockedIntervalsCount}>
-            {/* Linha principal */}
-            <div className={ROW_GRID}>
-                <Switch
-                    id={switchId}
-                    checked={enabled}
-                    onCheckedChange={setEnabled}
-                    disabled={disabledByBlock}
-                />
-                <span className="text-sm">{title}</span>
-                <Input
-                    type="time"
-                    step={1800}
-                    value={horaInicial}
-                    onChange={(e) => setHoraInicial(e.target.value)}
-                    disabled={inputsDisabled}
-                    className="h-9 w-24"
-                />
+    setHoraInicial("")
+    setHoraFinal("")
+  }
 
-                <span className="text-center">-</span>
+  function handleChangeHorario(index: number, field: keyof Horario, nextValue: string) {
+    onChange({
+      ...value,
+      horarios: value.horarios.map((h, i) => (i === index ? { ...h, [field]: nextValue } : h)),
+    })
+  }
 
-                <Input
-                    type="time"
-                    step={1800}
-                    value={horaFinal}
-                    onChange={(e) => setHoraFinal(e.target.value)}
-                    disabled={inputsDisabled}
-                    className="h-9 w-24"
-                />
+  function handleRemoveHorario(index: number) {
+    onChange({
+      ...value,
+      horarios: value.horarios.filter((_, i) => i !== index),
+    })
+  }
 
-                <button
-                    type="button"
-                    onClick={addHorario}
-                    disabled={inputsDisabled}
-                    className="flex items-center justify-center rounded p-1
-             hover:bg-gray-100 disabled:opacity-40"
-                >
-                    +
-                </button>
-            </div>
+  const inputsDisabled = disabledByBlock || !value.enabled
 
-            {/* Horários adicionados */}
-            {horarios.map((horario, index) => (
-                <div key={index} className={ROW_GRID}>
-                    <div />
-                    <div />
+  return (
+    <div className="space-y-3" data-blocked-intervals={blockedIntervalsCount}>
+      {/* Linha principal */}
+      <div className={ROW_GRID}>
+        <Switch
+          id={switchId}
+          checked={value.enabled}
+          onCheckedChange={(checked) => onChange({ ...value, enabled: checked })}
+          disabled={disabledByBlock}
+        />
+        <span className="text-sm">{title}</span>
 
-                    <Input
-                        disabled={inputsDisabled}
-                        type="time"
-                        step={1800}
-                        value={horario.horaInicial}
-                        onChange={(e) =>
-                            handleChangeHorario(index, "horaInicial", e.target.value)
-                        }
-                        className="h-9 w-24"
-                    />
+        <Input
+          type="time"
+          step={1800}
+          value={horaInicial}
+          onChange={(e) => setHoraInicial(e.target.value)}
+          disabled={inputsDisabled}
+          className="h-9 w-24"
+        />
 
-                    <span className="text-center">-</span>
+        <span className="text-center">-</span>
 
-                    <Input
-                        disabled={inputsDisabled}
-                        type="time"
-                        step={1800}
-                        value={horario.horaFinal}
-                        onChange={(e) =>
-                            handleChangeHorario(index, "horaFinal", e.target.value)
-                        }
-                        className="h-9 w-24"
-                    />
+        <Input
+          type="time"
+          step={1800}
+          value={horaFinal}
+          onChange={(e) => setHoraFinal(e.target.value)}
+          disabled={inputsDisabled}
+          className="h-9 w-24"
+        />
 
-                    <button
-                        type="button"
-                        onClick={() => handleRemoveHorario(index)}
-                        disabled={inputsDisabled}
-                        className="flex items-center justify-center rounded p-1 hover:bg-gray-100 disabled:opacity-40"
-                    >
-                        🗑
-                    </button>
-                </div>
-            ))}
+        <button
+          type="button"
+          onClick={addHorario}
+          disabled={inputsDisabled}
+          className="flex items-center justify-center rounded p-1 hover:bg-gray-100 disabled:opacity-40"
+        >
+          +
+        </button>
+      </div>
+
+      {/* Horários adicionados */}
+      {value.horarios.map((horario, index) => (
+        <div key={index} className={ROW_GRID}>
+          <div />
+          <div />
+
+          <Input
+            disabled={inputsDisabled}
+            type="time"
+            step={1800}
+            value={horario.horaInicial}
+            onChange={(e) => handleChangeHorario(index, "horaInicial", e.target.value)}
+            className="h-9 w-24"
+          />
+
+          <span className="text-center">-</span>
+
+          <Input
+            disabled={inputsDisabled}
+            type="time"
+            step={1800}
+            value={horario.horaFinal}
+            onChange={(e) => handleChangeHorario(index, "horaFinal", e.target.value)}
+            className="h-9 w-24"
+          />
+
+          <button
+            type="button"
+            onClick={() => handleRemoveHorario(index)}
+            disabled={inputsDisabled}
+            className="flex items-center justify-center rounded p-1 hover:bg-gray-100 disabled:opacity-40"
+          >
+            🗑
+          </button>
         </div>
-    )
+      ))}
+    </div>
+  )
 }
