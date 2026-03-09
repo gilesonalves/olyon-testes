@@ -1,24 +1,26 @@
 "use server"
 
+import bcrypt from "bcryptjs"
 import { getServerSession } from "next-auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
 import { authOptions } from "@/lib/auth-options"
+import { SUPER_ADMIN_ROLE } from "@/lib/auth"
+
 import { createOwnerSchema } from "./create-owner.schema"
-import { hashPassword } from "./create-owner.utils"
 import type { CreateOwnerInput, CreateOwnerResult } from "./create-owner.types"
+
+// ✅ no seu projeto enums aparecem assim:
+import { MembershipRole } from "../../../generated/prisma/enums"
 
 export async function createOwner(
   storeId: string,
   input: CreateOwnerInput
 ): Promise<CreateOwnerResult> {
   const session = await getServerSession(authOptions)
+  if (!session?.user) redirect("/login")
 
-  if (!session?.user) {
-    redirect("/login")
-  }
-
-  if (session.user.globalRole !== "SUPER_ADMIN") {
+  if (session.user.globalRole !== SUPER_ADMIN_ROLE) {
     return {
       success: false,
       error: "FORBIDDEN",
@@ -28,21 +30,14 @@ export async function createOwner(
 
   const parsed = createOwnerSchema.safeParse(input)
   if (!parsed.success) {
-    const message = parsed.error.issues[0]?.message ?? "Dados invalidos"
-    return { success: false, error: "INVALID_INPUT", message }
+    const msg = parsed.error.issues[0]?.message ?? "Dados inválidos"
+    return { success: false, error: "INVALID_INPUT", message: msg }
   }
 
-  const normalizedStoreId = storeId.trim()
-  if (!normalizedStoreId) {
-    return {
-      success: false,
-      error: "STORE_NOT_FOUND",
-      message: "Loja nao encontrada",
-    }
-  }
+  const { name, email, password } = parsed.data
 
   const store = await prisma.store.findUnique({
-    where: { id: normalizedStoreId },
+    where: { id: storeId },
     select: { id: true },
   })
 
@@ -50,11 +45,9 @@ export async function createOwner(
     return {
       success: false,
       error: "STORE_NOT_FOUND",
-      message: "Loja nao encontrada",
+      message: "Loja não encontrada",
     }
   }
-
-  const { name, email, password } = parsed.data
 
   const existingUser = await prisma.user.findUnique({
     where: { email },
@@ -65,55 +58,54 @@ export async function createOwner(
     return {
       success: false,
       error: "EMAIL_ALREADY_EXISTS",
-      message: "Email ja cadastrado",
+      message: "Já existe um usuário com esse e-mail",
     }
   }
 
   try {
-    const hashed = await hashPassword(password)
-
     await prisma.$transaction(async (tx) => {
-      const user = await tx.user.create({
+      // 1) acha owner atual da loja
+      const currentOwnerMembership = await tx.membership.findFirst({
+        where: { storeId, role: MembershipRole.OWNER },
+        select: { id: true },
+      })
+
+      // 2) cria user novo + membership OWNER
+      const passwordHash = await bcrypt.hash(password, 10)
+
+      const newOwner = await tx.user.create({
         data: {
           name,
           email,
-          password: hashed,
+          password: passwordHash,
+          globalRole: null,
         },
+        select: { id: true },
       })
 
       await tx.membership.create({
         data: {
-          userId: user.id,
-          storeId: normalizedStoreId,
-          role: "OWNER",
+          storeId,
+          userId: newOwner.id,
+          role: MembershipRole.OWNER,
         },
       })
+
+      // 3) rebaixa owner antigo para ADMIN (se existir)
+      if (currentOwnerMembership) {
+        await tx.membership.update({
+          where: { id: currentOwnerMembership.id },
+          data: { role: MembershipRole.ADMIN },
+        })
+      }
     })
 
     return { success: true }
-  } catch (error: unknown) {
-    const e = error as { code?: string }
-
-    if (e?.code === "P2002") {
-      return {
-        success: false,
-        error: "EMAIL_ALREADY_EXISTS",
-        message: "Email ja cadastrado",
-      }
-    }
-
-    if (e?.code === "P2003") {
-      return {
-        success: false,
-        error: "STORE_NOT_FOUND",
-        message: "Loja nao encontrada",
-      }
-    }
-
+  } catch {
     return {
       success: false,
       error: "UNKNOWN",
-      message: "Erro ao criar proprietario",
+      message: "Erro ao criar proprietário",
     }
   }
 }

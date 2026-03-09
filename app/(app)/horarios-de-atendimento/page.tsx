@@ -5,6 +5,7 @@ import Horarios from "./components/horarios"
 import {
   useBlockedScheduleFormController,
   useBlockedScheduleListController,
+  useWeekScheduleFormController,
 } from "./controllers"
 
 import { Button } from "@/components/ui/button"
@@ -14,9 +15,10 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { Field, FieldError } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
@@ -27,15 +29,18 @@ import { formatDate } from "@/lib/utils/date"
 import { getWeekdayBlockedInfo } from "./utils/blockedSchedule"
 
 export default function HorariosDeAtendimento() {
+  /** controller WEEKLY (cookie-based) */
+  const weekController = useWeekScheduleFormController()
+
   /** controller da LISTA (bloqueios) */
   const listController = useBlockedScheduleListController()
 
   /** controller do FORM (bloqueios) */
   const formController = useBlockedScheduleFormController({
-    onSuccess: listController.save,
+    onSuccess: listController.refresh,
   })
 
-  const { form, onSubmit, allDay, resetForm } = formController
+  const { form, onSubmit, allDay, resetForm, setEditingItem } = formController
 
   const {
     items,
@@ -59,7 +64,7 @@ export default function HorariosDeAtendimento() {
   ]
 
   return (
-    <div className="bg-white px-6 py-7 w-[500px]">
+    <div className="bg-white px-6 py-7 w-125">
       <div className="pb-6">
         <p>Horários de atendimento</p>
       </div>
@@ -67,19 +72,50 @@ export default function HorariosDeAtendimento() {
       {/* ================== */}
       {/* HORÁRIOS SEMANAIS */}
       {/* ================== */}
-      <FieldGroup className="gap-3">
-        {weekDays.map((day, index) => {
+
+      {weekController.error && (
+        <div className="mb-3 text-sm text-red-600">{weekController.error}</div>
+      )}
+
+      {!weekController.storeReady && (
+        <div className="mb-3 text-xs text-amber-700">
+          Nenhuma loja selecionada. Troque/seleciona uma loja para carregar e salvar os horários.
+        </div>
+      )}
+
+      <div className="gap-3">
+        {weekDays.map((dayLabel, index) => {
           const dayInfo = blockedInfoByWeekday[index]
           const disabledByBlock = dayInfo?.allDay ?? false
           const blockedIntervals = dayInfo?.intervals ?? []
 
+          const dayValue = weekController.form.watch(`days.${index}`)
+          if (!dayValue) return null
+
           return (
-            <div key={day} className="p-3 border rounded-md mb-3 space-y-2">
+            <div key={dayLabel} className="p-3 border rounded-md mb-3 space-y-2">
               <Horarios
-                title={day}
+                title={dayLabel}
                 disabledByBlock={disabledByBlock}
                 blockedIntervals={blockedIntervals}
+                value={{
+                  enabled: dayValue.enabled,
+                  horarios: dayValue.horarios,
+                }}
+                onChange={(next) => {
+                  weekController.form.setValue(
+                    `days.${index}.enabled`,
+                    next.enabled,
+                    { shouldDirty: true }
+                  )
+                  weekController.form.setValue(
+                    `days.${index}.horarios`,
+                    next.horarios,
+                    { shouldDirty: true }
+                  )
+                }}
               />
+
               {disabledByBlock && (
                 <p className="text-xs text-gray-500">
                   Este dia está bloqueado por uma exceção de data.
@@ -88,7 +124,30 @@ export default function HorariosDeAtendimento() {
             </div>
           )
         })}
-      </FieldGroup>
+      </div>
+
+      <div className="mt-4 flex justify-end gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => weekController.form.reset()}
+          disabled={weekController.initialLoading || weekController.loading}
+        >
+          Desfazer
+        </Button>
+
+        <Button
+          type="button"
+          onClick={weekController.form.handleSubmit(weekController.onSubmit)}
+          disabled={
+            weekController.initialLoading ||
+            weekController.loading ||
+            !weekController.storeReady
+          }
+        >
+          Salvar horários semanais
+        </Button>
+      </div>
 
       {/* ================== */}
       {/* HORÁRIOS BLOQUEADOS */}
@@ -103,30 +162,35 @@ export default function HorariosDeAtendimento() {
               if (!open) {
                 closeDialog()
                 resetForm()
+                setEditingItem(null)
               }
             }}
           >
             <DialogTrigger asChild>
               <button
                 type="button"
-                onClick={openForCreate}
+                onClick={() => {
+                  openForCreate()
+                  setEditingItem(null)
+                  resetForm()
+                }}
                 className="inline-flex items-center gap-1 rounded-md border px-3 py-1.5 text-xs"
               >
                 + Adicionar
               </button>
             </DialogTrigger>
 
-            <DialogContent className="sm:max-w-[760px]">
+            <DialogContent className="sm:max-w-190">
               <DialogHeader>
                 <DialogTitle>
                   {editingItem ? "Editar bloqueio" : "Adicionar bloqueio"}
                 </DialogTitle>
+                <DialogDescription className="sr-only">
+                  Defina datas e horários para bloquear o atendimento nesta loja.
+                </DialogDescription>
               </DialogHeader>
 
-              <form
-                onSubmit={form.handleSubmit(onSubmit)}
-                className="space-y-6"
-              >
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
                 <div className="grid gap-6 sm:grid-cols-[1.2fr_1fr]">
                   {/* Datas */}
                   <RHFController
@@ -134,7 +198,7 @@ export default function HorariosDeAtendimento() {
                     control={form.control}
                     render={({ field, fieldState }) => (
                       <Field data-invalid={fieldState.invalid}>
-                        <FieldLabel>Seleção de datas</FieldLabel>
+                        <Label>Seleção de datas</Label>
                         <CalendarMultiSelect
                           selectedDates={field.value ?? []}
                           onChange={field.onChange}
@@ -149,21 +213,23 @@ export default function HorariosDeAtendimento() {
 
                   {/* Horários */}
                   <div className="space-y-4 border-l pl-6">
-                    <FieldGroup className="grid gap-3 grid-cols-2">
+                    <div className="grid gap-3 grid-cols-2">
                       <RHFController
                         name="startTime"
                         control={form.control}
                         render={({ field, fieldState }) => (
                           <Field data-invalid={fieldState.invalid}>
-                            <FieldLabel>Horário inicial</FieldLabel>
+                            <Label>Horário inicial</Label>
                             <Input
-                              {...field}
                               type="time"
+                              value={field.value ?? ""}            // ✅ nunca undefined
+                              onChange={field.onChange}
+                              onBlur={field.onBlur}
+                              name={field.name}
+                              ref={field.ref}
                               disabled={allDay}
                             />
-                            {fieldState.error && (
-                              <FieldError errors={[fieldState.error]} />
-                            )}
+                            {fieldState.error && <FieldError errors={[fieldState.error]} />}
                           </Field>
                         )}
                       />
@@ -173,19 +239,21 @@ export default function HorariosDeAtendimento() {
                         control={form.control}
                         render={({ field, fieldState }) => (
                           <Field data-invalid={fieldState.invalid}>
-                            <FieldLabel>Horário final</FieldLabel>
+                            <Label>Horário final</Label>
                             <Input
-                              {...field}
                               type="time"
+                              value={field.value ?? ""}            // ✅ nunca undefined
+                              onChange={field.onChange}
+                              onBlur={field.onBlur}
+                              name={field.name}
+                              ref={field.ref}
                               disabled={allDay}
                             />
-                            {fieldState.error && (
-                              <FieldError errors={[fieldState.error]} />
-                            )}
+                            {fieldState.error && <FieldError errors={[fieldState.error]} />}
                           </Field>
                         )}
                       />
-                    </FieldGroup>
+                    </div>
 
                     <RHFController
                       name="allDay"
@@ -210,6 +278,7 @@ export default function HorariosDeAtendimento() {
                     onClick={() => {
                       closeDialog()
                       resetForm()
+                      setEditingItem(null)
                     }}
                   >
                     Cancelar
@@ -237,15 +306,23 @@ export default function HorariosDeAtendimento() {
               <div>
                 <div>{formatDate(item.date)}</div>
                 <div className="text-xs text-gray-500">
-                  {item.allDay
-                    ? "Dia inteiro"
-                    : `${item.startTime} - ${item.endTime}`}
+                  {item.allDay ? "Dia inteiro" : `${item.startTime} - ${item.endTime}`}
                 </div>
               </div>
 
-              <div className="flex gap-2 text-sm">
-                <button onClick={() => openForEdit(item)}>Editar</button>
-                <button onClick={() => remove(item.id)}>Remover</button>
+              <div className="flex gap-3 text-sm">
+                <button
+                  type="button"
+                  onClick={() => {
+                    openForEdit(item)
+                    setEditingItem(item) // ✅ sincroniza com o form controller
+                  }}
+                >
+                  Editar
+                </button>
+                <button type="button" onClick={() => remove(item.id)}>
+                  Remover
+                </button>
               </div>
             </div>
           ))

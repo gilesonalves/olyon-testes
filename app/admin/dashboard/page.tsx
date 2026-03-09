@@ -34,12 +34,22 @@ export default async function AdminDashboardPage() {
         <p className="text-muted-foreground mb-4">
           Painel administrativo. (Em breve: usuarios, planos.)
         </p>
-        <Link
-          href="/admin/dashboard/stores/new"
-          className="inline-flex items-center justify-center rounded-md text-sm font-medium h-10 px-4 bg-primary text-primary-foreground hover:bg-primary/90"
-        >
-          Nova loja
-        </Link>
+
+        <div className="flex gap-2">
+          <Link
+            href="/admin/dashboard/stores/new"
+            className="inline-flex items-center justify-center rounded-md text-sm font-medium h-10 px-4 bg-primary text-primary-foreground hover:bg-primary/90"
+          >
+            Nova loja
+          </Link>
+
+          <Link
+            href="/admin/dashboard/stores"
+            className="inline-flex items-center justify-center rounded-md text-sm font-medium h-10 px-4 border"
+          >
+            Ver lojas
+          </Link>
+        </div>
       </main>
     </div>
   )

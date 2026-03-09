@@ -1,30 +1,50 @@
-import { useState } from "react"
-import { BlockedScheduleItem } from "../types"
-import {
-    BlockedScheduleFormValues
-  
-} from "../schemas"
+"use client"
 
-function createId() {
-  return `${Date.now().toString(36)}-${Math.random()
-    .toString(36)
-    .slice(2, 8)}`
-}
+import { useCallback, useEffect, useState } from "react"
+import { toast } from "sonner"
 
-function sortBlockedItems(items: BlockedScheduleItem[]) {
-  return [...items].sort((a, b) => {
-    const dateCompare = a.date.localeCompare(b.date)
-    if (dateCompare !== 0) return dateCompare
-
-    return (a.startTime ?? "").localeCompare(b.startTime ?? "")
-  })
+export type BlockedScheduleItem = {
+  id: string
+  date: string // YYYY-MM-DD
+  allDay: boolean
+  startTime?: string
+  endTime?: string
 }
 
 export function useBlockedScheduleListController() {
   const [items, setItems] = useState<BlockedScheduleItem[]>([])
-  const [editingItem, setEditingItem] =
-    useState<BlockedScheduleItem | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [editingItem, setEditingItem] = useState<BlockedScheduleItem | null>(null)
+
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+
+    try {
+      const res = await fetch("/api/schedule/blocked", { method: "GET" })
+      const json = await res.json()
+
+      if (!res.ok || !json?.ok) {
+        // Ex.: sem loja selecionada (cookie ausente)
+        throw new Error(json?.message ?? "Falha ao carregar bloqueios")
+      }
+
+      setItems((json.data ?? []) as BlockedScheduleItem[])
+    } catch (e: unknown) {
+      const msg = (e as Error)?.message ?? "Erro ao carregar bloqueios"
+      setError(msg)
+      setItems([])
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    refresh()
+  }, [refresh])
 
   function openForCreate() {
     setEditingItem(null)
@@ -37,64 +57,48 @@ export function useBlockedScheduleListController() {
   }
 
   function closeDialog() {
-    setEditingItem(null)
     setDialogOpen(false)
+    setEditingItem(null)
   }
 
-  function save(data: BlockedScheduleFormValues) {
-    const dates = Array.from(new Set(data.dates)).sort()
+  async function remove(id: string) {
+    try {
+      const res = await fetch(`/api/schedule/blocked/${id}`, {
+        method: "DELETE",
+      })
+      const json = await res.json()
 
-    const payload = {
-      allDay: data.allDay,
-      startTime: data.allDay ? undefined : data.startTime,
-      endTime: data.allDay ? undefined : data.endTime,
-    }
-
-    setItems((prev) => {
-      // edição
-      if (editingItem) {
-        const updated = prev.map((item) =>
-          item.id === editingItem.id
-            ? {
-                ...item,
-                date: dates[0],
-                ...payload,
-              }
-            : item
-        )
-        return sortBlockedItems(updated)
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.message ?? "Falha ao remover bloqueio")
       }
 
-      // criação
-      const created: BlockedScheduleItem[] = dates.map((date) => ({
-        id: createId(),
-        date,
-        ...payload,
-      }))
-
-      return sortBlockedItems([...prev, ...created])
-    })
-
-    closeDialog()
-  }
-
-  function remove(id: string) {
-    setItems((prev) => prev.filter((item) => item.id !== id))
-
-    if (editingItem?.id === id) {
-      closeDialog()
+      toast.success("Bloqueio removido")
+      await refresh()
+    } catch (e: unknown) {
+      toast.error((e as Error)?.message ?? "Erro ao remover bloqueio")
     }
   }
+
+  /**
+   * Mantém compatibilidade com sua página:
+   * você chama listController.save no onSuccess do form controller.
+   */
+  const save = refresh
 
   return {
     items,
+    loading,
+    error,
+
     dialogOpen,
     editingItem,
     openForCreate,
     openForEdit,
     closeDialog,
-    save,
+
     remove,
-    setDialogOpen,
+
+    refresh,
+    save,
   }
 }

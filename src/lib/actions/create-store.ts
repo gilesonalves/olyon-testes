@@ -1,12 +1,17 @@
 "use server"
 
+import bcrypt from "bcryptjs"
 import { getServerSession } from "next-auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
 import { authOptions } from "@/lib/auth-options"
+
 import { createStoreSchema } from "./create-store.schema"
 import { generateSlug } from "./create-store.utils"
 import type { CreateStoreInput, CreateStoreResult } from "./create-store.types"
+
+// ✅ no seu projeto o enum está aqui (como aparece no autocomplete)
+import { MembershipRole } from "../../../generated/prisma/enums"
 
 export async function createStore(
   input: CreateStoreInput
@@ -27,17 +32,15 @@ export async function createStore(
 
   const parsed = createStoreSchema.safeParse(input)
   if (!parsed.success) {
-    const msg = parsed.error.issues[0]?.message ?? "Informe o nome da loja"
+    const msg = parsed.error.issues[0]?.message ?? "Dados inválidos"
     return { success: false, error: "INVALID_INPUT", message: msg }
   }
 
-  const name = parsed.data.name
+  const { name, ownerName, ownerEmail, password } = parsed.data
   const slug = generateSlug(name)
 
-  const existing = await prisma.store.findUnique({
-    where: { slug },
-  })
-  if (existing) {
+  const existingStore = await prisma.store.findUnique({ where: { slug } })
+  if (existingStore) {
     return {
       success: false,
       error: "DUPLICATE_SLUG",
@@ -45,11 +48,42 @@ export async function createStore(
     }
   }
 
+  const existingUser = await prisma.user.findUnique({
+    where: { email: ownerEmail },
+  })
+  if (existingUser) {
+    return { success: false, error: "DUPLICATE_EMAIL", message: "Já existe um usuário com esse e-mail" }
+  }
+
   try {
-    const store = await prisma.store.create({
-      data: { name, slug, active: true },
+    const result = await prisma.$transaction(async (tx) => {
+      const store = await tx.store.create({
+        data: { name, slug, active: true },
+      })
+
+      const passwordHash = await bcrypt.hash(password, 10)
+
+      const owner = await tx.user.create({
+        data: {
+          name: ownerName,
+          email: ownerEmail,
+          password: passwordHash,
+          globalRole: null,
+        },
+      })
+
+      await tx.membership.create({
+        data: {
+          storeId: store.id,
+          userId: owner.id,
+          role: MembershipRole.OWNER,
+        },
+      })
+
+      return { storeId: store.id, ownerId: owner.id }
     })
-    return { success: true, storeId: store.id }
+
+    return { success: true, storeId: result.storeId, ownerId: result.ownerId }
   } catch {
     return {
       success: false,
