@@ -1,11 +1,39 @@
 // src/lib/bot/types.ts
+import type { ConversationState } from "../../../generated/prisma/client"
+
+type FlowState = Extract<
+  ConversationState,
+  "IDLE" | "CHOOSING_SERVICE" | "CHOOSING_STAFF" | "CHOOSING_TIME" | "CONFIRMING"
+>
+
+export type BotConversationContext = {
+  timezone?: string | null
+  mainMenuShown?: boolean | null
+  timeSlotSuggestions?:
+    | Array<{
+        startAt: string
+        endAt: string
+        label: string
+      }>
+    | null
+}
 
 export type BotAction =
   | { type: "REPLY_TEXT"; text: string }
-  | { type: "SET_STATE"; state: "IDLE" | "CHOOSING_SERVICE" | "CHOOSING_TIME" | "CONFIRMING" }
+  | { type: "SET_STATE"; state: FlowState }
+  | { type: "PATCH_CONTEXT"; context: Partial<BotConversationContext> }
   | { type: "ENSURE_DRAFT" }
-  | { type: "SELECT_SERVICE_FROM_TEXT"; text: string };
+  | { type: "SELECT_SERVICE_FROM_TEXT"; text: string }
+  | { type: "RESOLVE_STAFF_FOR_DRAFT" }
+  | { type: "SELECT_STAFF_FROM_TEXT"; text: string }
+  | { type: "SUGGEST_TIME_SLOTS" }
+  | { type: "SELECT_SUGGESTED_SLOT"; text: string }
+  | { type: "PARSE_DATETIME_FROM_TEXT"; text: string }
+  | { type: "CHECK_AVAILABILITY_FOR_DRAFT" }
+  | { type: "SAVE_DRAFT_DATETIME" }
+  | { type: "CLEAR_DRAFT_DATETIME" }
+  | { type: "CREATE_APPOINTMENT_FROM_DRAFT" }
 
 export type BotResult = {
-  actions: BotAction[];
-};
+  actions: BotAction[]
+}

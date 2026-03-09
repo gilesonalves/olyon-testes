@@ -1,57 +1,252 @@
 // src/lib/bot/flow.ts
-import type { ConversationState } from "../../../generated/prisma/client";
-import type { BotResult } from "./types";
+import type { ConversationState } from "../../../generated/prisma/client"
+import { normalizeBotText } from "./datetime"
+import type { BotAction, BotConversationContext, BotResult } from "./types"
 
-function includesAny(text: string, words: string[]) {
-  const t = text.toLowerCase();
-  return words.some((w) => t.includes(w.toLowerCase()));
+const WELCOME_MENU_TEXT = `Ola! Seja bem-vindo(a).
+Como posso te ajudar hoje?
+
+1. Agendar horario
+2. Desmarcar ou remarcar
+3. Informacoes de atendimento
+
+Pode responder com o numero ou me escrever o que voce precisa.`
+
+const IDLE_FALLBACK_TEXT = `Posso te ajudar com:
+1. Agendar horario
+2. Desmarcar ou remarcar
+3. Informacoes de atendimento
+
+Pode responder com o numero ou me escrever o que voce precisa.`
+
+const RESCHEDULE_FALLBACK_TEXT =
+  "Ainda nao consigo desmarcar ou remarcar automaticamente por aqui. Se voce me disser o que precisa, eu te oriento com a melhor alternativa disponivel."
+
+const INFO_FALLBACK_TEXT =
+  "Ainda nao tenho endereco e horarios configurados neste canal. Se voce quiser, posso te ajudar a iniciar um agendamento por aqui."
+
+function matchesAny(text: string, expressions: string[]) {
+  const normalizedText = normalizeBotText(text)
+
+  return expressions.some((expression) => {
+    const normalizedExpression = normalizeBotText(expression)
+    const escapedExpression = normalizedExpression.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    return new RegExp(`(^|\\b)${escapedExpression}(\\b|$)`).test(normalizedText)
+  })
+}
+
+function matchesMenuOption(text: string, option: "1" | "2" | "3") {
+  const normalizedText = normalizeBotText(text)
+  return new RegExp(`(^|\\b)${option}(\\b|$)`).test(normalizedText)
+}
+
+function isStandaloneNumericChoice(text: string) {
+  return /^\d{1,2}$/.test(normalizeBotText(text))
+}
+
+function isSchedulingIntent(text: string) {
+  return (
+    matchesMenuOption(text, "1") ||
+    matchesAny(text, [
+      "quero agendar",
+      "agendar",
+      "agendamento",
+      "marcar horario",
+      "marcar",
+      "reservar horario",
+    ])
+  )
+}
+
+function isRescheduleIntent(text: string) {
+  return (
+    matchesMenuOption(text, "2") ||
+    matchesAny(text, [
+      "desmarcar",
+      "remarcar",
+      "reagendar",
+      "cancelar agendamento",
+      "cancelar horario",
+      "alterar horario",
+    ])
+  )
+}
+
+function isInfoIntent(text: string) {
+  return (
+    matchesMenuOption(text, "3") ||
+    matchesAny(text, [
+      "horario de atendimento",
+      "horarios de atendimento",
+      "funcionamento",
+      "endereco",
+      "localizacao",
+      "onde fica",
+      "informacoes de atendimento",
+    ])
+  )
+}
+
+function isGreeting(text: string) {
+  return matchesAny(text, [
+    "oi",
+    "ola",
+    "bom dia",
+    "boa tarde",
+    "boa noite",
+    "opa",
+    "e ai",
+    "tudo bem",
+  ])
+}
+
+function buildStartSchedulingActions(): BotAction[] {
+  return [
+    { type: "PATCH_CONTEXT", context: { mainMenuShown: false } },
+    { type: "ENSURE_DRAFT" },
+    { type: "SET_STATE", state: "CHOOSING_SERVICE" },
+    {
+      type: "REPLY_TEXT",
+      text: "Perfeito! Qual servico voce quer agendar? (ex: unha, cabelo e barba)",
+    },
+  ]
 }
 
 export function handleIncomingMessage(params: {
-  state: ConversationState;
-  text: string | null;
+  state: ConversationState
+  text: string | null
+  context?: BotConversationContext | null
 }): BotResult {
-  const text = (params.text ?? "").trim();
+  const text = (params.text ?? "").trim()
+  const mainMenuShown = params.context?.mainMenuShown === true
 
   if (!text) {
     return {
       actions: [
         {
           type: "REPLY_TEXT",
-          text: "Pode me mandar uma mensagem com o que você precisa? 🙂",
+          text: "Pode me mandar uma mensagem com o que voce precisa?",
         },
       ],
-    };
+    }
   }
 
-  // Se já estamos esperando o serviço, a próxima msg vira tentativa de serviço
   if (params.state === "CHOOSING_SERVICE") {
     return {
       actions: [
         { type: "ENSURE_DRAFT" },
         { type: "SELECT_SERVICE_FROM_TEXT", text },
+        { type: "RESOLVE_STAFF_FOR_DRAFT" },
       ],
-    };
+    }
   }
 
-  // Gatilho para iniciar fluxo de agendamento
-  if (includesAny(text, ["agendar", "marcar", "agenda"])) {
+  if (params.state === "CHOOSING_STAFF") {
     return {
       actions: [
         { type: "ENSURE_DRAFT" },
-        { type: "SET_STATE", state: "CHOOSING_SERVICE" },
-        {
-          type: "REPLY_TEXT",
-          text: "Perfeito! Qual serviço você quer agendar? (ex: unha, cabelo e barba)",
-        },
+        { type: "SELECT_STAFF_FROM_TEXT", text },
       ],
-    };
+    }
   }
 
-  // fallback
+  if (params.state === "CHOOSING_TIME") {
+    if (isStandaloneNumericChoice(text)) {
+      return {
+        actions: [
+          { type: "ENSURE_DRAFT" },
+          { type: "SELECT_SUGGESTED_SLOT", text },
+          { type: "CHECK_AVAILABILITY_FOR_DRAFT" },
+          { type: "SAVE_DRAFT_DATETIME" },
+          { type: "SET_STATE", state: "CONFIRMING" },
+        ],
+      }
+    }
+
+    return {
+      actions: [
+        { type: "ENSURE_DRAFT" },
+        { type: "PARSE_DATETIME_FROM_TEXT", text },
+        { type: "CHECK_AVAILABILITY_FOR_DRAFT" },
+        { type: "SAVE_DRAFT_DATETIME" },
+        { type: "SET_STATE", state: "CONFIRMING" },
+      ],
+    }
+  }
+
+  if (params.state === "CONFIRMING") {
+    if (matchesAny(text, ["sim", "confirmo", "confirmar", "pode confirmar", "ok"])) {
+      return {
+        actions: [
+          { type: "ENSURE_DRAFT" },
+          { type: "CREATE_APPOINTMENT_FROM_DRAFT" },
+          { type: "SET_STATE", state: "IDLE" },
+        ],
+      }
+    }
+
+    if (matchesAny(text, ["nao", "cancelar", "mudar horario", "outro horario", "escolher outro"])) {
+      return {
+        actions: [
+          { type: "ENSURE_DRAFT" },
+          { type: "CLEAR_DRAFT_DATETIME" },
+          { type: "SET_STATE", state: "CHOOSING_TIME" },
+          { type: "REPLY_TEXT", text: "Sem problema. Vou manter o profissional escolhido." },
+          { type: "SUGGEST_TIME_SLOTS" },
+        ],
+      }
+    }
+
+    return {
+      actions: [
+        {
+          type: "REPLY_TEXT",
+          text: "Responda SIM para confirmar ou NAO para escolher outro horario.",
+        },
+      ],
+    }
+  }
+
+  if (isSchedulingIntent(text)) {
+    return {
+      actions: buildStartSchedulingActions(),
+    }
+  }
+
+  if (isRescheduleIntent(text)) {
+    return {
+      actions: [
+        { type: "PATCH_CONTEXT", context: { mainMenuShown: false } },
+        { type: "REPLY_TEXT", text: RESCHEDULE_FALLBACK_TEXT },
+      ],
+    }
+  }
+
+  if (isInfoIntent(text)) {
+    return {
+      actions: [
+        { type: "PATCH_CONTEXT", context: { mainMenuShown: false } },
+        { type: "REPLY_TEXT", text: INFO_FALLBACK_TEXT },
+      ],
+    }
+  }
+
+  if (!mainMenuShown) {
+    return {
+      actions: [
+        { type: "PATCH_CONTEXT", context: { mainMenuShown: true } },
+        { type: "REPLY_TEXT", text: WELCOME_MENU_TEXT },
+      ],
+    }
+  }
+
+  if (isGreeting(text)) {
+    return {
+      actions: [{ type: "REPLY_TEXT", text: IDLE_FALLBACK_TEXT }],
+    }
+  }
+
   return {
-    actions: [
-      { type: "REPLY_TEXT", text: "Para agendar, diga: “quero agendar” 🙂" },
-    ],
-  };
+    actions: [{ type: "REPLY_TEXT", text: IDLE_FALLBACK_TEXT }],
+  }
 }
