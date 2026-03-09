@@ -1,209 +1,161 @@
 # PROJECT_STATUS.md
 
-**Data de última atualização:** 25 de fevereiro de 2026
+**Data de ultima atualizacao:** 9 de marco de 2026
 
-## Status Geral do Projeto Olyon
+## Status geral do projeto Olyon
 
-### Estado atual: ✅ CRUD de Usuários + ✅ CRUD de Serviços + ✅ CRUD de Equipe + ✅ CRUD de Eventos (com serviços)
+### Estado atual
 
----
-
-## 1. RESUMO EXECUTIVO
-
-O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth) possui agora:
-
-- ✅ **CRUD completo de Usuários** com persistência de **perfil** e **contatos**
-- ✅ **CRUD completo de Serviços** com persistência por loja (multi-tenant)
-- ✅ **CRUD completo de Equipe** (Membership + tipos + serviços)
-- ✅ **CRUD completo de Eventos** com:
-  - persistência real
-  - ativar/desativar (active)
-  - deletar
-  - vínculo com **serviços** (seleção no modal e persistência via tabela de relação)
-- ✅ **Segurança por role e loja:** Guards aplicados em todas as rotas
-- ✅ **Padrão consistente:** Route Handlers + Zod + respostas padronizadas + UI list/create/edit/delete
-- ✅ **Admin (SUPER_ADMIN):** criação de dono/admin já define senha inicial (melhora UX e elimina senha “oculta”)
+[x] CRUD de Usuarios  
+[x] CRUD de Servicos  
+[x] CRUD de Equipe  
+[x] CRUD de Eventos  
+[x] Horarios semanais e bloqueios de agenda  
+[x] Fluxo WhatsApp de agendamento ate a criacao do `Appointment`  
+[x] Selecao de profissional no fluxo WhatsApp  
+[x] Entrada conversacional com boas-vindas e menu inicial hibrido
+[x] Sugestao ativa de horarios com escolha por numero no WhatsApp
+[x] Massa minima real de seed para teste do fluxo WhatsApp
 
 ---
 
-## 2. CHECKLIST DE IMPLEMENTAÇÃO
+## 1. Resumo executivo
 
-### A) Usuários — ✅ Concluído
+O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) possui hoje:
 
-#### Prisma
-- [x] Model `UserProfile` criado (userId, cpf unique opcional, campos de perfil, timestamps)
-- [x] Model `UserContact` criado (userId, name, phone, relationship, timestamps)
-- [x] Model `User` atualizado (relations: profile, contacts)
-- [x] Prisma client regenerado em `./generated/prisma`
-
-#### Validação (Zod)
-- [x] Schemas nested (profile/contacts) em `src/lib/validators/user.ts`
-
-#### APIs (Route Handlers)
-- [x] GET `/api/users` (STAFF+)
-- [x] POST `/api/users` (ADMIN+)
-- [x] GET `/api/users/[id]` (ADMIN+)
-- [x] PUT `/api/users/[id]` (ADMIN+)
-- [x] DELETE `/api/users/[id]` (ADMIN+)
-
-#### UI/UX
-- [x] `/usuarios` listagem
-- [x] `/usuarios/novo` create
-- [x] `/usuarios/[id]` edit
-- [x] Correção: enviar `contacts: []` permite remover todos os contatos
+- CRUD real e multi-tenant de Usuarios, Servicos, Equipe e Eventos.
+- APIs de horarios semanais e bloqueios de agenda persistidas em Prisma.
+- Base de conversas WhatsApp com `Conversation`, `ConversationMessage`, `AppointmentDraft` e `Appointment`.
+- Fluxo de bot via WhatsApp com menu inicial hibrido, selecao de servico, resolucao de profissional, sugestao ativa de horarios, escolha de horario por numero ou texto livre, confirmacao e criacao final do agendamento.
+- Respostas JSON consistentes, validacoes no servidor e escopo por loja.
+- Seed oficial com massa minima idempotente para validar agenda, bloqueios, conflitos e equipe no canal WhatsApp.
 
 ---
 
-### B) Serviços — ✅ Concluído
+## 2. Entregas concluidas
 
-- [x] Model `Service` com `storeId` e timestamps
-- [x] Validators Zod (`lib/validators/service.ts`)
-- [x] APIs:
-  - [x] GET/POST `/api/services`
-  - [x] PUT/DELETE `/api/services/[id]`
-- [x] UI `/servicos` integrada com API real (sem mock)
-- [x] Testes manuais: create/list/edit/delete + refresh
+### A) CRUDs principais
 
----
+- [x] Usuarios
+- [x] Servicos
+- [x] Equipe
+- [x] Eventos com vinculo de servicos
 
-### C) Equipe — ✅ Concluído
+### B) Agenda
 
-- [x] Persistência via Membership (storeId + userId + role)
-- [x] Tabelas auxiliares:
-  - [x] `MembershipTypeLink` (tipos extras)
-  - [x] `MembershipService` (serviços do profissional)
-- [x] APIs:
-  - [x] GET `/api/team` (STAFF+)
-  - [x] POST `/api/team` (ADMIN+)
-  - [x] GET `/api/team/[id]` (STAFF+)
-  - [x] PUT `/api/team/[id]` (ADMIN+)
-  - [x] DELETE `/api/team/[id]` (ADMIN+)
-- [x] UI integrada: list/create/edit/delete + refresh
+- [x] `WeekScheduleDay`
+- [x] `WeekScheduleInterval`
+- [x] `BlockedSchedule`
+- [x] Endpoints para horario semanal
+- [x] Endpoints para bloqueios de agenda
 
----
+### C) WhatsApp / Agendamento
 
-### D) Eventos — ✅ Concluído
-
-#### Prisma
-- [x] Model `Event` com `storeId`, `active`, timestamps
-- [x] Relação Event ↔ Service via tabela de junção (`EventService`)
-- [x] Prisma client regenerado em `./generated/prisma`
-
-#### Validação (Zod)
-- [x] `EventCreateSchema` (inclui `serviceIds`)
-- [x] `EventUpdateSchema` (inclui `active` e opcional `serviceIds`)
-- [x] Re-export correto em `app/(app)/eventos/schemas/index.ts`
-
-#### APIs (Route Handlers)
-- [x] GET `/api/events` (STAFF+) — lista por storeId
-- [x] POST `/api/events` (ADMIN+) — cria evento + vincula services
-- [x] GET `/api/events/[id]` (STAFF+) — por loja
-- [x] PUT `/api/events/[id]` (ADMIN+) — atualiza `active` e (quando enviado) sincroniza services
-- [x] DELETE `/api/events/[id]` (ADMIN+) — remove evento por loja
-- [x] Correção importante: handler `[id]` resiliente para obter `id` (fallback) evitando falha por `params` indefinido
-
-#### UI/UX
-- [x] `/eventos` listagem real (GET)
-- [x] Modal “Novo item” cria evento real (POST)
-- [x] Serviços no modal carregam de `/api/services` e persistem no evento
-- [x] Toggle “Habilitar” (PUT active)
-- [x] Deletar (DELETE)
-- [x] Testes manuais: create/list/toggle/delete + refresh
+- [x] Upsert de `Conversation`
+- [x] Persistencia de `ConversationMessage`
+- [x] Garantia de `AppointmentDraft` ativo
+- [x] Menu inicial com boas-vindas em `IDLE`
+- [x] Aceite de opcoes por numero (`1`, `2`, `3`) ou texto livre
+- [x] Atalho direto para intencoes claras sem passar pelo menu
+- [x] Fallback inicial mais amigavel sem repetir o menu desnecessariamente
+- [x] Selecao de servico por texto
+- [x] Resolucao de profissional elegivel por `Membership` + `MembershipService`
+- [x] Auto-selecao quando existe 1 profissional elegivel
+- [x] Estado `CHOOSING_STAFF` quando existem 2 ou mais profissionais elegiveis
+- [x] Selecao de profissional por numero ou nome
+- [x] Estado `CHOOSING_TIME`
+- [x] Sugestao ativa de 3 a 5 horarios ao entrar em `CHOOSING_TIME`
+- [x] Persistencia de sugestoes em `conversation.context`
+- [x] Escolha de horario sugerido por numero
+- [x] Parser de data/hora textual
+- [x] Validacao real de disponibilidade
+- [x] Persistencia de `startAt` e `endAt` no draft
+- [x] Estado `CONFIRMING`
+- [x] Confirmacao via `SIM`
+- [x] Retorno para `CHOOSING_TIME` via `NAO`
+- [x] Criacao final de `Appointment`
+- [x] Idempotencia de inbound por `providerMessageId`
+- [x] Sugestao de horarios proximos quando o slot pedido nao estiver disponivel
+- [x] Seed oficial (`prisma/seed.ts`) com loja, servico, profissionais, agenda, bloqueio e appointment existente
 
 ---
 
-## 3. SEGURANÇA / GUARDS
+## 3. Regras de comportamento implementadas
 
-- [x] **STAFF:** pode listar (rotas de leitura)
-- [x] **ADMIN/OWNER:** podem criar/editar/remover (mutations)
-- [x] **Escopo por loja:** storeId vem sempre da sessão (nunca do payload)
-- [x] **Admin SUPER_ADMIN:** acesso restrito ao painel admin; criação de owner/admin com senha inicial definida
-
----
-
-## 4. TESTES REALIZADOS (mínimo)
-
-- [x] Dev server inicia sem problemas
-- [x] Usuários: create/list/edit/delete + refresh
-- [x] Serviços: create/list/edit/delete + refresh
-- [x] Equipe: create/list/edit/delete + refresh
-- [x] Eventos: create/list/toggle active/delete + refresh
-
-> Observação: `yarn lint` pode falhar por um arquivo antigo de Horários (pendência fora do escopo atual).
+- [x] Saudacao simples em `IDLE` abre com boas-vindas + menu
+- [x] Intencao clara de agendar ignora o menu e vai direto para `CHOOSING_SERVICE`
+- [x] Intencao de desmarcar/remarcar responde com fallback honesto
+- [x] Intencao de informacoes responde com fallback seguro e objetivo
+- [x] `conversation.context.mainMenuShown` evita repetir o menu completo em toda mensagem
+- [x] `conversation.context.timeSlotSuggestions` guarda os slots sugeridos para escolha por numero
+- [x] Estados existentes do agendamento foram preservados
+- [x] Conflito de disponibilidade continua considerando o profissional escolhido
+- [x] Texto livre para horario continua funcionando como fallback
 
 ---
 
-## 5. ARQUIVOS ALTERADOS / CRIADOS (alto nível)
+## 4. Observacoes operacionais
 
-### Usuários
-- `app/(app)/usuarios/**`
-- `app/api/users/**`
-- `src/lib/validators/user.ts`
-- `prisma/schema.prisma`
-- `prisma/migrations/**`
-
-### Serviços
-- `app/(app)/servicos/**`
-- `app/api/services/**`
-- `src/lib/validators/service.ts`
-- `prisma/schema.prisma`
-- `prisma/migrations/**`
-
-### Equipe
-- `app/(app)/equipe/**`
-- `app/api/team/**`
-- `prisma/schema.prisma`
-- `prisma/migrations/**`
-
-### Eventos
-- `app/(app)/eventos/**`
-- `app/api/events/**`
-- `prisma/schema.prisma`
-- `prisma/migrations/**`
-
-### Admin (senha inicial do owner)
-- `src/lib/actions/create-owner.*`
-- UI do admin de criação de owner
+- Como o fluxo atual ainda nao coleta nome do cliente, `Appointment.customerName` usa fallback `Cliente WhatsApp` quando o draft nao traz nome.
+- O timezone do bot usa `conversation.context.timezone` quando existir; caso contrario usa `WHATSAPP_SCHEDULING_TIMEZONE`, depois `APP_TIMEZONE`, e por fim `America/Sao_Paulo`.
+- Quando existe `Appointment` sem profissional (`staffMembershipId = null`), ele continua sendo tratado como bloqueio geral da loja para evitar sobreposicao ambigua.
+- O modelo atual nao possui flag de ativo para `Membership`, entao a elegibilidade considera profissional da loja com tipo `PROFISSIONAL` e vinculo ao servico.
+- As opcoes 2 e 3 do menu ainda usam fallback honesto, porque desmarcar/remarcar e informacoes detalhadas de atendimento nao estao implementados neste canal.
+- As sugestoes numeradas sao sempre revalidadas antes de salvar ou confirmar o slot, para evitar confirmar horario que ficou indisponivel.
+- O seed oficial foi ajustado para nao deixar appointment antigo sem profissional bloqueando a loja inteira durante os testes.
 
 ---
 
-## 6. PRÓXIMOS PASSOS (PRIORIDADE)
+## 5. Verificacoes realizadas
 
-1) **CRUD de Agendamentos** (depende de Eventos + Equipe + Serviços)
-2) **CRUD de Horários de Atendimento**
-3) **Financeiro** (Entradas/Saídas, Contas a pagar, Controle de pagamentos)
-4) **Usuários (extras):** busca/filtro, paginação, auditoria, soft-delete
-5) **Polimento:** warnings/linters pendentes (ex.: dialog description, horários)
+- [x] `yarn eslint app/api/webhooks/whatsapp/route.ts src/lib/appointments/availability.ts src/lib/bot/flow.ts src/lib/bot/types.ts prisma/seed.ts`
+- [x] Smoke test local do flow com:
+  - [x] `oi`
+  - [x] `1`
+  - [x] `2`
+  - [x] `3`
+  - [x] `quero agendar cabelo`
+  - [x] fallback generico com `mainMenuShown = true`
+  - [x] `CHOOSING_TIME` com escolha por numero
+  - [x] `CHOOSING_TIME` com texto livre
+  - [x] `CONFIRMING` com retorno para sugestoes via `NAO`
+
+Observacao:
+
+- `yarn tsc --noEmit --ignoreDeprecations 5.0` continua falhando por erros antigos fora do escopo desta entrega (`.next/dev/types`, `usuarios/controllers`, `auth-options`, `seed`, etc.), mas nao apontou erros novos nos arquivos desta feature.
 
 ---
 
-## Histórico de Alterações
+## 6. Arquivos principais desta etapa
 
-| Data | Mudança |
+- `app/api/webhooks/whatsapp/route.ts`
+- `src/lib/appointments/availability.ts`
+- `src/lib/bot/flow.ts`
+- `src/lib/bot/types.ts`
+- `prisma/seed.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+---
+
+## 7. Proximos passos
+
+1. Implementar desmarcacao/remarcacao real no canal WhatsApp.
+2. Disponibilizar dados reais de atendimento no menu de informacoes quando o produto tiver esses campos.
+3. Coletar nome do cliente no fluxo WhatsApp antes da confirmacao final.
+4. Evoluir disponibilidade por profissional para agendas individuais quando o produto suportar agenda propria por staff.
+5. Limpar type errors e warnings antigos fora do escopo da feature.
+
+---
+
+## 8. Historico resumido
+
+| Data | Mudanca |
 |------|---------|
-| 25/02/2026 | ✅ Eventos: CRUD real com serviços + toggle + delete; Admin: criação de owner com senha inicial |
-| 20/02/2026 | ✅ Ajustes finais no CRUD de Usuários + consolidação de status |
-| 19/02/2026 | ✅ CRUD de Usuários com Perfil e Contatos - Implementado |
-| 13/02/2026 | ✅ CRUD de Serviços - Implementado |
-
-Branch: agendamentos
-
-Último commit: não informado
-
-O que está pronto:
-
-CRUDs existentes: Usuários, Serviços, Equipe, Eventos (com serviços)
-
-Admin: Stores list/new/details/owner + troca de owner (1 owner) + hard delete
-
-Base WhatsApp: webhook + models + persistência (Conversation/Message/Draft/Appointment)
-
-Blocked schedule: endpoints + validações + testes OK
-
-O que está quebrado / pendente:
-
-GET /api/schedule/weekly retornando days=[] apesar de dados existirem (precisa ajustar query/shape do retorno)
-
-UI horarios-de-atendimento ainda mostra “Store não selecionada” em alguns fluxos → precisa padronizar storeId vindo da sessão (sem depender de localStorage)
-
-Próximo passo: corrigir GET /api/schedule/weekly para retornar os dias/intervalos corretamente + alinhar UI com store atual
+| 09/03/2026 | WhatsApp: sugestao ativa de horarios com escolha por numero em `CHOOSING_TIME` e seed minima real para teste fim a fim |
+| 09/03/2026 | WhatsApp: entrada conversacional com boas-vindas, menu inicial hibrido e atalhos diretos em `IDLE` |
+| 09/03/2026 | WhatsApp: selecao de profissional com auto-selecao, escolha por numero/nome e conflito de agenda por profissional |
+| 09/03/2026 | WhatsApp: fluxo completo de agendamento com parse de data/hora, disponibilidade real, confirmacao e criacao de `Appointment` |
+| 25/02/2026 | Eventos: CRUD real com servicos e melhoria no admin para senha inicial do owner |
+| 20/02/2026 | Ajustes finais no CRUD de Usuarios |
+| 19/02/2026 | CRUD de Usuarios com Perfil e Contatos |
