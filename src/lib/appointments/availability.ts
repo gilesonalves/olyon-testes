@@ -95,6 +95,7 @@ type AvailabilityContext = {
   stepMin: number
   searchDays: number
   staffMembershipId: string | null
+  ignoreAppointmentId: string | null
   workingDaysByWeekday: Map<Weekday, WorkingDay>
   blockedByDateKey: Map<string, BlockedWindow[]>
   appointments: AppointmentWindow[]
@@ -200,6 +201,7 @@ export async function checkAvailabilityForSlot(params: {
   durationMin: number
   timeZone: string
   staffMembershipId?: string | null
+  ignoreAppointmentId?: string | null
   suggestionsLimit?: number
   searchDays?: number
   stepMin?: number
@@ -218,6 +220,7 @@ export async function checkAvailabilityForSlot(params: {
     searchDays,
     stepMin,
     staffMembershipId: params.staffMembershipId ?? null,
+    ignoreAppointmentId: params.ignoreAppointmentId ?? null,
   })
 
   const requestedEndAt = addMinutes(params.requestedStartAt, params.durationMin)
@@ -248,6 +251,7 @@ export async function listNextAvailableSlots(params: {
   durationMin: number
   timeZone: string
   staffMembershipId?: string | null
+  ignoreAppointmentId?: string | null
   searchStartAt?: Date
   limit?: number
   searchDays?: number
@@ -268,6 +272,7 @@ export async function listNextAvailableSlots(params: {
     searchDays,
     stepMin,
     staffMembershipId: params.staffMembershipId ?? null,
+    ignoreAppointmentId: params.ignoreAppointmentId ?? null,
   })
 
   return findSuggestedSlots(context, searchStartAt, limit)
@@ -282,6 +287,7 @@ async function buildAvailabilityContext(params: {
   searchDays: number
   stepMin: number
   staffMembershipId: string | null
+  ignoreAppointmentId: string | null
 }) {
   const lastDateKey = addDaysToDateKey(params.requestedDateKey, params.searchDays - 1)
   const appointmentRangeStart = combineDateKeyAndTime(params.requestedDateKey, "00:00", params.timeZone)
@@ -313,6 +319,13 @@ async function buildAvailabilityContext(params: {
         status: { in: [AppointmentStatus.SCHEDULED, AppointmentStatus.CONFIRMED] },
         startAt: { lt: appointmentRangeEnd },
         endAt: { gt: appointmentRangeStart },
+        ...(params.ignoreAppointmentId
+          ? {
+              id: {
+                not: params.ignoreAppointmentId,
+              },
+            }
+          : {}),
         ...(params.staffMembershipId
           ? {
               OR: [
@@ -365,6 +378,7 @@ async function buildAvailabilityContext(params: {
     stepMin: params.stepMin,
     searchDays: params.searchDays,
     staffMembershipId: params.staffMembershipId,
+    ignoreAppointmentId: params.ignoreAppointmentId,
     workingDaysByWeekday,
     blockedByDateKey,
     appointments,

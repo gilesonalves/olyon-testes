@@ -4,6 +4,10 @@ import Link from "next/link"
 import { authOptions } from "@/lib/auth-options"
 import { SUPER_ADMIN_ROLE } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { toStorePublicInfoFormValues } from "@/lib/store/public-info"
+import { StorePublicInfoForm } from "./store-public-info-form"
+import { StoreWhatsAppConnectionForm } from "./store-whatsapp-connection-form"
+import { whatsAppConnectionEditableSelect } from "@/lib/whatsapp/admin-connection"
 
 type Props = {
   params: Promise<{ id: string }>
@@ -29,6 +33,19 @@ export default async function AdminStoreDetailsPage({ params }: Props) {
       name: true,
       slug: true,
       active: true,
+      phone: true,
+      whatsappPhone: true,
+      address: true,
+      complement: true,
+      neighborhood: true,
+      city: true,
+      state: true,
+      zipcode: true,
+      serviceObservations: true,
+      businessHoursSummary: true,
+      whatsappConnection: {
+        select: whatsAppConnectionEditableSelect,
+      },
       createdAt: true,
       memberships: {
         where: { role: "OWNER" }, // se quiser tipar com enum depois, ajustamos
@@ -92,6 +109,34 @@ export default async function AdminStoreDetailsPage({ params }: Props) {
           <div>
             <b>Criada em:</b> {new Date(store.createdAt).toLocaleString("pt-BR")}
           </div>
+        </div>
+
+        <div className="border rounded-lg p-4 space-y-4">
+          <div>
+            <h2 className="font-semibold">Informacoes publicas da loja</h2>
+            <p className="text-sm text-muted-foreground">
+              Esses dados alimentam a opcao 3 do menu do WhatsApp.
+            </p>
+          </div>
+
+          <StorePublicInfoForm
+            storeId={store.id}
+            initialValues={toStorePublicInfoFormValues(store)}
+          />
+        </div>
+
+        <div className="border rounded-lg p-4 space-y-4">
+          <div>
+            <h2 className="font-semibold">Conexao WhatsApp</h2>
+            <p className="text-sm text-muted-foreground">
+              Configuracao tecnica da integracao Meta/WhatsApp desta loja.
+            </p>
+          </div>
+
+          <StoreWhatsAppConnectionForm
+            storeId={store.id}
+            initialConnection={store.whatsappConnection}
+          />
         </div>
 
         <div className="border rounded-lg p-4 space-y-2">

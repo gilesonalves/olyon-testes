@@ -19,11 +19,9 @@ const IDLE_FALLBACK_TEXT = `Posso te ajudar com:
 
 Pode responder com o numero ou me escrever o que voce precisa.`
 
-const RESCHEDULE_FALLBACK_TEXT =
-  "Ainda nao consigo desmarcar ou remarcar automaticamente por aqui. Se voce me disser o que precisa, eu te oriento com a melhor alternativa disponivel."
-
-const INFO_FALLBACK_TEXT =
-  "Ainda nao tenho endereco e horarios configurados neste canal. Se voce quiser, posso te ajudar a iniciar um agendamento por aqui."
+const APPOINTMENT_ACTION_MENU_TEXT = `O que voce deseja fazer?
+1. Desmarcar
+2. Remarcar`
 
 function matchesAny(text: string, expressions: string[]) {
   const normalizedText = normalizeBotText(text)
@@ -72,15 +70,34 @@ function isRescheduleIntent(text: string) {
   )
 }
 
+function isCancelAppointmentChoice(text: string) {
+  return matchesMenuOption(text, "1") || matchesAny(text, ["desmarcar", "cancelar", "cancelar agendamento"])
+}
+
+function isRescheduleAppointmentChoice(text: string) {
+  return (
+    matchesMenuOption(text, "2") ||
+    matchesAny(text, ["remarcar", "reagendar", "alterar horario", "mudar horario"])
+  )
+}
+
 function isInfoIntent(text: string) {
   return (
     matchesMenuOption(text, "3") ||
     matchesAny(text, [
+      "informacao",
+      "informacoes",
       "horario de atendimento",
+      "horario",
+      "horarios",
       "horarios de atendimento",
       "funcionamento",
       "endereco",
       "localizacao",
+      "telefone",
+      "whatsapp",
+      "contato",
+      "contatos",
       "onde fica",
       "informacoes de atendimento",
     ])
@@ -102,7 +119,17 @@ function isGreeting(text: string) {
 
 function buildStartSchedulingActions(): BotAction[] {
   return [
-    { type: "PATCH_CONTEXT", context: { mainMenuShown: false } },
+    {
+      type: "PATCH_CONTEXT",
+      context: {
+        mainMenuShown: false,
+        appointmentOptions: null,
+        selectedAppointmentId: null,
+        selectedAppointmentLabel: null,
+        rescheduleAppointmentId: null,
+        timeSlotSuggestions: null,
+      },
+    },
     { type: "ENSURE_DRAFT" },
     { type: "SET_STATE", state: "CHOOSING_SERVICE" },
     {
@@ -110,6 +137,14 @@ function buildStartSchedulingActions(): BotAction[] {
       text: "Perfeito! Qual servico voce quer agendar? (ex: unha, cabelo e barba)",
     },
   ]
+}
+
+function buildAppointmentActionPrompt(label?: string | null) {
+  if (!label) {
+    return APPOINTMENT_ACTION_MENU_TEXT
+  }
+
+  return `Agendamento selecionado:\n${label}\n\n${APPOINTMENT_ACTION_MENU_TEXT}`
 }
 
 export function handleIncomingMessage(params: {
@@ -137,6 +172,46 @@ export function handleIncomingMessage(params: {
         { type: "ENSURE_DRAFT" },
         { type: "SELECT_SERVICE_FROM_TEXT", text },
         { type: "RESOLVE_STAFF_FOR_DRAFT" },
+      ],
+    }
+  }
+
+  if (params.state === "CHOOSING_APPOINTMENT") {
+    return {
+      actions: [{ type: "SELECT_EXISTING_APPOINTMENT", text }],
+    }
+  }
+
+  if (params.state === "CHOOSING_APPOINTMENT_ACTION") {
+    if (isCancelAppointmentChoice(text)) {
+      return {
+        actions: [
+          { type: "SET_STATE", state: "CONFIRMING_APPOINTMENT_CANCELLATION" },
+          {
+            type: "REPLY_TEXT",
+            text: params.context?.selectedAppointmentLabel
+              ? `Tem certeza que deseja desmarcar ${params.context.selectedAppointmentLabel}? Responda SIM para confirmar ou NAO para voltar.`
+              : "Tem certeza que deseja desmarcar este agendamento? Responda SIM para confirmar ou NAO para voltar.",
+          },
+        ],
+      }
+    }
+
+    if (isRescheduleAppointmentChoice(text)) {
+      return {
+        actions: [
+          { type: "ENSURE_DRAFT" },
+          { type: "PREPARE_RESCHEDULE_FROM_SELECTED_APPOINTMENT" },
+        ],
+      }
+    }
+
+    return {
+      actions: [
+        {
+          type: "REPLY_TEXT",
+          text: buildAppointmentActionPrompt(params.context?.selectedAppointmentLabel),
+        },
       ],
     }
   }
@@ -179,7 +254,9 @@ export function handleIncomingMessage(params: {
       return {
         actions: [
           { type: "ENSURE_DRAFT" },
-          { type: "CREATE_APPOINTMENT_FROM_DRAFT" },
+          params.context?.rescheduleAppointmentId
+            ? { type: "RESCHEDULE_APPOINTMENT_FROM_DRAFT" }
+            : { type: "CREATE_APPOINTMENT_FROM_DRAFT" },
           { type: "SET_STATE", state: "IDLE" },
         ],
       }
@@ -207,6 +284,38 @@ export function handleIncomingMessage(params: {
     }
   }
 
+  if (params.state === "CONFIRMING_APPOINTMENT_CANCELLATION") {
+    if (matchesAny(text, ["sim", "confirmo", "confirmar", "pode confirmar", "ok"])) {
+      return {
+        actions: [
+          { type: "CANCEL_SELECTED_APPOINTMENT" },
+          { type: "SET_STATE", state: "IDLE" },
+        ],
+      }
+    }
+
+    if (matchesAny(text, ["nao", "voltar", "cancelar"])) {
+      return {
+        actions: [
+          { type: "SET_STATE", state: "CHOOSING_APPOINTMENT_ACTION" },
+          {
+            type: "REPLY_TEXT",
+            text: buildAppointmentActionPrompt(params.context?.selectedAppointmentLabel),
+          },
+        ],
+      }
+    }
+
+    return {
+      actions: [
+        {
+          type: "REPLY_TEXT",
+          text: "Responda SIM para confirmar o cancelamento ou NAO para voltar.",
+        },
+      ],
+    }
+  }
+
   if (isSchedulingIntent(text)) {
     return {
       actions: buildStartSchedulingActions(),
@@ -216,8 +325,18 @@ export function handleIncomingMessage(params: {
   if (isRescheduleIntent(text)) {
     return {
       actions: [
-        { type: "PATCH_CONTEXT", context: { mainMenuShown: false } },
-        { type: "REPLY_TEXT", text: RESCHEDULE_FALLBACK_TEXT },
+        {
+          type: "PATCH_CONTEXT",
+          context: {
+            mainMenuShown: false,
+            appointmentOptions: null,
+            selectedAppointmentId: null,
+            selectedAppointmentLabel: null,
+            rescheduleAppointmentId: null,
+            timeSlotSuggestions: null,
+          },
+        },
+        { type: "LIST_FUTURE_APPOINTMENTS" },
       ],
     }
   }
@@ -226,7 +345,7 @@ export function handleIncomingMessage(params: {
     return {
       actions: [
         { type: "PATCH_CONTEXT", context: { mainMenuShown: false } },
-        { type: "REPLY_TEXT", text: INFO_FALLBACK_TEXT },
+        { type: "REPLY_STORE_INFO" },
       ],
     }
   }

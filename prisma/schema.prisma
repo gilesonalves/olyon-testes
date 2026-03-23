@@ -42,14 +42,25 @@ model User {
 }
 
 model Store {
-  id          String       @id @default(cuid())
-  name        String
-  slug        String       @unique
-  active      Boolean      @default(true)
-  memberships Membership[]
-  services    Service[]
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  id                   String              @id @default(cuid())
+  name                 String
+  slug                 String              @unique
+  active               Boolean             @default(true)
+  phone                String?
+  whatsappPhone        String?
+  address              String?
+  complement           String?
+  neighborhood         String?
+  city                 String?
+  state                String?
+  zipcode              String?
+  serviceObservations  String?
+  businessHoursSummary String?
+  memberships          Membership[]
+  services             Service[]
+  whatsappConnection   WhatsAppConnection?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
 
   events Event[]
 
@@ -200,13 +211,28 @@ enum Channel {
   ADMIN
 }
 
+enum WhatsAppProvider {
+  META_WHATSAPP
+}
+
+enum WhatsAppConnectionStatus {
+  PENDING
+  VERIFIED
+  CONNECTED
+  DISCONNECTED
+  ERROR
+}
+
 enum ConversationState {
   IDLE
   COLLECTING_CUSTOMER
+  CHOOSING_APPOINTMENT
+  CHOOSING_APPOINTMENT_ACTION
   CHOOSING_SERVICE
   CHOOSING_STAFF
   CHOOSING_TIME
   CONFIRMING
+  CONFIRMING_APPOINTMENT_CANCELLATION
 }
 
 enum MessageDirection {
@@ -256,6 +282,26 @@ model Conversation {
 
   @@unique([storeId, channel, contact])
   @@index([storeId, lastMessageAt])
+}
+
+model WhatsAppConnection {
+  id                 String                   @id @default(cuid())
+  storeId            String                   @unique
+  provider           WhatsAppProvider         @default(META_WHATSAPP)
+  phoneNumberId      String                   @unique
+  businessAccountId  String
+  displayPhoneNumber String
+  verifyToken        String                   @unique
+  accessToken        String
+  status             WhatsAppConnectionStatus @default(PENDING)
+  isActive           Boolean                  @default(true)
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([businessAccountId])
+  @@index([provider, isActive])
 }
 
 model ConversationMessage {
@@ -342,15 +388,15 @@ model Appointment {
 }
 
 model WeekScheduleDay {
-  id        String   @id @default(cuid())
-  storeId   String
-  weekday   Weekday
-  enabled   Boolean  @default(false)
+  id      String  @id @default(cuid())
+  storeId String
+  weekday Weekday
+  enabled Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  store     Store                  @relation(fields: [storeId], references: [id], onDelete: Cascade)
   intervals WeekScheduleInterval[]
 
   @@unique([storeId, weekday])
@@ -358,15 +404,15 @@ model WeekScheduleDay {
 }
 
 model WeekScheduleInterval {
-  id        String   @id @default(cuid())
+  id        String @id @default(cuid())
   dayId     String
-  startTime String   // "HH:MM"
-  endTime   String   // "HH:MM"
+  startTime String // "HH:MM"
+  endTime   String // "HH:MM"
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  day       WeekScheduleDay @relation(fields: [dayId], references: [id], onDelete: Cascade)
+  day WeekScheduleDay @relation(fields: [dayId], references: [id], onDelete: Cascade)
 
   @@index([dayId])
 }
@@ -376,13 +422,13 @@ model BlockedSchedule {
   storeId   String
   date      DateTime // armazenar como date (00:00 UTC/local), no frontend usa YYYY-MM-DD
   allDay    Boolean  @default(false)
-  startTime String?  // "HH:MM"
-  endTime   String?  // "HH:MM"
+  startTime String? // "HH:MM"
+  endTime   String? // "HH:MM"
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
   @@index([storeId, date])
 }
