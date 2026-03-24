@@ -1,3 +1,864 @@
+## 24 de marco de 2026 - Fase 8.5 do financeiro (modal de edicao com vencimento condicional)
+
+### Objetivo
+
+Replicar no modal de edicao de `/entradas-saidas` a mesma regra ja aplicada no formulario de novo lancamento: mostrar `Vencimento` apenas para `Saída` e ocultar o campo para `Entrada`.
+
+### Arquivos alterados
+
+- `app/(app)/entradas-saidas/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Exibicao condicional no modal
+
+- O campo `Vencimento` do modal de edicao passou a ser renderizado apenas quando o tipo selecionado e `EXPENSE`.
+- Quando o tipo selecionado e `INCOME`, o campo deixa de aparecer imediatamente.
+
+#### 2. Limpeza de `dueDate`
+
+- Ao trocar o tipo do item em edicao para `Entrada`, o valor local de `dueDate` e limpo no formulario.
+- Isso evita reaproveitar um vencimento antigo quando o usuario muda a natureza do lancamento.
+
+#### 3. Preservacao do fluxo de edicao
+
+- O preenchimento dos demais campos foi mantido.
+- O submit continua usando o mesmo endpoint e o mesmo fluxo de recarga da lista.
+- O payload da edicao agora evita enviar `dueDate` quando o tipo final e `Entrada`.
+
+### Fora do escopo (mantido)
+
+- Sem alteracao de backend
+- Sem alteracao do Prisma
+- Sem alteracao de validators
+- Sem alteracao em `/entradas-saidas/novo`
+- Sem alteracao em outras telas do financeiro
+
+### Resultado
+
+O modal de edicao de `Entradas e saídas` passa a ter comportamento consistente com o formulario de criacao, evitando exibicao e reaproveitamento indevido de vencimento em lancamentos de entrada.
+
+## 24 de marco de 2026 - Fase 8.4 do financeiro (cards alinhados com vencimento por data)
+
+### Objetivo
+
+Corrigir os cards `Pendentes` e `Vencidas` em `/entradas-saidas` para usar a mesma semantica de vencimento por data ja aplicada na tabela.
+
+### Arquivos alterados
+
+- `app/(app)/entradas-saidas/controllers/index.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Regra de vencimento reaproveitada no resumo
+
+- O resumo passa a considerar como vencida toda despesa com:
+  - `type = EXPENSE`
+  - `status != PAID`
+  - `dueDate` valido
+  - `dueDate` anterior a hoje
+
+#### 2. Separacao entre pendentes e vencidas
+
+- O card `Pendentes` agora soma apenas despesas nao pagas que ainda nao venceram.
+- O card `Vencidas` soma apenas despesas nao pagas ja vencidas.
+- Isso evita dupla contagem entre os dois indicadores.
+
+#### 3. Escopo mantido na UI/controller
+
+- Nenhum dado salvo em `FinanceEntry` foi alterado.
+- Nenhuma rota, validator ou model Prisma foi modificada.
+- Os cards `Entradas`, `Saídas` e `Saldo` permaneceram com a mesma regra anterior.
+
+### Resultado
+
+Os cards da tela `Entradas e saídas` passam a refletir a mesma leitura operacional de vencimento exibida na tabela, sem alterar backend ou persistencia.
+
+## 24 de marco de 2026 - Fase 9 do financeiro (card de resumo real no dashboard)
+
+### Objetivo
+
+Substituir os dados mockados do card `Resumo financeiro` no dashboard por dados reais do modulo financeiro ja exposto por `GET /api/finance/entries`, sem alterar o restante do dashboard.
+
+### Arquivos alterados
+
+- `src/components/dashboard/finance-summary-card.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Troca do mock por fetch real
+
+- O componente deixou de usar objeto estatico local.
+- O card agora busca os lancamentos em `GET /api/finance/entries` no carregamento do componente.
+- O escopo por loja ativa continua sendo respeitado pela propria rota ja existente.
+
+#### 2. Calculo dos indicadores no frontend
+
+- `Total do dia` soma os lancamentos com `transactionDate` no dia atual.
+- `Total do mes` soma os lancamentos com `transactionDate` no mes atual.
+- `Pagamentos pendentes` soma apenas despesas com `type = EXPENSE` e `status != PAID`.
+
+#### 3. Tratamento de estados da UI
+
+- Em loading, o card mostra mensagem discreta de carregamento sem quebrar o layout.
+- Em erro, o card mostra mensagem amigavel e preserva os valores formatados.
+- Em vazio, os tres indicadores permanecem em `R$ 0,00`.
+
+### Fora do escopo (mantido)
+
+- Sem alteracao em `app/(app)/dashboard/page.tsx`
+- Sem alteracao de backend
+- Sem endpoint novo de analytics
+- Sem alteracao de Prisma
+- Sem alteracao de validators
+- Sem alteracao das telas do financeiro
+
+### Resultado
+
+O dashboard passa a exibir um resumo financeiro real por loja no proprio card, sem expandir o escopo para o restante da pagina ou para novas APIs.
+
+## 24 de marco de 2026 - Fase 8.3 do financeiro (status visual vencido por data)
+
+### Objetivo
+
+Corrigir a exibicao de status na tabela de `/entradas-saidas` para marcar como `Vencido` as despesas nao pagas cujo `dueDate` ja passou, sem alterar qualquer dado persistido no banco.
+
+### Arquivos alterados
+
+- `app/(app)/entradas-saidas/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Regra de exibicao do status
+
+- Itens com `type = INCOME` continuam exibindo `Receita`.
+- Itens com `type = EXPENSE` e `status = PAID` continuam exibindo `Pago`.
+- Itens com `type = EXPENSE`, ainda nao pagos, e com `dueDate` anterior a hoje passam a exibir `Vencido`.
+- Itens com `type = EXPENSE` sem vencimento ou com vencimento atual/futuro continuam exibindo `Pendente`.
+
+#### 2. Comparacao robusta de data
+
+- A regra ignora `dueDate` nulo.
+- A regra ignora datas invalidas.
+- A comparacao e feita normalizando `dueDate` e a data atual para meia-noite, evitando ruido de horario na UI.
+
+#### 3. Escopo mantido apenas na UI
+
+- Nenhum valor de `status` foi alterado.
+- Nenhum update automatico foi adicionado.
+- Nenhuma regra de backend, Prisma ou validator foi modificada.
+
+### Observacao sobre cards
+
+- Os cards de resumo foram mantidos como estavam, baseados no status bruto atual.
+- Nesta tarefa a prioridade foi corrigir a exibicao da tabela sem expandir a logica derivada para o resumo.
+
+### Resultado
+
+`/entradas-saidas` passa a refletir melhor a situacao operacional das despesas vencidas na tabela, sem alterar a persistencia nem o comportamento de outras areas do sistema.
+
+## 24 de marco de 2026 - Fase 8.2 do financeiro (UX de exclusao e vencimento condicional)
+
+### Objetivo
+
+Refinar a experiencia de `/entradas-saidas` removendo o popup nativo da exclusao e exibindo `Vencimento` no formulario de novo lancamento apenas quando o tipo selecionado for `Saída`.
+
+### Arquivos alterados
+
+- `app/(app)/entradas-saidas/page.tsx`
+- `app/(app)/entradas-saidas/novo/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Exclusao sem popup nativo
+
+- O fluxo de exclusao da listagem deixou de usar `window.confirm`.
+- O clique no botao `Excluir` agora dispara a exclusao diretamente.
+- Foram mantidos sem alteracao:
+  - loading no botao
+  - disable durante exclusao
+  - tratamento de erro amigavel
+  - recarga da lista apos sucesso
+
+#### 2. Vencimento condicional no formulario novo
+
+- O formulario de `/entradas-saidas/novo` passou a observar o tipo selecionado.
+- Quando o tipo e `INCOME`, o campo `Vencimento` deixa de ser exibido.
+- Quando o tipo e `EXPENSE`, o campo `Vencimento` volta a aparecer normalmente.
+
+#### 3. Garantia de payload coerente
+
+- Quando o tipo selecionado e `Entrada`, o submit nao envia `dueDate` no payload.
+- Ao trocar para `Entrada`, o valor local de `dueDate` tambem e limpo no formulario para evitar reaproveitamento indevido.
+
+### Fora do escopo (mantido)
+
+- Sem alteracao de backend
+- Sem alteracao do Prisma
+- Sem alteracao dos validators de backend
+- Sem alteracao em `contas-a-pagar`
+- Sem alteracao em `controle-pagamentos`
+
+### Resultado
+
+`/entradas-saidas` fica mais fluida na exclusao e o formulario de criacao passa a refletir melhor a diferenca entre entrada e saida, sem enviar `dueDate` indevido para receitas.
+
+## 24 de marco de 2026 - Fase 8.1 do financeiro (filtro por tipo e status coerente em entradas e saidas)
+
+### Objetivo
+
+Corrigir a apresentacao dos lancamentos de entrada em `/entradas-saidas` e adicionar um filtro simples por tipo no padrao visual leve da tela.
+
+### Arquivos alterados
+
+- `app/(app)/entradas-saidas/page.tsx`
+- `app/(app)/entradas-saidas/controllers/index.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Status visual coerente para entradas
+
+- Itens com `type = INCOME` passam a exibir badge `Receita` na coluna de status.
+- O valor persistido em `status` nao foi alterado.
+- Itens com `type = EXPENSE` continuam exibindo os badges operacionais existentes:
+  - `Pendente`
+  - `Pago`
+  - `Vencido`
+
+#### 2. Filtro por tipo na tela
+
+- Foi adicionado um filtro visual acima da tabela com as opcoes:
+  - `Todos`
+  - `Entradas`
+  - `Saídas`
+- O filtro atua sobre a listagem sem criar endpoint novo nem alterar backend.
+
+#### 3. Controller local
+
+- O controller passou a centralizar:
+  - estado do filtro atual
+  - lista filtrada
+  - resumo calculado a partir do conjunto visivel
+- A pagina continua consumindo a mesma API e preserva os fluxos de edicao e exclusao.
+
+#### 4. Resumo acompanhando o filtro
+
+- Os cards de entradas, saidas, saldo, pendentes e vencidas passaram a refletir o conjunto filtrado atual.
+- Isso manteve a leitura da tela consistente sem duplicar regras na pagina.
+
+### Fora do escopo (mantido)
+
+- Sem alteracao de backend
+- Sem alteracao do Prisma
+- Sem alteracao de validators
+- Sem alteracao em `contas-a-pagar`
+- Sem alteracao em `controle-pagamentos`
+- Sem alteracao em `/entradas-saidas/novo`
+
+### Resultado
+
+`/entradas-saidas` passa a distinguir visualmente receitas de despesas na coluna de status e ganha filtro funcional por tipo, mantendo a tela coerente com o comportamento atual e sem expandir o escopo para outras areas.
+
+## 23 de marco de 2026 - Diagnostico temporario do financeiro (Prisma sem cache global em dev)
+
+### Objetivo
+
+Aplicar uma mitigacao temporaria e controlada no helper central do Prisma para validar a hipotese de runtime stale do `PrismaClient` nas rotas do financeiro.
+
+### Arquivos alterados
+
+- `src/lib/prisma.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Ajuste temporario do helper central
+
+- O projeto continua usando `PrismaClient` a partir de `generated/prisma/client`.
+- O adapter PostgreSQL atual foi preservado.
+- Os logs atuais do Prisma (`error` e `warn`) foram preservados.
+
+#### 2. Remocao do reuso global em desenvolvimento
+
+- Em desenvolvimento, o helper passou a criar uma nova instância de `PrismaClient` sem reutilizar `globalThis.prisma`.
+- O objetivo e confirmar se o erro 500 do financeiro vinha de uma instância antiga, ainda viva em runtime, sem o delegate `financeEntry`.
+
+#### 3. Escopo controlado
+
+- Nenhuma rota foi alterada.
+- Nenhum validator foi alterado.
+- Nenhum schema ou migration Prisma foi alterado.
+- Nenhuma outra infraestrutura fora do helper central foi modificada.
+
+### Fora do escopo (mantido)
+
+- Sem alteracao em `app/api/finance/entries`
+- Sem alteracao em `src/lib/validators/finance-entry.ts`
+- Sem alteracao de frontend
+- Sem alteracao de services, events, appointments ou webhooks
+
+### Resultado esperado
+
+Ao reiniciar o ambiente de desenvolvimento, os testes manuais de `GET /api/finance/entries` e `POST /api/finance/entries` passam a indicar com mais clareza se o 500 vinha de reuso de uma instância stale do `PrismaClient`.
+
+## 23 de marco de 2026 - Fase 8 do financeiro (resumo gerencial em entradas e saidas)
+
+### Objetivo
+
+Adicionar uma visao gerencial basica na tela `Entradas e saídas`, exibindo um resumo financeiro calculado a partir da mesma base `FinanceEntry` ja carregada na tela.
+
+### Arquivos alterados
+
+- `app/(app)/entradas-saidas/page.tsx`
+- `app/(app)/entradas-saidas/controllers/index.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Resumo financeiro acima da listagem
+
+- Foram adicionados cards simples acima da tabela com os totais de:
+  - entradas
+  - saidas
+  - saldo
+  - pendentes
+  - vencidas
+- Todos os valores sao exibidos em BRL no formato pt-BR.
+
+#### 2. Calculo no frontend
+
+- O resumo e calculado a partir dos itens ja carregados por `GET /api/finance/entries`.
+- Nao foi criada chamada extra nem endpoint novo.
+- O calculo considera:
+  - `type = INCOME` para entradas
+  - `type = EXPENSE` para saidas
+  - `status = PENDING` para pendentes
+  - `status = OVERDUE` para vencidas
+  - `saldo = entradas - saidas`
+
+#### 3. Controller local
+
+- O controller da tela passou a expor `summary` junto com:
+  - `items`
+  - `loading`
+  - `error`
+- A agregacao foi centralizada no controller para manter a pagina mais simples e sem duplicacao de logica.
+
+### Fora do escopo (mantido)
+
+- Sem filtro por periodo avancado
+- Sem endpoint de analytics
+- Sem dashboard separado
+- Sem graficos ou exportacao
+
+### Resultado
+
+`/entradas-saidas` passa a oferecer uma leitura gerencial basica do financeiro sem depender de backend adicional, usando a mesma base de dados ja carregada pela tela.
+
+## 23 de marco de 2026 - Fase 7 do financeiro (edicao em entradas e saidas)
+
+### Objetivo
+
+Adicionar edicao real de lancamentos financeiros na tela `Entradas e saídas`, reaproveitando o backend existente com `PUT /api/finance/entries/[id]` e mantendo criacao e exclusao ja entregues.
+
+### Arquivos alterados
+
+- `app/(app)/entradas-saidas/page.tsx`
+- `app/(app)/entradas-saidas/controllers/index.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Acao de editar na listagem
+
+- Foi adicionada a acao `Editar` ao lado da exclusao em cada linha da tabela de `/entradas-saidas`.
+- O fluxo escolhido foi um dialogo simples na propria tela, evitando rota nova e mantendo o padrao ja usado em outras areas do projeto.
+
+#### 2. Reaproveitamento do formulario
+
+- A edicao reaproveita o mesmo `formSchema` da pasta.
+- Ao abrir o dialogo, o formulario e preenchido com os dados atuais do item:
+  - `type`
+  - `amount`
+  - `category`
+  - `description`
+  - `transactionDate`
+  - `dueDate`
+- O envio usa o mesmo contrato ja suportado pelo backend.
+
+#### 3. Integracao com PUT
+
+- O controller local passou a expor `updateEntry`.
+- A edicao envia `PUT /api/finance/entries/[id]` com os campos principais do lancamento.
+- A lista e recarregada apos sucesso para refletir os dados atualizados.
+
+### Fora do escopo (mantido)
+
+- Sem alteracao do Prisma
+- Sem alteracao do backend
+- Sem alteracao em contas-a-pagar
+- Sem alteracao em controle-pagamentos
+- `status` ficou fora do formulario de edicao para nao aumentar a complexidade da UI nesta fase
+
+### Resultado
+
+`/entradas-saidas` passa a permitir edicao real de lancamentos com fluxo simples, mantendo a mesma tela como ponto central de listagem, criacao e exclusao, sem abrir arquitetura paralela.
+
+## 23 de marco de 2026 - Fase 6.1 do financeiro (ajuste backend da baixa)
+
+### Objetivo
+
+Fechar a lacuna do fluxo de baixa ajustando o backend para que `PUT /api/finance/entries/[id]` aceite e persista corretamente o campo `paidAt`.
+
+### Arquivos alterados
+
+- `src/lib/validators/finance-entry.ts`
+- `app/api/finance/entries/[id]/route.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Ajuste do validator
+
+- `FinanceEntryUpdateSchema` passou a aceitar `paidAt` como campo opcional/nullable com coercao para data.
+- O `create schema` foi mantido sem alteracoes para nao expandir a semantica da criacao inicial.
+- A regra de `refine()` exigindo ao menos um campo no update foi preservada.
+
+#### 2. Ajuste do PUT por id
+
+- O `PUT /api/finance/entries/[id]` passou a incluir `paidAt` no objeto de update quando o valor vier no payload validado.
+- Foram mantidos sem alteracao:
+  - `requireMembershipRole("ADMIN")`
+  - busca por `id + storeId`
+  - `notFound` para item inexistente ou de outra loja
+  - compatibilidade com `amount` em `Prisma.Decimal`
+  - comportamento do `DELETE`
+
+### Resultado
+
+O fluxo de baixa deixa de ter a lacuna entre frontend e backend: a UI continua enviando `status = PAID` e `paidAt`, e o backend agora persiste ambos corretamente mantendo o isolamento multi-tenant.
+
+## 23 de marco de 2026 - Fase 6 do financeiro (integracao de controle de pagamentos)
+
+### Objetivo
+
+Integrar a tela de `Controle de Pagamentos` com a base real `FinanceEntry`, tratando essa rota como uma visao operacional de baixa das despesas existentes.
+
+### Arquivos alterados
+
+- `app/(app)/controle-pagamentos/page.tsx`
+- `app/(app)/controle-pagamentos/controllers/index.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Listagem real em `/controle-pagamentos`
+
+- A tela passou a consumir `GET /api/finance/entries`.
+- O controller filtra localmente apenas `type = EXPENSE`.
+- A listagem foi organizada com foco operacional em:
+  - descricao/categoria
+  - valor
+  - vencimento
+  - status
+  - pago em
+  - acao
+- O mock principal da tela foi removido.
+- Foram adicionados estados de:
+  - loading
+  - erro amigavel
+  - vazio sem registros
+
+#### 2. Baixa operacional via PUT
+
+- Foi adicionada a acao `Marcar como pago` apenas para itens que ainda nao estao pagos.
+- A acao usa `PUT /api/finance/entries/[id]` com payload contendo:
+  - `status: "PAID"`
+  - `paidAt: new Date().toISOString()`
+- Ha confirmacao simples antes da baixa.
+- A lista e recarregada apos sucesso.
+
+#### 3. Priorizacao visual da operacao
+
+- A listagem destaca os status `Vencido`, `Pendente` e `Pago` com badges legiveis.
+- A ordenacao local prioriza:
+  - vencidos
+  - pendentes
+  - pagos
+- Em seguida, usa o vencimento mais proximo primeiro.
+
+### Fora do escopo (mantido)
+
+- Sem alteracao de Prisma
+- Sem alteracao do backend do financeiro
+- Sem edicao ampla
+- `/controle-pagamentos/novo` ficou fora do escopo desta fase
+
+### Observacao tecnica
+
+- A UI envia `paidAt` no payload da baixa para respeitar o contrato desejado desta fase.
+- Como o backend atual ainda valida update apenas com os campos da fase 2, a persistencia efetiva de `paidAt` depende de suporte explicito do backend em etapa futura.
+
+### Resultado
+
+`/controle-pagamentos` passa a operar sobre despesas reais da base financeira com foco em baixa operacional, removendo o mock principal e utilizando a API existente de listagem e update.
+
+## 23 de marco de 2026 - Fase 5 do financeiro (integracao de contas a pagar)
+
+### Objetivo
+
+Integrar a tela de `Contas a pagar` com a base real do financeiro, tratando a rota como uma visao filtrada de `FinanceEntry` para despesas, sem criar dominio separado.
+
+### Arquivos alterados
+
+- `app/(app)/contas-a-pagar/page.tsx`
+- `app/(app)/contas-a-pagar/novo/page.tsx`
+- `app/(app)/contas-a-pagar/controllers/index.tsx`
+- `app/(app)/contas-a-pagar/schemas/index.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Listagem real em `/contas-a-pagar`
+
+- A tela passou a consumir `GET /api/finance/entries`.
+- O controller filtra os registros para exibir apenas `type = EXPENSE`.
+- O mock principal da listagem foi removido.
+- Foram adicionados estados de:
+  - loading
+  - erro amigavel
+  - vazio sem registros
+- A tabela passou a exibir:
+  - valor
+  - data
+  - vencimento
+  - categoria
+  - status
+  - descricao
+
+#### 2. Formulario real em `/contas-a-pagar/novo`
+
+- O submit local foi substituido por `POST /api/finance/entries`.
+- A tela cria sempre despesa com `type = EXPENSE` fixo no controller.
+- O formulario foi ajustado para os campos reais:
+  - `amount`
+  - `category`
+  - `description`
+  - `transactionDate`
+  - `dueDate`
+  - `status`
+- Em caso de sucesso, a UI redireciona para `/contas-a-pagar`.
+
+#### 3. Exclusao real
+
+- A listagem passou a excluir despesas reais via `DELETE /api/finance/entries/[id]`.
+- Foi adicionada confirmacao simples antes da exclusao.
+- A lista e recarregada apos exclusao bem-sucedida.
+
+#### 4. Estrutura local da tela
+
+- O controller local passou a centralizar:
+  - carregamento da lista
+  - filtro de despesas
+  - criacao de despesa
+  - exclusao
+- O schema local foi ajustado para refletir apenas os campos reais expostos ao usuario nesta visao.
+
+### Fora do escopo (mantido)
+
+- Sem edicao nesta fase
+- Sem alteracao do backend do financeiro
+- Sem alteracao de Prisma
+- Sem alteracao em entradas-saidas
+- Sem alteracao em controle-pagamentos
+
+### Resultado
+
+`/contas-a-pagar` passa a operar com dados reais de despesas do modulo financeiro, exibindo vencimento e status de forma clara e deixando de depender do mock principal da tela.
+
+## 23 de marco de 2026 - Fase 4 do financeiro (integracao da tela de entradas e saidas)
+
+### Objetivo
+
+Integrar a tela de `Entradas e saídas` com a API real do financeiro, removendo a listagem mockada e substituindo o submit local por persistencia real com `FinanceEntry`.
+
+### Arquivos alterados
+
+- `app/(app)/entradas-saidas/page.tsx`
+- `app/(app)/entradas-saidas/novo/page.tsx`
+- `app/(app)/entradas-saidas/controllers/index.tsx`
+- `app/(app)/entradas-saidas/schemas/index.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Listagem real em `/entradas-saidas`
+
+- A tela passou a consumir `GET /api/finance/entries` ao carregar.
+- O mock principal da tabela foi removido.
+- Foram adicionados estados de:
+  - loading
+  - erro amigavel
+  - vazio sem registros
+- A tabela passou a exibir dados reais com formatacao em pt-BR para:
+  - valor
+  - data
+  - vencimento
+  - tipo
+  - categoria
+  - status
+
+#### 2. Formulario real em `/entradas-saidas/novo`
+
+- O submit local foi substituido por `POST /api/finance/entries`.
+- O formulario foi corrigido para mapear corretamente:
+  - `category`
+  - `description`
+  - `transactionDate`
+  - `dueDate`
+  - `type`
+  - `amount`
+- O fluxo agora mostra erro amigavel quando a API falha.
+- Em caso de sucesso, mostra feedback e redireciona para `/entradas-saidas`.
+
+#### 3. Exclusao real
+
+- A listagem passou a excluir registros reais via `DELETE /api/finance/entries/[id]`.
+- Foi adicionada confirmacao simples antes da exclusao.
+- A lista e recarregada apos exclusao bem-sucedida.
+
+#### 4. Estrutura local da UI
+
+- Foi criado um controller simples na propria pasta para centralizar:
+  - carregamento da lista
+  - criacao de lancamentos
+  - exclusao de lancamentos
+- Foi criado schema local da tela para manter a validacao do formulario consistente com os campos usados pela API.
+
+### Fora do escopo (mantido)
+
+- Sem alteracao do backend do financeiro
+- Sem alteracao de Prisma
+- Sem integracao com contas-a-pagar
+- Sem integracao com controle-pagamentos
+- Edicao mantida fora do escopo desta fase
+
+### Resultado
+
+`/entradas-saidas` passa a operar com dados reais do modulo financeiro, incluindo listagem, criacao e exclusao, preservando o padrao visual existente e removendo o mock principal da tela.
+
+## 23 de marco de 2026 - Fase 3 do financeiro (rota por id)
+
+### Objetivo
+
+Fechar o CRUD backend inicial do financeiro criando a rota por id com `PUT` e `DELETE`, mantendo o mesmo padrao de permissao, validacao e escopo por loja usado no restante do projeto.
+
+### Arquivos alterados
+
+- `app/api/finance/entries/[id]/route.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. PUT `/api/finance/entries/[id]`
+
+- Usa `requireMembershipRole("ADMIN")`.
+- Recebe `params.id`.
+- Busca o registro por `id` e `storeId` da loja ativa.
+- Retorna `notFound` quando o item nao pertence a loja ativa ou nao existe.
+- Valida o payload com `FinanceEntryUpdateSchema.safeParse`.
+- Atualiza apenas os campos permitidos pelo validator:
+  - `type`
+  - `amount`
+  - `category`
+  - `description`
+  - `transactionDate`
+  - `dueDate`
+  - `status`
+- Mantem compatibilidade com o campo monetario usando `Prisma.Decimal` em `amount`.
+- Responde com `ok({ item })`.
+
+#### 2. DELETE `/api/finance/entries/[id]`
+
+- Usa `requireMembershipRole("ADMIN")`.
+- Recebe `params.id`.
+- Busca o registro por `id` e `storeId` da loja ativa.
+- Retorna `notFound` quando o item nao pertence a loja ativa ou nao existe.
+- Exclui o registro somente apos validar pertencimento.
+- Responde com `ok({ success: true })`.
+
+### Garantias de isolamento
+
+- Nenhuma operacao usa apenas `id` como criterio de autorizacao.
+- O pertencimento e sempre validado previamente com `id + storeId`.
+- Nao ha atualizacao de `storeId` nem `createdById`.
+
+### Fora do escopo (mantido)
+
+- Sem alteracao de validator
+- Sem alteracao do Prisma
+- Sem integracao com frontend
+- Sem novas rotas alem de `[id]`
+
+### Resultado
+
+O backend do financeiro passa a ter a rota por id para atualizar e excluir lancamentos com escopo multi-tenant protegido, completando o CRUD backend inicial da entidade `FinanceEntry`.
+
+## 23 de marco de 2026 - Fase 2 do financeiro (validator e rota inicial)
+
+### Objetivo
+
+Criar a primeira camada funcional do backend do financeiro com validator Zod e rota inicial `GET/POST` para `FinanceEntry`, mantendo o padrao multi-tenant por `storeId` e o mesmo estilo ja usado em `services`.
+
+### Arquivos alterados
+
+- `src/lib/validators/finance-entry.ts`
+- `app/api/finance/entries/route.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Validator do financeiro
+
+Foi criado `src/lib/validators/finance-entry.ts` com:
+
+- `FinanceEntryCreateSchema`
+- `FinanceEntryUpdateSchema`
+
+Regras aplicadas:
+
+- `type`: `INCOME | EXPENSE`
+- `amount`: coercao para numero positivo
+- `category`: string com `trim`, minimo 2 e maximo 80
+- `description`: opcional/nullable com limite de tamanho
+- `transactionDate`: data obrigatoria com coercao
+- `dueDate`: data opcional/nullable com coercao
+- `status`: `PENDING | PAID | OVERDUE`, opcional
+
+`FinanceEntryUpdateSchema` segue o mesmo padrao de `ServiceUpdateSchema`, usando `partial()` com `refine()` para exigir ao menos um campo informado.
+
+#### 2. GET `/api/finance/entries`
+
+- Usa `requireStoreId()`.
+- Retorna `401` quando nao existe loja ativa na sessao.
+- Lista apenas registros da loja atual.
+- Ordena por `transactionDate desc` e depois `createdAt desc`.
+- Responde com `ok({ items })`.
+
+#### 3. POST `/api/finance/entries`
+
+- Usa `requireMembershipRole("ADMIN")`.
+- Valida o payload com `FinanceEntryCreateSchema.safeParse`.
+- Retorna `badRequest` quando o payload e invalido.
+- Cria `FinanceEntry` com `storeId` vindo exclusivamente do helper de permissao.
+- Usa `createdById` com `guard.userId`.
+- Aplica fallback de `status` para `PENDING`.
+- Persiste `amount` como `Prisma.Decimal` para respeitar o campo monetario do schema.
+- Responde com `created({ item })`.
+
+### Fora do escopo (mantido)
+
+- Sem `PUT`
+- Sem `DELETE`
+- Sem rota por `id`
+- Sem integracao com frontend
+- Sem alteracao do Prisma
+
+### Resultado
+
+O modulo financeiro passa a ter a primeira camada funcional de backend para listagem e criacao de lancamentos por loja, pronta para sustentar as proximas fases do CRUD.
+
+## 23 de marco de 2026 - Fase 1 do financeiro (base Prisma)
+
+### Objetivo
+
+Criar a base de dominio do modulo financeiro no Prisma, sem integracao de telas, APIs ou CRUD completo, mantendo o padrao multi-tenant por `storeId`.
+
+### Arquivos alterados
+
+- `prisma/schema.prisma`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Enums financeiros
+
+- `FinanceEntryType` com valores:
+  - `INCOME`
+  - `EXPENSE`
+- `FinanceEntryStatus` com valores:
+  - `PENDING`
+  - `PAID`
+  - `OVERDUE`
+
+#### 2. Model central `FinanceEntry`
+
+Foi criada a model central para sustentar as visoes de entradas/saidas, contas a pagar e controle de pagamentos com os campos:
+
+- `id`
+- `storeId`
+- `createdById` (opcional)
+- `type`
+- `status`
+- `amount` (`Decimal @db.Decimal(12, 2)`)
+- `category`
+- `description` (opcional)
+- `transactionDate`
+- `dueDate` (opcional)
+- `paidAt` (opcional)
+- `createdAt`
+- `updatedAt`
+
+#### 3. Relacoes e multi-tenant
+
+- Relacao obrigatoria com `Store` via `storeId` com `onDelete: Cascade`.
+- Relacao opcional com `User` via `createdById` com `onDelete: SetNull`.
+- Lado inverso adicionado em:
+  - `Store.financeEntries`
+  - `User.financeEntriesCreated`
+
+#### 4. Indices
+
+Foram adicionados indices para cenarios iniciais de consulta:
+
+- `@@index([storeId, transactionDate])`
+- `@@index([storeId, dueDate])`
+- `@@index([storeId, status])`
+- `@@index([storeId, type])`
+- `@@index([createdById])`
+
+### Fora do escopo (mantido)
+
+- Sem criacao de APIs
+- Sem alteracao de pages/UI/controllers
+- Sem alteracao de modulos de agendamento, WhatsApp, eventos ou servicos
+
+### Resultado
+
+O projeto passa a ter uma base Prisma consistente para evoluir o CRUD financeiro nas proximas fases, preservando o isolamento por loja e o padrao de modelagem existente.
+
 ## 09 de marco de 2026 - Sugestao ativa de horarios no WhatsApp
 
 ### Objetivo

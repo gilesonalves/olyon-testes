@@ -19,15 +19,6 @@ export type FinanceEntry = {
   updatedAt: string
 }
 
-type FinanceExpenseCreatePayload = {
-  amount: number
-  category: string
-  description?: string | null
-  transactionDate: string
-  dueDate?: string | null
-  status?: "PENDING" | "PAID" | "OVERDUE"
-}
-
 type ApiOk<T> = { ok: true; data: T }
 type ApiErr = { ok: false; error: string }
 type ApiResp<T> = ApiOk<T> | ApiErr
@@ -36,11 +27,17 @@ type ControllerOptions = {
   autoLoad?: boolean
 }
 
+const statusPriority: Record<FinanceEntry["status"], number> = {
+  OVERDUE: 0,
+  PENDING: 1,
+  PAID: 2,
+}
+
 export const Controller = ({ autoLoad = true }: ControllerOptions = {}) => {
   const [entries, setEntries] = useState<FinanceEntry[]>([])
   const [loading, setLoading] = useState(autoLoad)
   const [error, setError] = useState<string | null>(null)
-  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [payingId, setPayingId] = useState<string | null>(null)
 
   const loadEntries = async () => {
     setLoading(true)
@@ -52,14 +49,14 @@ export const Controller = ({ autoLoad = true }: ControllerOptions = {}) => {
 
       if (!res.ok || !json.ok) {
         setEntries([])
-        setError(json.ok ? "Falha ao carregar contas a pagar." : json.error)
+        setError(json.ok ? "Falha ao carregar controle de pagamentos." : json.error)
         return
       }
 
       setEntries(json.data.items)
     } catch {
       setEntries([])
-      setError("Falha ao carregar contas a pagar.")
+      setError("Falha ao carregar controle de pagamentos.")
     } finally {
       setLoading(false)
     }
@@ -70,72 +67,64 @@ export const Controller = ({ autoLoad = true }: ControllerOptions = {}) => {
     void loadEntries()
   }, [autoLoad])
 
-  const createEntry = async (payload: FinanceExpenseCreatePayload) => {
+  const markAsPaid = async (id: string) => {
+    setPayingId(id)
+    setError(null)
+
     try {
-      const res = await fetch("/api/finance/entries", {
-        method: "POST",
+      const res = await fetch(`/api/finance/entries/${id}`, {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...payload,
-          type: "EXPENSE",
+          status: "PAID",
+          paidAt: new Date().toISOString(),
         }),
       })
 
       const json = (await res.json()) as ApiResp<{ item: FinanceEntry }>
 
       if (!res.ok || !json.ok) {
-        return {
-          ok: false as const,
-          error: json.ok ? "Falha ao criar despesa." : json.error,
-        }
-      }
-
-      return { ok: true as const, item: json.data.item }
-    } catch {
-      return { ok: false as const, error: "Falha ao criar despesa." }
-    }
-  }
-
-  const deleteEntry = async (id: string) => {
-    setDeletingId(id)
-    setError(null)
-
-    try {
-      const res = await fetch(`/api/finance/entries/${id}`, { method: "DELETE" })
-      const json = (await res.json()) as ApiResp<{ success: true }>
-
-      if (!res.ok || !json.ok) {
-        const message = json.ok ? "Falha ao excluir despesa." : json.error
+        const message = json.ok ? "Falha ao marcar pagamento." : json.error
         setError(message)
         toast.error(message)
         return false
       }
 
-      toast.success("Despesa excluída com sucesso!")
+      toast.success("Pagamento marcado como pago!")
       await loadEntries()
       return true
     } catch {
-      const message = "Falha ao excluir despesa."
+      const message = "Falha ao marcar pagamento."
       setError(message)
       toast.error(message)
       return false
     } finally {
-      setDeletingId(null)
+      setPayingId(null)
     }
   }
 
-  const items = useMemo(
-    () => entries.filter((entry) => entry.type === "EXPENSE"),
-    [entries]
-  )
+  const items = useMemo(() => {
+    return entries
+      .filter((entry) => entry.type === "EXPENSE")
+      .slice()
+      .sort((left, right) => {
+        const statusDiff = statusPriority[left.status] - statusPriority[right.status]
+        if (statusDiff !== 0) return statusDiff
+
+        const leftDue = left.dueDate ? new Date(left.dueDate).getTime() : Number.MAX_SAFE_INTEGER
+        const rightDue = right.dueDate ? new Date(right.dueDate).getTime() : Number.MAX_SAFE_INTEGER
+
+        return leftDue - rightDue
+      })
+  }, [entries])
 
   const state = {
     items,
     loading,
     error,
-    deletingId,
+    payingId,
     reload: loadEntries,
   }
 
-  return { createEntry, deleteEntry, state }
+  return { markAsPaid, state }
 }

@@ -1,6 +1,6 @@
 # PROJECT_STATUS.md
 
-**Data de ultima atualizacao:** 9 de marco de 2026
+**Data de ultima atualizacao:** 23 de marco de 2026
 
 ## Status geral do projeto Olyon
 
@@ -16,6 +16,22 @@
 [x] Entrada conversacional com boas-vindas e menu inicial hibrido
 [x] Sugestao ativa de horarios com escolha por numero no WhatsApp
 [x] Massa minima real de seed para teste do fluxo WhatsApp
+[x] Fase 1 do financeiro: base de dominio Prisma com `FinanceEntry`
+[x] Fase 2 do financeiro: validator e rota inicial GET/POST de lancamentos
+[x] Fase 3 do financeiro: rota por id com PUT e DELETE
+[x] Fase 4 do financeiro: tela de entradas-saidas integrada com API real
+[x] Fase 5 do financeiro: contas-a-pagar integrada como visao real de despesas
+[x] Fase 6 do financeiro: controle-pagamentos integrado como visao operacional de baixa
+[x] Fase 6.1 do financeiro: backend de update ajustado para persistir `paidAt`
+[x] Fase 7 do financeiro: edicao real de lancamentos em entradas-saidas
+[x] Fase 8 do financeiro: resumo gerencial basico em entradas-saidas
+[x] Fase 8.1 do financeiro: filtro por tipo e status visual coerente em entradas-saidas
+[x] Fase 8.2 do financeiro: exclusao sem popup nativo e vencimento condicional em entradas-saidas
+[x] Fase 8.3 do financeiro: status visual vencido por data em entradas-saidas
+[x] Fase 8.4 do financeiro: cards pendentes e vencidas alinhados com vencimento por data
+[x] Fase 8.5 do financeiro: modal de edicao com vencimento condicional
+[x] Fase 9 do financeiro: card de resumo do dashboard integrado com dados reais
+[x] Diagnostico temporario do financeiro: helper Prisma sem reuso global em desenvolvimento
 
 ---
 
@@ -24,6 +40,7 @@
 O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) possui hoje:
 
 - CRUD real e multi-tenant de Usuarios, Servicos, Equipe e Eventos.
+- Base de dominio multi-tenant do financeiro em Prisma com `FinanceEntry` (fase 1, sem CRUD/API/UI).
 - APIs de horarios semanais e bloqueios de agenda persistidas em Prisma.
 - Base de conversas WhatsApp com `Conversation`, `ConversationMessage`, `AppointmentDraft` e `Appointment`.
 - Fluxo de bot via WhatsApp com menu inicial hibrido, selecao de servico, resolucao de profissional, sugestao ativa de horarios, escolha de horario por numero ou texto livre, confirmacao e criacao final do agendamento.
@@ -77,6 +94,131 @@ O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) poss
 - [x] Idempotencia de inbound por `providerMessageId`
 - [x] Sugestao de horarios proximos quando o slot pedido nao estiver disponivel
 - [x] Seed oficial (`prisma/seed.ts`) com loja, servico, profissionais, agenda, bloqueio e appointment existente
+
+### D) Financeiro (fase 1 - base Prisma)
+
+- [x] Enum `FinanceEntryType` (`INCOME`, `EXPENSE`)
+- [x] Enum `FinanceEntryStatus` (`PENDING`, `PAID`, `OVERDUE`)
+- [x] Model central `FinanceEntry` com escopo obrigatorio por `storeId`
+- [x] Relacao obrigatoria com `Store` e opcional com `User` (`createdById`)
+- [x] Indices iniciais para consultas por loja, tipo, status e datas
+
+### E) Financeiro (fase 2 - backend inicial)
+
+- [x] Validator `FinanceEntryCreateSchema`
+- [x] Validator `FinanceEntryUpdateSchema`
+- [x] `GET /api/finance/entries` com escopo por loja ativa
+- [x] `POST /api/finance/entries` com permissao minima `ADMIN`
+- [x] Persistencia real de `FinanceEntry` com `storeId` protegido pelo backend
+
+### F) Financeiro (fase 3 - rota por id)
+
+- [x] `PUT /api/finance/entries/[id]` com permissao minima `ADMIN`
+- [x] `DELETE /api/finance/entries/[id]` com permissao minima `ADMIN`
+- [x] Validacao de pertencimento por `id + storeId`
+- [x] Atualizacao parcial reutilizando `FinanceEntryUpdateSchema`
+- [x] Exclusao protegida contra acesso cross-tenant
+
+### G) Financeiro (fase 4 - entradas e saidas)
+
+- [x] `/entradas-saidas` com listagem real via `GET /api/finance/entries`
+- [x] `/entradas-saidas/novo` com criacao real via `POST /api/finance/entries`
+- [x] Exclusao real na listagem via `DELETE /api/finance/entries/[id]`
+- [x] Estados de loading, erro e vazio na tela
+- [x] Remocao do mock principal da tela de entradas e saidas
+
+### H) Financeiro (fase 5 - contas a pagar)
+
+- [x] `/contas-a-pagar` com listagem real filtrada para `FinanceEntry.type = EXPENSE`
+- [x] `/contas-a-pagar/novo` com criacao real de despesa via `POST /api/finance/entries`
+- [x] Exibicao de vencimento e status na listagem
+- [x] Exclusao real na listagem via `DELETE /api/finance/entries/[id]`
+- [x] Estados de loading, erro e vazio na tela
+
+### I) Financeiro (fase 6 - controle de pagamentos)
+
+- [x] `/controle-pagamentos` com listagem real filtrada para `FinanceEntry.type = EXPENSE`
+- [x] Exibicao operacional de vencimento, status e pago em
+- [x] Acao `Marcar como pago` via `PUT /api/finance/entries/[id]`
+- [x] Estados de loading, erro e vazio na tela
+- [x] Remocao do mock principal da tela de controle de pagamentos
+
+### J) Financeiro (fase 6.1 - backend da baixa)
+
+- [x] `FinanceEntryUpdateSchema` aceita `paidAt`
+- [x] `PUT /api/finance/entries/[id]` persiste `paidAt` quando enviado
+- [x] Fluxo de baixa fica compativel com a UI ja entregue em `controle-pagamentos`
+- [x] Isolamento por `id + storeId` mantido sem alteracoes estruturais
+
+### K) Financeiro (fase 7 - edicao em entradas e saidas)
+
+- [x] Acao `Editar` adicionada na listagem de `/entradas-saidas`
+- [x] Fluxo simples de edicao em dialogo na propria tela
+- [x] Reaproveitamento do schema local ja existente da UI
+- [x] Integracao real com `PUT /api/finance/entries/[id]`
+- [x] Criacao e exclusao mantidas funcionando sem regressao
+
+### L) Financeiro (fase 8 - resumo em entradas e saidas)
+
+- [x] Resumo financeiro basico calculado no frontend a partir de `GET /api/finance/entries`
+- [x] Cards de entradas, saidas, saldo, pendentes e vencidas
+- [x] Agregacao centralizada no controller local da tela
+- [x] Reaproveitamento da carga ja existente sem endpoint novo
+
+### L.1) Financeiro (fase 8.1 - filtro e apresentacao em entradas e saidas)
+
+- [x] Filtro visual por tipo com opcoes `Todos`, `Entradas` e `Saídas`
+- [x] Exibicao de `Receita` para itens `INCOME` sem alterar o valor persistido de `status`
+- [x] Manutencao dos badges operacionais para despesas (`Pendente`, `Pago`, `Vencido`)
+- [x] Tabela e cards de resumo refletindo o conjunto filtrado
+- [x] Logica de filtro centralizada no controller local da tela
+
+### L.2) Financeiro (fase 8.2 - UX de exclusao e vencimento condicional)
+
+- [x] Exclusao em `/entradas-saidas` sem uso de `window.confirm`
+- [x] Botao de exclusao manteve loading, disable e recarga da listagem
+- [x] Campo `Vencimento` em `/entradas-saidas/novo` exibido apenas para `Saída`
+- [x] Entradas seguem podendo ser salvas sem `dueDate`
+- [x] Payload de criacao evita enviar `dueDate` para `Entrada`
+
+### L.3) Financeiro (fase 8.3 - status visual vencido por data)
+
+- [x] Tabela de `/entradas-saidas` passa a exibir `Vencido` para despesas nao pagas com `dueDate` anterior a hoje
+- [x] Entradas continuam exibindo `Receita`
+- [x] Despesas pagas continuam exibindo `Pago`
+- [x] Despesas sem vencimento ou com vencimento futuro continuam exibindo `Pendente`
+- [x] Mudanca restrita a apresentacao da UI, sem alteracao de persistencia
+
+### L.4) Financeiro (fase 8.4 - cards alinhados com vencimento por data)
+
+- [x] Card `Vencidas` passa a somar despesas nao pagas com `dueDate` anterior a hoje
+- [x] Card `Pendentes` deixa de contar despesas que ja estao vencidas pela regra visual da tabela
+- [x] Cards `Entradas`, `Saídas` e `Saldo` permanecem inalterados
+- [x] Ajuste mantido no controller local, sem alteracao de backend ou persistencia
+
+### L.5) Financeiro (fase 8.5 - modal de edicao com vencimento condicional)
+
+- [x] Modal de edicao de `/entradas-saidas` exibe `Vencimento` apenas para `Saída`
+- [x] Modal oculta `Vencimento` para `Entrada`
+- [x] `dueDate` e limpo ao trocar o tipo para `Entrada`
+- [x] Submit do modal evita enviar `dueDate` para `Entrada`
+- [x] Fluxo de edicao permanece funcionando sem alteracao de backend
+
+### N) Financeiro (fase 9 - resumo real no dashboard)
+
+- [x] Card `Resumo financeiro` do dashboard deixa de usar mock local
+- [x] Componente consome `GET /api/finance/entries` respeitando a loja ativa
+- [x] `Total do dia` calculado no frontend a partir de `transactionDate`
+- [x] `Total do mes` calculado no frontend a partir de `transactionDate`
+- [x] `Pagamentos pendentes` calculado no frontend para despesas com `status != PAID`
+- [x] Estados de loading, erro e vazio tratados sem quebrar o layout do card
+
+### M) Financeiro (diagnostico temporario do Prisma em runtime)
+
+- [x] Helper central do Prisma mantido no client gerado em `generated/prisma/client`
+- [x] Reuso de `globalThis.prisma` removido em desenvolvimento para diagnosticar instância stale
+- [x] Adapter PostgreSQL e logs atuais preservados
+- [x] Comportamento em producao mantido com cache global apenas quando necessario
 
 ---
 
