@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import HeaderPage from "@/components/headerPage"
 import { Controller } from "../controllers"
 import { formSchema, type FormValues } from "../schemas"
 
@@ -58,12 +59,15 @@ export default function ItemNovo() {
   }
 
   return (
-    <div className="bg-white px-6 py-7">
-      <div className="pb-6">
-        <p>Entradas e Saídas</p>
-      </div>
+    <>
+      <HeaderPage>
+        <div className="flex items-center justify-between">
+          <span className="text-foreground font-normal">Novo lançamento</span>
+        </div>
+      </HeaderPage>
 
-      <form onSubmit={form.handleSubmit(onSubmit)} className="w-full">
+      <div className="bg-white px-6 py-7">
+        <form onSubmit={form.handleSubmit(onSubmit)} className="w-full">
         <FieldGroup className="mb-6">
           <ControllerForm
             name="type"
@@ -186,7 +190,8 @@ export default function ItemNovo() {
             {form.formState.isSubmitting ? "Salvando..." : "Salvar"}
           </Button>
         </div>
-      </form>
-    </div>
+        </form>
+      </div>
+    </>
   )
 }

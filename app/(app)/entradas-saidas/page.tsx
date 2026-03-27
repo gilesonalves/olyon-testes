@@ -1,7 +1,8 @@
 "use client"
 
+import HeaderPage from "@/components/headerPage"
 import Link from "next/link"
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Controller as ControllerForm, useForm } from "react-hook-form"
 import { type Resolver } from "react-hook-form"
@@ -20,6 +21,8 @@ const typeFilters = [
   { value: "INCOME", label: "Entradas" },
   { value: "EXPENSE", label: "Saídas" },
 ] as const
+
+const PAGE_SIZE = 10
 
 const currencyFormatter = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -105,10 +108,29 @@ function getDisplayStatus(
   }
 }
 
+function normalizeDateOnly(value: string) {
+  const [year, month, day] = value.split("-").map(Number)
+
+  if (!year || !month || !day) return null
+
+  return new Date(year, month - 1, day)
+}
+
+function getTransactionDateOnly(value: string) {
+  const parsedDate = new Date(value)
+  if (Number.isNaN(parsedDate.getTime())) return null
+
+  return new Date(parsedDate.getFullYear(), parsedDate.getMonth(), parsedDate.getDate())
+}
+
 export default function EntradasSaidas() {
   const { state, deleteEntry, updateEntry } = Controller()
   const [editOpen, setEditOpen] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [startDate, setStartDate] = useState("")
+  const [endDate, setEndDate] = useState("")
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
+
   const editForm = useForm<FormValues>({
     resolver: zodResolver(formSchema) as unknown as Resolver<FormValues>,
     defaultValues: {
@@ -120,6 +142,7 @@ export default function EntradasSaidas() {
       dueDate: "",
     },
   })
+
   const selectedEditType = editForm.watch("type")
 
   useEffect(() => {
@@ -127,6 +150,36 @@ export default function EntradasSaidas() {
       editForm.setValue("dueDate", "", { shouldDirty: true, shouldValidate: true })
     }
   }, [editForm, selectedEditType])
+
+  const filteredByDateItems = useMemo(() => {
+    const normalizedStartDate = startDate ? normalizeDateOnly(startDate) : null
+    const normalizedEndDate = endDate ? normalizeDateOnly(endDate) : null
+
+    return state.items.filter((item) => {
+      const itemDate = getTransactionDateOnly(item.transactionDate)
+      if (!itemDate) return false
+
+      if (normalizedStartDate && itemDate < normalizedStartDate) {
+        return false
+      }
+
+      if (normalizedEndDate && itemDate > normalizedEndDate) {
+        return false
+      }
+
+      return true
+    })
+  }, [endDate, startDate, state.items])
+
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE)
+  }, [state.typeFilter, startDate, endDate])
+
+  const visibleItems = useMemo(() => {
+    return filteredByDateItems.slice(0, visibleCount)
+  }, [filteredByDateItems, visibleCount])
+
+  const hasMoreItems = visibleItems.length < filteredByDateItems.length
 
   const openEdit = (item: (typeof state.items)[number]) => {
     setSelectedId(item.id)
@@ -163,17 +216,25 @@ export default function EntradasSaidas() {
     await deleteEntry(id)
   }
 
+  const clearDateFilters = () => {
+    setStartDate("")
+    setEndDate("")
+  }
+
   return (
-    <div className="bg-white px-6 py-7">
-      <div className="flex items-center justify-between pb-6">
-        <p>Entradas e saídas</p>
+    <>
+      <HeaderPage>
+        <div className="flex items-center justify-between">
+          <span className="text-foreground font-normal">Entradas e saídas</span>
 
-        <Button asChild variant="primary">
-          <Link href="/entradas-saidas/novo">Novo</Link>
-        </Button>
-      </div>
+          <Button asChild variant="primary">
+            <Link href="/entradas-saidas/novo">Novo</Link>
+          </Button>
+        </div>
+      </HeaderPage>
 
-      <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <div className="bg-white px-6 py-7">
+        <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <div className="rounded-lg border border-gray-200 bg-white px-4 py-4">
           <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Entradas</p>
           <p className="mt-2 text-2xl font-semibold text-gray-900">
@@ -237,110 +298,158 @@ export default function EntradasSaidas() {
         })}
       </div>
 
+      <div className="mb-6 grid gap-4 rounded-lg border border-gray-200 bg-white p-4 md:grid-cols-3">
+        <div className="space-y-2">
+          <Label htmlFor="start-date">Data inicial</Label>
+          <Input
+            id="start-date"
+            type="date"
+            value={startDate}
+            onChange={(event) => setStartDate(event.target.value)}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="end-date">Data final</Label>
+          <Input
+            id="end-date"
+            type="date"
+            value={endDate}
+            onChange={(event) => setEndDate(event.target.value)}
+          />
+        </div>
+
+        <div className="flex items-end">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={clearDateFilters}
+            disabled={!startDate && !endDate}
+            className="w-full md:w-auto"
+          >
+            Limpar período
+          </Button>
+        </div>
+      </div>
+
       <div className="py-6">
         {state.loading ? (
           <div className="rounded-lg border border-gray-200 bg-white px-4 py-6 text-sm text-gray-600">
             Carregando lançamentos...
           </div>
-        ) : state.items.length === 0 ? (
+        ) : filteredByDateItems.length === 0 ? (
           <div className="rounded-lg border border-gray-200 bg-white px-4 py-6 text-sm text-gray-600">
-            {state.typeFilter === "ALL"
+            {state.typeFilter === "ALL" && !startDate && !endDate
               ? "Nenhum lançamento cadastrado ainda."
-              : "Nenhum lançamento encontrado para o filtro selecionado."}
+              : "Nenhum lançamento encontrado para os filtros selecionados."}
           </div>
         ) : (
-          <table className="min-w-full table-auto rounded-lg border border-gray-200">
-            <thead className="hidden w-full border-b border-gray-300 bg-gray-50 text-left text-sm text-gray-600 lg:table-header-group">
-              <tr>
-                <th className="whitespace-nowrap px-6 py-3.5 text-left text-sm font-semibold">Valor</th>
-                <th className="whitespace-nowrap px-2 py-3.5 text-left text-sm font-semibold">Data</th>
-                <th className="whitespace-nowrap px-2 py-3.5 text-left text-sm font-semibold">Vencimento</th>
-                <th className="whitespace-nowrap px-2 py-3.5 text-left text-sm font-semibold">Tipo</th>
-                <th className="whitespace-nowrap px-2 py-3.5 text-left text-sm font-semibold">Categoria</th>
-                <th className="whitespace-nowrap px-2 py-3.5 text-left text-sm font-semibold">Status</th>
-                <th></th>
-              </tr>
-            </thead>
-
-            <tbody className="text-sm text-gray-700">
-              {state.items.map((item) => (
-                <tr key={item.id} className="border-b-2 border-gray-200 lg:border-b">
-                  <td className="block whitespace-nowrap border-b p-0 text-sm lg:table-cell lg:border-b-0 lg:px-6 lg:py-4">
-                    <div className="flex items-center lg:justify-between lg:border-b-0">
-                      <div className="w-3/5 bg-gray-50 p-4 text-left text-sm font-semibold lg:hidden">Valor</div>
-                      <div className="p-4 text-sm font-medium lg:p-0">{formatCurrency(item.amount)}</div>
-                    </div>
-                  </td>
-
-                  <td className="block whitespace-nowrap border-b p-0 text-sm lg:table-cell lg:border-b-0 lg:px-2 lg:py-4">
-                    <div className="flex items-center lg:justify-between lg:border-b-0">
-                      <div className="w-3/5 bg-gray-50 p-4 text-left text-sm font-semibold lg:hidden">Data</div>
-                      <div className="p-4 text-sm lg:p-0">{formatDate(item.transactionDate)}</div>
-                    </div>
-                  </td>
-
-                  <td className="block whitespace-nowrap border-b p-0 text-sm lg:table-cell lg:border-b-0 lg:px-2 lg:py-4">
-                    <div className="flex items-center lg:justify-between lg:border-b-0">
-                      <div className="w-3/5 bg-gray-50 p-4 text-left text-sm font-semibold lg:hidden">Vencimento</div>
-                      <div className="p-4 text-sm lg:p-0">{formatDate(item.dueDate)}</div>
-                    </div>
-                  </td>
-
-                  <td className="block whitespace-nowrap border-b p-0 text-sm lg:table-cell lg:border-b-0 lg:px-2 lg:py-4">
-                    <div className="flex items-center lg:justify-between lg:border-b-0">
-                      <div className="w-3/5 bg-gray-50 p-4 text-left text-sm font-semibold lg:hidden">Tipo</div>
-                      <div className="ml-4 rounded-full px-2 py-1 text-xs lg:ml-0">{getTypeLabel(item.type)}</div>
-                    </div>
-                  </td>
-
-                  <td className="block border-b p-0 text-sm lg:table-cell lg:border-b-0 lg:px-2 lg:py-4">
-                    <div className="flex items-center lg:justify-between lg:border-b-0">
-                      <div className="w-3/5 bg-gray-50 p-4 text-left text-sm font-semibold lg:hidden">Categoria</div>
-                      <div className="p-4 text-sm lg:p-0">{item.category}</div>
-                    </div>
-                  </td>
-
-                  <td className="block border-b p-0 text-sm lg:table-cell lg:border-b-0 lg:px-2 lg:py-4">
-                    <div className="flex items-center lg:justify-between lg:border-b-0">
-                      <div className="w-3/5 bg-gray-50 p-4 text-left text-sm font-semibold lg:hidden">Status</div>
-                      <div className="p-4 lg:p-0">
-                        {(() => {
-                          const displayStatus = getDisplayStatus(item.type, item.status, item.dueDate)
-
-                          return (
-                            <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${displayStatus.className}`}>
-                              {displayStatus.label}
-                            </span>
-                          )
-                        })()}
-                      </div>
-                    </div>
-                  </td>
-
-                  <td className="whitespace-nowrap px-4 py-4 text-right text-sm font-medium lg:pr-6">
-                    <div className="flex justify-end gap-2">
-                      <Button type="button" variant="outline" size="sm" onClick={() => openEdit(item)}>
-                        Editar
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => handleDelete(item.id)}
-                        disabled={state.deletingId === item.id}
-                      >
-                        {state.deletingId === item.id ? "Excluindo..." : "Excluir"}
-                      </Button>
-                    </div>
-                  </td>
+          <>
+            <table className="min-w-full table-auto lg:rounded-lg lg:border lg:border-gray-200">
+              <thead className="hidden w-full border-b border-gray-300 bg-gray-50 text-left text-sm text-gray-600 lg:table-header-group">
+                <tr>
+                  <th className="whitespace-nowrap px-6 py-3.5 text-left text-sm font-semibold">Valor</th>
+                  <th className="whitespace-nowrap px-2 py-3.5 text-left text-sm font-semibold">Data</th>
+                  <th className="whitespace-nowrap px-2 py-3.5 text-left text-sm font-semibold">Vencimento</th>
+                  <th className="whitespace-nowrap px-2 py-3.5 text-left text-sm font-semibold">Tipo</th>
+                  <th className="whitespace-nowrap px-2 py-3.5 text-left text-sm font-semibold">Categoria</th>
+                  <th className="whitespace-nowrap px-2 py-3.5 text-left text-sm font-semibold">Status</th>
+                  <th></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+              </thead>
 
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+              <tbody className="block space-y-4 text-sm text-gray-700 lg:table-row-group lg:space-y-0">
+                {visibleItems.map((item) => (
+                  <tr key={item.id} className="block overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm lg:table-row lg:rounded-none lg:border-b lg:border-x-0 lg:border-t-0 lg:bg-transparent lg:shadow-none">
+                    <td className="block border-b p-0 text-sm lg:table-cell lg:whitespace-nowrap lg:border-b-0 lg:px-6 lg:py-4">
+                      <div className="flex items-start justify-between gap-3 lg:items-center lg:border-b-0 lg:justify-between">
+                        <div className="min-w-[7.25rem] bg-gray-50 p-4 text-left text-sm font-semibold lg:hidden">Valor</div>
+                        <div className="min-w-0 flex-1 p-4 text-right text-sm font-medium break-words lg:p-0 lg:text-left">{formatCurrency(item.amount)}</div>
+                      </div>
+                    </td>
+
+                    <td className="block border-b p-0 text-sm lg:table-cell lg:whitespace-nowrap lg:border-b-0 lg:px-2 lg:py-4">
+                      <div className="flex items-start justify-between gap-3 lg:items-center lg:justify-between lg:border-b-0">
+                        <div className="min-w-[7.25rem] bg-gray-50 p-4 text-left text-sm font-semibold lg:hidden">Data</div>
+                        <div className="min-w-0 flex-1 p-4 text-right text-sm break-words lg:p-0 lg:text-left">{formatDate(item.transactionDate)}</div>
+                      </div>
+                    </td>
+
+                    <td className="block border-b p-0 text-sm lg:table-cell lg:whitespace-nowrap lg:border-b-0 lg:px-2 lg:py-4">
+                      <div className="flex items-start justify-between gap-3 lg:items-center lg:justify-between lg:border-b-0">
+                        <div className="min-w-[7.25rem] bg-gray-50 p-4 text-left text-sm font-semibold lg:hidden">Vencimento</div>
+                        <div className="min-w-0 flex-1 p-4 text-right text-sm break-words lg:p-0 lg:text-left">{formatDate(item.dueDate)}</div>
+                      </div>
+                    </td>
+
+                    <td className="block border-b p-0 text-sm lg:table-cell lg:whitespace-nowrap lg:border-b-0 lg:px-2 lg:py-4">
+                      <div className="flex items-start justify-between gap-3 lg:items-center lg:justify-between lg:border-b-0">
+                        <div className="min-w-[7.25rem] bg-gray-50 p-4 text-left text-sm font-semibold lg:hidden">Tipo</div>
+                        <div className="flex min-w-0 flex-1 justify-end p-4 lg:block lg:p-0">
+                          <div className="rounded-full px-2 py-1 text-xs">{getTypeLabel(item.type)}</div>
+                        </div>
+                      </div>
+                    </td>
+
+                    <td className="block border-b p-0 text-sm lg:table-cell lg:border-b-0 lg:px-2 lg:py-4">
+                      <div className="flex items-start justify-between gap-3 lg:items-center lg:justify-between lg:border-b-0">
+                        <div className="min-w-[7.25rem] bg-gray-50 p-4 text-left text-sm font-semibold lg:hidden">Categoria</div>
+                        <div className="min-w-0 flex-1 p-4 text-right text-sm break-words lg:p-0 lg:text-left">{item.category}</div>
+                      </div>
+                    </td>
+
+                    <td className="block border-b p-0 text-sm lg:table-cell lg:border-b-0 lg:px-2 lg:py-4">
+                      <div className="flex items-start justify-between gap-3 lg:items-center lg:justify-between lg:border-b-0">
+                        <div className="min-w-[7.25rem] bg-gray-50 p-4 text-left text-sm font-semibold lg:hidden">Status</div>
+                        <div className="flex min-w-0 flex-1 justify-end p-4 lg:block lg:p-0">
+                          {(() => {
+                            const displayStatus = getDisplayStatus(item.type, item.status, item.dueDate)
+
+                            return (
+                              <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${displayStatus.className}`}>
+                                {displayStatus.label}
+                              </span>
+                            )
+                          })()}
+                        </div>
+                      </div>
+                    </td>
+
+                    <td className="block bg-gray-50/60 px-4 py-4 text-sm font-medium lg:table-cell lg:whitespace-nowrap lg:bg-transparent lg:px-4 lg:py-4 lg:text-right lg:pr-6">
+                      <div className="mb-3 text-left text-sm font-semibold lg:hidden">Ações</div>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end lg:flex-row lg:justify-end">
+                        <Button type="button" variant="outline" size="sm" className="w-full sm:w-auto" onClick={() => openEdit(item)}>
+                          Editar
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="sm"
+                          className="w-full sm:w-auto"
+                          onClick={() => handleDelete(item.id)}
+                          disabled={state.deletingId === item.id}
+                        >
+                          {state.deletingId === item.id ? "Excluindo..." : "Excluir"}
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            {hasMoreItems ? (
+              <div className="mt-4 flex justify-center">
+                <Button type="button" variant="outline" onClick={() => setVisibleCount((prev) => prev + PAGE_SIZE)}>
+                  Carregar mais
+                </Button>
+              </div>
+            ) : null}
+          </>
+        )}
+        </div>
+
+        <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent className="sm:max-w-106.25">
           <DialogHeader className="pb-4">
             <DialogTitle>Editar lançamento</DialogTitle>
@@ -462,7 +571,8 @@ export default function EntradasSaidas() {
             </DialogFooter>
           </form>
         </DialogContent>
-      </Dialog>
-    </div>
+        </Dialog>
+      </div>
+    </>
   )
 }

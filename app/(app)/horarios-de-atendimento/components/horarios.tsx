@@ -10,8 +10,8 @@ type Horario = {
   horaFinal: string
 }
 
-const ROW_GRID =
-  "grid grid-cols-[40px_96px_96px_16px_96px_28px] items-center gap-3"
+const ROW_LAYOUT =
+  "flex flex-col gap-3 sm:grid sm:grid-cols-[40px_96px_96px_16px_96px_28px] sm:items-center"
 
 export type HorariosDayValue = {
   enabled: boolean
@@ -95,79 +95,87 @@ export default function Horarios({
   return (
     <div className="space-y-3" data-blocked-intervals={blockedIntervalsCount}>
       {/* Linha principal */}
-      <div className={ROW_GRID}>
-        <Switch
-          id={switchId}
-          checked={value.enabled}
-          onCheckedChange={(checked) => onChange({ ...value, enabled: checked })}
-          disabled={disabledByBlock}
-        />
-        <span className="text-sm">{title}</span>
+      <div className={ROW_LAYOUT}>
+        <div className="flex items-center gap-3 sm:contents">
+          <Switch
+            id={switchId}
+            checked={value.enabled}
+            onCheckedChange={(checked) => onChange({ ...value, enabled: checked })}
+            disabled={disabledByBlock}
+          />
+          <span className="text-sm sm:hidden">{title}</span>
+        </div>
 
-        <Input
-          type="time"
-          step={1800}
-          value={horaInicial}
-          onChange={(e) => setHoraInicial(e.target.value)}
-          disabled={inputsDisabled}
-          className="h-9 w-24"
-        />
+        <span className="hidden text-sm sm:block">{title}</span>
 
-        <span className="text-center">-</span>
-
-        <Input
-          type="time"
-          step={1800}
-          value={horaFinal}
-          onChange={(e) => setHoraFinal(e.target.value)}
-          disabled={inputsDisabled}
-          className="h-9 w-24"
-        />
-
-        <button
-          type="button"
-          onClick={addHorario}
-          disabled={inputsDisabled}
-          className="flex items-center justify-center rounded p-1 hover:bg-gray-100 disabled:opacity-40"
-        >
-          +
-        </button>
-      </div>
-
-      {/* Horários adicionados */}
-      {value.horarios.map((horario, index) => (
-        <div key={index} className={ROW_GRID}>
-          <div />
-          <div />
-
+        <div className="flex items-center gap-2 sm:contents">
           <Input
-            disabled={inputsDisabled}
             type="time"
             step={1800}
-            value={horario.horaInicial}
-            onChange={(e) => handleChangeHorario(index, "horaInicial", e.target.value)}
-            className="h-9 w-24"
+            value={horaInicial}
+            onChange={(e) => setHoraInicial(e.target.value)}
+            disabled={inputsDisabled}
+            className="h-9 flex-1 sm:w-24"
           />
 
-          <span className="text-center">-</span>
+          <span className="w-3 text-center sm:w-auto">-</span>
 
           <Input
-            disabled={inputsDisabled}
             type="time"
             step={1800}
-            value={horario.horaFinal}
-            onChange={(e) => handleChangeHorario(index, "horaFinal", e.target.value)}
-            className="h-9 w-24"
+            value={horaFinal}
+            onChange={(e) => setHoraFinal(e.target.value)}
+            disabled={inputsDisabled}
+            className="h-9 flex-1 sm:w-24"
           />
 
           <button
             type="button"
-            onClick={() => handleRemoveHorario(index)}
+            onClick={addHorario}
             disabled={inputsDisabled}
-            className="flex items-center justify-center rounded p-1 hover:bg-gray-100 disabled:opacity-40"
+            className="flex h-9 w-10 shrink-0 items-center justify-center rounded border hover:bg-gray-100 disabled:opacity-40 sm:h-auto sm:w-auto sm:border-0 sm:p-1"
           >
-            🗑
+            +
           </button>
+        </div>
+      </div>
+
+      {/* Horários adicionados */}
+      {value.horarios.map((horario, index) => (
+        <div key={index} className={ROW_LAYOUT}>
+          <div className="hidden sm:block" />
+          <div className="hidden sm:block" />
+
+          <div className="flex items-center gap-2 sm:contents">
+            <Input
+              disabled={inputsDisabled}
+              type="time"
+              step={1800}
+              value={horario.horaInicial}
+              onChange={(e) => handleChangeHorario(index, "horaInicial", e.target.value)}
+              className="h-9 flex-1 sm:w-24"
+            />
+
+            <span className="w-3 text-center sm:w-auto">-</span>
+
+            <Input
+              disabled={inputsDisabled}
+              type="time"
+              step={1800}
+              value={horario.horaFinal}
+              onChange={(e) => handleChangeHorario(index, "horaFinal", e.target.value)}
+              className="h-9 flex-1 sm:w-24"
+            />
+
+            <button
+              type="button"
+              onClick={() => handleRemoveHorario(index)}
+              disabled={inputsDisabled}
+              className="flex h-9 w-10 shrink-0 items-center justify-center rounded border hover:bg-gray-100 disabled:opacity-40 sm:h-auto sm:w-auto sm:border-0 sm:p-1"
+            >
+              🗑
+            </button>
+          </div>
         </div>
       ))}
     </div>

@@ -1,5 +1,6 @@
 "use client"
 
+import HeaderPage from "@/components/headerPage"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Controller as ControllerForm, useForm } from "react-hook-form"
 import { type Resolver } from "react-hook-form"
@@ -49,12 +50,15 @@ export default function ItemNovo() {
   }
 
   return (
-    <div className="bg-white px-6 py-7">
-      <div className="pb-6">
-        <p>Contas a Pagar</p>
-      </div>
+    <>
+      <HeaderPage>
+        <div className="flex items-center justify-between">
+          <span className="text-foreground font-normal">Nova conta a pagar</span>
+        </div>
+      </HeaderPage>
 
-      <form onSubmit={form.handleSubmit(onSubmit)} className="w-full">
+      <div className="bg-white px-6 py-7">
+        <form onSubmit={form.handleSubmit(onSubmit)} className="w-full">
         <FieldGroup className="grid gap-5 md:grid-cols-2">
           <ControllerForm
             name="amount"
@@ -171,7 +175,8 @@ export default function ItemNovo() {
             {form.formState.isSubmitting ? "Salvando..." : "Salvar"}
           </Button>
         </div>
-      </form>
-    </div>
+        </form>
+      </div>
+    </>
   )
 }

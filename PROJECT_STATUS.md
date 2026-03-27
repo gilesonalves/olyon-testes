@@ -1,6 +1,6 @@
 # PROJECT_STATUS.md
 
-**Data de ultima atualizacao:** 23 de marco de 2026
+**Data de ultima atualizacao:** 27 de marco de 2026
 
 ## Status geral do projeto Olyon
 
@@ -30,7 +30,11 @@
 [x] Fase 8.3 do financeiro: status visual vencido por data em entradas-saidas
 [x] Fase 8.4 do financeiro: cards pendentes e vencidas alinhados com vencimento por data
 [x] Fase 8.5 do financeiro: modal de edicao com vencimento condicional
+[x] Fase 8.6 do financeiro: responsivo mobile refinado na listagem de entradas-saidas
+[x] Fase 6.2 do financeiro: filtros por status e periodo em controle-pagamentos
 [x] Fase 9 do financeiro: card de resumo do dashboard integrado com dados reais
+[x] Estrutura do app autenticado: cabecalho interno padronizado nas paginas sem HeaderPage
+[x] Padronizacao de listagens: 10 itens iniciais com CTA Carregar mais
 [x] Diagnostico temporario do financeiro: helper Prisma sem reuso global em desenvolvimento
 
 ---
@@ -150,6 +154,14 @@ O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) poss
 - [x] Fluxo de baixa fica compativel com a UI ja entregue em `controle-pagamentos`
 - [x] Isolamento por `id + storeId` mantido sem alteracoes estruturais
 
+### J.1) Financeiro (fase 6.2 - filtros em controle de pagamentos)
+
+- [x] `/controle-pagamentos` passa a ter filtro visual por status com `Todos`, `Pago` e `Nao pago`
+- [x] `/controle-pagamentos` passa a ter filtro por `Data inicial` e `Data final`
+- [x] Filtros sao combinados em memoria sobre a lista ja carregada
+- [x] Comparacao de periodo usa normalizacao de data para reduzir ruido de timezone
+- [x] Botao `Limpar periodo` restaura o intervalo sem alterar outras regras da tela
+
 ### K) Financeiro (fase 7 - edicao em entradas e saidas)
 
 - [x] Acao `Editar` adicionada na listagem de `/entradas-saidas`
@@ -204,6 +216,14 @@ O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) poss
 - [x] Submit do modal evita enviar `dueDate` para `Entrada`
 - [x] Fluxo de edicao permanece funcionando sem alteracao de backend
 
+### L.6) Financeiro (fase 8.6 - responsivo mobile da listagem)
+
+- [x] Listagem de `/entradas-saidas` fica organizada como cards em telas pequenas
+- [x] Pares `label / valor` mantidos legiveis no mobile
+- [x] Area de acoes passa a ocupar bloco proprio no final do item no mobile
+- [x] Desktop preserva a tabela atual sem regressao visual
+- [x] Ajuste restrito a classes responsivas e layout da listagem
+
 ### N) Financeiro (fase 9 - resumo real no dashboard)
 
 - [x] Card `Resumo financeiro` do dashboard deixa de usar mock local
@@ -218,7 +238,22 @@ O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) poss
 - [x] Helper central do Prisma mantido no client gerado em `generated/prisma/client`
 - [x] Reuso de `globalThis.prisma` removido em desenvolvimento para diagnosticar instância stale
 - [x] Adapter PostgreSQL e logs atuais preservados
+
+### N) Padronizacao de listagens no frontend
+
+- [x] Páginas de listagem passam a exibir inicialmente 10 itens
+- [x] CTA `Carregar mais` adicionada quando existem mais registros locais já carregados
+- [x] Filtros de telas já filtráveis resetam a quantidade visível para 10 ao mudar o critério
+- [x] Empty states existentes foram preservados
+- [x] Implementação mantida no frontend sem paginação por URL ou backend
 - [x] Comportamento em producao mantido com cache global apenas quando necessario
+
+### O) Estrutura de header nas paginas autenticadas
+
+- [x] Páginas internas sem `HeaderPage` foram alinhadas ao padrão visual do app autenticado
+- [x] O menu/navegação do sidebar volta a ficar acessível nessas telas via `SidebarTrigger`
+- [x] Correção feita sem alterar autenticação, Prisma ou API
+- [x] Listagens continuam com o padrão de 10 itens iniciais e `Carregar mais`
 
 ---
 

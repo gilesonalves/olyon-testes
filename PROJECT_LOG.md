@@ -1,3 +1,217 @@
+## 27 de marco de 2026 - Correção do header ausente em páginas autenticadas
+
+### Objetivo
+
+Corrigir as páginas internas do app autenticado que estavam sendo renderizadas sem o header interno padrão, mantendo o menu/navegação visível e preservando o padrão já aplicado de listagens com 10 itens iniciais e CTA `Carregar mais`.
+
+### Arquivos alterados
+
+- `app/(app)/dashboard/page.tsx`
+- `app/(app)/entradas-saidas/page.tsx`
+- `app/(app)/contas-a-pagar/page.tsx`
+- `app/(app)/controle-pagamentos/page.tsx`
+- `app/(app)/horarios-de-atendimento/page.tsx`
+- `app/(app)/contas-a-pagar/novo/page.tsx`
+- `app/(app)/entradas-saidas/novo/page.tsx`
+- `app/(app)/equipe/novo/page.tsx`
+- `app/(app)/usuarios/components/UserForm.tsx`
+- `app/(app)/usuarios/[id]/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### Causa do problema
+
+- O layout autenticado em `app/(app)/layout.tsx` aplica apenas a estrutura com sidebar.
+- O header interno com `SidebarTrigger` nao e injetado automaticamente pelo layout compartilhado.
+- Esse header depende do uso explicito do componente `HeaderPage` dentro de cada pagina.
+- Algumas telas seguiram esse padrao, mas outras renderizavam apenas o conteudo principal, ficando sem o topo com navegacao.
+
+### O que foi implementado
+
+#### 1. Alinhamento ao padrão existente
+
+- As paginas autenticadas sem `HeaderPage` passaram a usar o mesmo cabeçalho interno ja adotado em outras areas do app.
+- Os titulos e acoes principais foram movidos para o header quando fazia sentido.
+- O conteúdo principal da pagina foi mantido abaixo do header, preservando o layout desktop e mobile.
+
+#### 2. Cobertura de páginas principais
+
+- Dashboard
+- Entradas e saídas
+- Contas a pagar
+- Controle de pagamentos
+- Horarios de atendimento
+- Formularios principais de criacao/edicao que estavam sem o header visual do app
+
+#### 3. Regra das listagens preservada
+
+- As paginas de listagem já ajustadas continuam usando `PAGE_SIZE = 10`, `visibleCount` e `Carregar mais`.
+- `entradas-saidas` e `controle-pagamentos` continuam resetando a quantidade visível ao alterar filtros.
+- Nenhuma alteração de backend foi feita para paginação.
+
+### Observação arquitetural
+
+- Existe um ponto comum de causa: o layout autenticado nao injeta `HeaderPage` por conta própria.
+- Uma solução compartilhada mais profunda exigiria refatorar o layout para suportar header configurável por rota ou por slot, evitando duplicação com as páginas que já usam `HeaderPage`.
+- Nesta correção, a opção mais segura foi alinhar as páginas fora do padrão ao componente já estabelecido no projeto.
+
+### Resultado
+
+As páginas internas do app autenticado voltam a exibir o header/menu conforme o padrão visual existente, e as listagens permanecem com o limite inicial de 10 itens e CTA `Carregar mais`.
+
+## 27 de marco de 2026 - Fase 8.6 do financeiro (responsivo mobile da listagem de entradas e saidas)
+
+### Objetivo
+
+Melhorar a leitura e a usabilidade da listagem de `/entradas-saidas` em telas pequenas, separando melhor as informacoes e a area de acoes, sem alterar o layout de desktop.
+
+### Arquivos alterados
+
+- `app/(app)/entradas-saidas/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Linha tratada como card no mobile
+
+- Cada item da listagem passa a usar borda, arredondamento e espacamento proprios em telas pequenas.
+- O `tbody` passou a ganhar espacamento vertical entre itens no mobile.
+- No desktop, a linha continua sendo renderizada no formato de tabela atual.
+
+#### 2. Melhor leitura de label e valor
+
+- As labels mobile passaram a ter largura minima consistente.
+- Os valores agora usam area flexivel com melhor distribuicao do espaco.
+- Foram reduzidos pontos de compressao que deixavam textos e badges espremidos.
+
+#### 3. Acoes separadas no mobile
+
+- A celula de acoes agora vira um bloco proprio no fim do item em telas pequenas.
+- Os botoes `Editar` e `Excluir` passam a ocupar largura total no mobile quando necessario.
+- Em larguras intermediarias, os botoes podem voltar a dividir linha sem esmagar o conteudo principal.
+
+### Fora do escopo (mantido)
+
+- Sem alteracao de regras de negocio
+- Sem alteracao de API
+- Sem alteracao de Prisma
+- Sem alteracao de validacao
+- Sem alteracao do layout desktop
+
+### Resultado
+
+`/entradas-saidas` passa a ficar mais legivel no mobile, com cada item visualmente mais proximo de um card e com a area de acoes desacoplada do conteudo principal.
+
+## 27 de marco de 2026 - Padronizacao de listagens com carregamento incremental local
+
+### Objetivo
+
+Padronizar as páginas reais de listagem para mostrar inicialmente 10 itens e permitir avanço local por blocos de 10 com o CTA `Carregar mais`, sem introduzir paginação por backend ou URL.
+
+### Arquivos alterados
+
+- `app/(app)/contas-a-pagar/page.tsx`
+- `app/(app)/usuarios/page.tsx`
+- `app/(app)/servicos/page.tsx`
+- `app/(app)/eventos/page.tsx`
+- `app/(app)/equipe/page.tsx`
+- `app/(app)/horarios-de-atendimento/page.tsx`
+- `app/(app)/controle-pagamentos/page.tsx`
+- `app/admin/dashboard/stores/components/DeleteStoreDialogButton.tsx`
+- `app/admin/dashboard/stores/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Padrão de paginação incremental local
+
+- As listagens passam a iniciar com `PAGE_SIZE = 10`.
+- Cada tela passou a controlar `visibleCount` localmente no frontend.
+- O CTA `Carregar mais` adiciona mais 10 itens por clique usando `slice(0, visibleCount)`.
+
+#### 2. Cobertura das páginas com listagem
+
+- `contas-a-pagar`
+- `usuarios`
+- `servicos`
+- `eventos`
+- `equipe`
+- `controle-pagamentos`
+- lista de bloqueios em `horarios-de-atendimento`
+- listagem de lojas em `admin/dashboard/stores`
+
+#### 3. Reset em telas com filtro
+
+- `controle-pagamentos` agora reseta `visibleCount` para 10 ao alterar status ou período.
+- `entradas-saidas` já estava aderente ao padrão e foi mantida sem ajuste adicional.
+
+#### 4. Escopo preservado
+
+- Nenhuma rota foi alterada.
+- Nenhum endpoint novo foi criado.
+- Nenhuma mudança foi feita em Prisma.
+- Regras de negócio, filtros, edição, exclusão e estados vazios existentes foram mantidos.
+
+### Observação específica do admin
+
+- A listagem de lojas do admin estava em Server Component.
+- Para evitar arquivo novo e não ampliar escopo para API extra, a paginação incremental foi movida para um componente cliente já existente no mesmo módulo de `stores/components/DeleteStoreDialogButton.tsx`.
+
+### Resultado
+
+As telas de listagem ficam menos poluídas visualmente, com carregamento incremental local consistente e sem expansão de escopo para backend.
+
+## 27 de marco de 2026 - Fase 6.2 do financeiro (filtros em controle de pagamentos)
+
+### Objetivo
+
+Adicionar em `/controle-pagamentos` filtros combinados por status de pagamento e por periodo, reaproveitando o estado ja carregado pela tela e mantendo o padrao visual usado no financeiro.
+
+### Arquivos alterados
+
+- `app/(app)/controle-pagamentos/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Filtro por status
+
+- Foi adicionado um filtro visual com as opcoes `Todos`, `Pago` e `Nao pago`.
+- `Pago` mostra apenas itens com status operacional pago.
+- `Nao pago` agrupa itens pendentes e vencidos, sem alterar qualquer dado persistido.
+
+#### 2. Filtro por periodo
+
+- Foram adicionados os campos `Data inicial` e `Data final`.
+- A comparacao usa a data principal operacional da tela, o `dueDate`.
+- A normalizacao da data e feita no frontend para reduzir erro de timezone na comparacao do intervalo.
+
+#### 3. Combinacao dos filtros
+
+- O filtro final passou a ser calculado com `useMemo` sobre `state.items`, sem endpoint novo.
+- Status e periodo funcionam em conjunto.
+- Foi adicionada a acao `Limpar periodo` para restaurar o intervalo atual rapidamente.
+
+#### 4. Estados vazios coerentes
+
+- Quando nao existem despesas carregadas, a tela continua mostrando a mensagem base de vazio.
+- Quando existem dados mas nenhum item atende aos filtros, a tela mostra uma mensagem amigavel especifica para filtro sem resultado.
+
+### Fora do escopo (mantido)
+
+- Sem alteracao de backend
+- Sem alteracao de Prisma
+- Sem alteracao de rotas
+- Sem alteracao de autenticacao
+- Sem alteracao de paginacao
+
+### Resultado
+
+`/controle-pagamentos` passa a permitir leitura operacional por status e por periodo diretamente na listagem atual, sem expandir escopo para novas APIs ou novas regras de negocio.
+
 ## 24 de marco de 2026 - Fase 8.5 do financeiro (modal de edicao com vencimento condicional)
 
 ### Objetivo
