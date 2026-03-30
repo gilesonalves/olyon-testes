@@ -1,5 +1,6 @@
 "use client"
 
+import HeaderPage from "@/components/headerPage"
 import { useParams } from "next/navigation"
 import { useSession } from "next-auth/react"
 import { UserForm } from "../components/UserForm"
@@ -17,9 +18,16 @@ export default function UsuarioEditPage() {
   // Se não pode gerenciar ou não tem userId, mostrar erro
   if (!canManage || !userId) {
     return (
-      <div className="bg-white px-6 py-7">
-        <p className="text-red-600">Você não tem permissão para editar usuários.</p>
-      </div>
+      <>
+        <HeaderPage>
+          <div className="flex items-center justify-between">
+            <span className="text-foreground font-normal">Editar usuário</span>
+          </div>
+        </HeaderPage>
+        <div className="bg-white px-6 py-7">
+          <p className="text-red-600">Você não tem permissão para editar usuários.</p>
+        </div>
+      </>
     )
   }
 

@@ -30,10 +30,13 @@ type EventItem = {
   active: boolean
 }
 
+const PAGE_SIZE = 10
+
 export default function EventosPage() {
   const [items, setItems] = useState<EventItem[]>([])
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -68,6 +71,8 @@ console.log("[events] first item from API:", json?.data?.[0])
   })
 
   const empty = useMemo(() => !loading && items.length === 0, [loading, items.length])
+  const visibleItems = useMemo(() => items.slice(0, visibleCount), [items, visibleCount])
+  const hasMoreItems = visibleItems.length < items.length
 
   async function toggleActive(id: string, next: boolean) {
     if (!id) {
@@ -229,7 +234,7 @@ console.log("[events] first item from API:", json?.data?.[0])
         )}
 
         <div className="space-y-3">
-          {items.map((it) => (
+          {visibleItems.map((it) => (
             <div
               key={it.id}
               className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
@@ -265,6 +270,14 @@ console.log("[events] first item from API:", json?.data?.[0])
               </div>
             </div>
           ))}
+
+          {hasMoreItems ? (
+            <div className="mt-4 flex justify-center">
+              <Button type="button" variant="outline" onClick={() => setVisibleCount((prev) => prev + PAGE_SIZE)}>
+                Carregar mais
+              </Button>
+            </div>
+          ) : null}
         </div>
       </div>
     </>

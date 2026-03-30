@@ -56,7 +56,7 @@ export default function Servicos({
 
   return (
     <div className="space-y-3">
-      <div className="text-sm font-medium">{title}</div>
+      
 
       <div className="flex gap-2">
         <select

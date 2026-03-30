@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { Controller } from "react-hook-form"
+import HeaderPage from "@/components/headerPage"
 import { Button } from "@/components/ui/button"
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import {
@@ -58,12 +59,15 @@ export default function ItemNovo() {
   }, [])
 
   return (
-    <div className="bg-white px-6 py-7">
-      <div className="pb-6">
-        <p>Equipe</p>
-      </div>
+    <>
+      <HeaderPage>
+        <div className="flex items-center justify-between">
+          <span className="text-foreground font-normal">Novo profissional da equipe</span>
+        </div>
+      </HeaderPage>
 
-      <form onSubmit={form.handleSubmit(onSubmit)} className="w-full flex flex-col gap-7">
+      <div className="bg-white px-6 py-7">
+        <form onSubmit={form.handleSubmit(onSubmit)} className="w-full flex flex-col gap-7">
         {/* Selecionar usuário existente */}
         <FieldGroup>
           <Controller
@@ -123,7 +127,8 @@ export default function ItemNovo() {
             Salvar
           </Button>
         </div>
-      </form>
-    </div>
+        </form>
+      </div>
+    </>
   )
 }

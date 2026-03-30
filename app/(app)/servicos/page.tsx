@@ -32,12 +32,15 @@ type Service = {
   updatedAt: string
 }
 
+const PAGE_SIZE = 10
+
 export default function Servicos() {
   const { form, onSubmit, state, updateService, deleteService } = Controller()
 
   const [editOpen, setEditOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [selected, setSelected] = useState<Service | null>(null)
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
 
   const editForm = useForm<FormValues>({
     resolver: zodResolver(formSchema) as unknown as Resolver<FormValues>, // mantém compatível com seu setup atual
@@ -80,6 +83,8 @@ export default function Servicos() {
   }
 
   const selectedName = useMemo(() => selected?.name ?? "este serviço", [selected])
+  const visibleServices = useMemo(() => state.services.slice(0, visibleCount), [state.services, visibleCount])
+  const hasMoreItems = visibleServices.length < state.services.length
 
   return (
     <>
@@ -166,26 +171,36 @@ export default function Servicos() {
               Nenhum serviço cadastrado ainda.
             </div>
           ) : (
-            state.services.map((s: Service) => (
-              <div
-                key={s.id}
-                className="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div>
-                  <p className="text-sm font-medium text-gray-900">{s.name}</p>
-                  <p className="text-xs text-gray-600">{s.durationMin} min</p>
-                </div>
+            <>
+              {visibleServices.map((s: Service) => (
+                <div
+                  key={s.id}
+                  className="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">{s.name}</p>
+                    <p className="text-xs text-gray-600">{s.durationMin} min</p>
+                  </div>
 
-                <div className="flex items-center gap-2">
-                  <Button type="button" variant="outline" onClick={() => openEdit(s)}>
-                    Editar
-                  </Button>
-                  <Button type="button" variant="destructive" onClick={() => openDelete(s)}>
-                    Excluir
+                  <div className="flex items-center gap-2">
+                    <Button type="button" variant="outline" onClick={() => openEdit(s)}>
+                      Editar
+                    </Button>
+                    <Button type="button" variant="destructive" onClick={() => openDelete(s)}>
+                      Excluir
+                    </Button>
+                  </div>
+                </div>
+              ))}
+
+              {hasMoreItems ? (
+                <div className="mt-4 flex justify-center">
+                  <Button type="button" variant="outline" onClick={() => setVisibleCount((prev) => prev + PAGE_SIZE)}>
+                    Carregar mais
                   </Button>
                 </div>
-              </div>
-            ))
+              ) : null}
+            </>
           )}
         </div>
       </div>

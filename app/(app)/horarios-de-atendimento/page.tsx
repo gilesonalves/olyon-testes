@@ -1,5 +1,7 @@
 "use client"
 
+import HeaderPage from "@/components/headerPage"
+import { useMemo, useState } from "react"
 import Horarios from "./components/horarios"
 
 import {
@@ -28,6 +30,8 @@ import CalendarMultiSelect from "./components/calendar-multi-select"
 import { formatDate } from "@/lib/utils/date"
 import { getWeekdayBlockedInfo } from "./utils/blockedSchedule"
 
+const PAGE_SIZE = 10
+
 export default function HorariosDeAtendimento() {
   /** controller WEEKLY (cookie-based) */
   const weekController = useWeekScheduleFormController()
@@ -51,8 +55,11 @@ export default function HorariosDeAtendimento() {
     closeDialog,
     remove,
   } = listController
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
 
   const blockedInfoByWeekday = getWeekdayBlockedInfo(items)
+  const visibleItems = useMemo(() => items.slice(0, visibleCount), [items, visibleCount])
+  const hasMoreItems = visibleItems.length < items.length
   const weekDays = [
     "Domingo",
     "Segunda",
@@ -64,10 +71,14 @@ export default function HorariosDeAtendimento() {
   ]
 
   return (
-    <div className="bg-white px-6 py-7 w-125">
-      <div className="pb-6">
-        <p>Horários de atendimento</p>
-      </div>
+    <>
+      <HeaderPage>
+        <div className="flex items-center justify-between">
+          <span className="text-foreground font-normal">Horários de atendimento</span>
+        </div>
+      </HeaderPage>
+
+      <div className="w-full max-w-5xl bg-white px-4 py-6 sm:px-6 sm:py-7">
 
       {/* ================== */}
       {/* HORÁRIOS SEMANAIS */}
@@ -153,7 +164,7 @@ export default function HorariosDeAtendimento() {
       {/* HORÁRIOS BLOQUEADOS */}
       {/* ================== */}
       <div className="pt-10 space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h3 className="text-sm font-semibold">Horários bloqueados</h3>
 
           <Dialog
@@ -298,36 +309,47 @@ export default function HorariosDeAtendimento() {
             Nenhum horário bloqueado.
           </div>
         ) : (
-          items.map((item) => (
-            <div
-              key={item.id}
-              className="flex justify-between items-center border rounded-lg px-3 py-2"
-            >
-              <div>
-                <div>{formatDate(item.date)}</div>
-                <div className="text-xs text-gray-500">
-                  {item.allDay ? "Dia inteiro" : `${item.startTime} - ${item.endTime}`}
+          <>
+            {visibleItems.map((item) => (
+              <div
+                key={item.id}
+                className="flex flex-col gap-3 rounded-lg border px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div>
+                  <div>{formatDate(item.date)}</div>
+                  <div className="text-xs text-gray-500">
+                    {item.allDay ? "Dia inteiro" : `${item.startTime} - ${item.endTime}`}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-3 text-sm">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      openForEdit(item)
+                      setEditingItem(item) // ✅ sincroniza com o form controller
+                    }}
+                  >
+                    Editar
+                  </button>
+                  <button type="button" onClick={() => remove(item.id)}>
+                    Remover
+                  </button>
                 </div>
               </div>
+            ))}
 
-              <div className="flex gap-3 text-sm">
-                <button
-                  type="button"
-                  onClick={() => {
-                    openForEdit(item)
-                    setEditingItem(item) // ✅ sincroniza com o form controller
-                  }}
-                >
-                  Editar
-                </button>
-                <button type="button" onClick={() => remove(item.id)}>
-                  Remover
-                </button>
+            {hasMoreItems ? (
+              <div className="mt-4 flex justify-center">
+                <Button type="button" variant="outline" onClick={() => setVisibleCount((prev) => prev + PAGE_SIZE)}>
+                  Carregar mais
+                </Button>
               </div>
-            </div>
-          ))
+            ) : null}
+          </>
         )}
       </div>
-    </div>
+      </div>
+    </>
   )
 }
