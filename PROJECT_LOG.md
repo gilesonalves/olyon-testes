@@ -1322,3 +1322,141 @@ A regra centralizada em `src/lib/appointments/availability.ts` foi ajustada para
 ### Resultado
 
 O fluxo do WhatsApp agora resolve profissional antes da escolha de horario e a disponibilidade deixa de bloquear a loja inteira quando apenas um profissional especifico esta ocupado.
+## 29 de marco de 2026 - Fase 2 da pagina de agendamentos
+
+### Objetivo
+
+Evoluir a tela `/agendamentos` do painel para sair do input livre de data/hora e passar a usar um fluxo guiado por slots disponiveis, mantendo a mesma engine central de disponibilidade ja usada no WhatsApp e preservando a revalidacao final no `POST /api/appointments`.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `app/api/appointments/route.ts`
+- `app/api/appointments/availability/route.ts`
+- `src/lib/validators/appointment.ts`
+- `src/lib/utils/maskPhone.ts`
+- `src/lib/appointments/presentation.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Apresentacao amigavel na listagem
+
+- Foi criado um helper de apresentacao para mapear `AppointmentStatus` para labels em PT-BR sem alterar enums do banco.
+- A origem agora exibe:
+  - `Criado por <nome>` quando o `metadata` manual traz o nome do criador
+  - `Criado manualmente` quando a origem e `ADMIN` sem nome
+  - `WhatsApp` para `WHATSAPP`
+  - `Link de agendamento` para `WEB`
+- A lista tambem passou a formatar telefone brasileiro quando existir.
+
+#### 2. Telefone mascarado e payload limpo
+
+- `src/lib/utils/maskPhone.ts` passou a expor:
+  - `normalizePhone`
+  - `maskPhone`
+  - `formatPhone`
+- O formulario da tela mascara o telefone enquanto o usuario digita.
+- O backend agora normaliza o telefone para apenas digitos no validator de appointments, mantendo a validacao por 10 ou 11 digitos.
+
+#### 3. Endpoint de disponibilidade do painel
+
+- Foi criado `GET /api/appointments/availability`.
+- A rota valida query com Zod e resolve a loja atual pelo mesmo guard do painel.
+- O servico e buscado para obter `durationMin`.
+- A resposta usa a engine central `listNextAvailableSlots` de `src/lib/appointments/availability.ts`.
+- O payload devolve `startAt`, `endAt` e `label` em JSON padronizado.
+
+#### 4. Regra de profissional / sem preferencia
+
+- A consulta de disponibilidade segue a regra ja existente do projeto:
+  - se houver um unico profissional elegivel para o servico, ele pode ser resolvido automaticamente
+  - se houver mais de um, o painel exige a escolha do profissional antes de abrir o modal
+- Nenhum algoritmo novo de distribuicao de agenda por "qualquer profissional" foi introduzido.
+
+#### 5. Fluxo guiado por modal em `/agendamentos`
+
+- O campo livre de `datetime-local` foi removido do formulario.
+- A tela agora usa um bloco de horario com CTA `Escolher horario`.
+- O modal consulta o backend e lista slots disponiveis retornados pela engine central.
+- O slot escolhido volta para o formulario e o `POST /api/appointments` continua revalidando a disponibilidade antes de salvar.
+- `Editar` e `Cancelar` permanecem visiveis na lista, ainda sem fluxo real nesta fase.
+
+#### 6. Enriquecimento do metadata manual
+
+- O create manual passou a salvar `createdByUserName` no `metadata` do appointment.
+- Isso permite renderizar `Criado por <nome>` na UI sem alterar a origem persistida (`ADMIN`).
+
+### Validacao executada
+
+- `yarn eslint app/(app)/agendamentos/page.tsx app/api/appointments/route.ts app/api/appointments/availability/route.ts src/lib/validators/appointment.ts src/lib/utils/maskPhone.ts src/lib/appointments/presentation.ts`
+
+### Pendencias fora do escopo
+
+- `yarn tsc --noEmit --pretty false --ignoreDeprecations 5.0` continua falhando por erros antigos em outras partes do projeto, incluindo:
+  - `.next/dev/types/validator.ts`
+  - `app/(app)/contas-a-pagar/novo/page.tsx`
+  - `app/(app)/usuarios/controllers/index.tsx`
+  - `src/components/ui/app-sidebar.tsx`
+  - `src/lib/auth-options.ts`
+  - `src/scripts/seed.ts`
+- Nao foi implementado nesta fase:
+  - edicao real
+  - cancelamento real
+  - link publico completo
+  - agenda individual por profissional
+  - refactor amplo do fluxo WhatsApp
+
+### Resultado
+
+`/agendamentos` passou a operar com selecao guiada de horario via modal, mantendo a disponibilidade centralizada no backend, melhorando a leitura de status/origem e padronizando o tratamento de telefone no painel.
+## 29 de marco de 2026 - Correcao da listagem completa de slots no modal de agendamentos
+
+### Objetivo
+
+Corrigir o modal de `/agendamentos` para listar todos os horarios validos da data escolhida, em vez de usar um fluxo de "proximos slots" que truncava o expediente e podia herdar cortes indevidos do horario de busca.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `app/api/appointments/availability/route.ts`
+- `src/lib/appointments/availability.ts`
+- `src/lib/validators/appointment.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Helper central para slots do dia
+
+- Foi adicionado um helper central em `src/lib/appointments/availability.ts` para listar slots disponiveis de uma data especifica.
+- O helper reutiliza a mesma infraestrutura ja existente:
+  - expediente configurado
+  - duracao do servico
+  - bloqueios
+  - conflitos com appointments
+  - profissional selecionado
+  - step de agenda
+- A regra do ultimo slot permanece correta: so entra na lista o horario que cabe integralmente dentro do intervalo do expediente.
+
+#### 2. Endpoint do modal usando data inteira
+
+- `GET /api/appointments/availability` deixou de usar a estrategia de "proximos N slots" para o modal.
+- A rota agora aceita a data escolhida (`searchDate`) e monta a consulta da data inteira.
+- O limite pequeno foi removido para esse caso de uso.
+- Quando a data e hoje, a rota ainda corta apenas horarios ja passados; para datas futuras, a listagem cobre o dia inteiro.
+
+#### 3. Modal desacoplado do horario anterior
+
+- A UI deixou de enviar `searchStartAt` para montar a lista do modal.
+- O modal agora consulta pelo dia selecionado e recarrega a lista ao mudar a data.
+- A listagem nao depende mais do horario previamente escolhido no formulario.
+
+### Validacao executada
+
+- `yarn eslint app/(app)/agendamentos/page.tsx app/api/appointments/availability/route.ts src/lib/appointments/availability.ts src/lib/validators/appointment.ts`
+
+### Resultado
+
+O modal passa a representar corretamente a agenda disponivel do dia selecionado, indo ate o ultimo slot realmente valido conforme a duracao do servico e o expediente configurado.

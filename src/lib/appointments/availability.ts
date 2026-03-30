@@ -273,6 +273,36 @@ export async function listNextAvailableSlots(params: {
   return findSuggestedSlots(context, searchStartAt, limit)
 }
 
+export async function listAvailableSlotsForDate(params: {
+  db: AvailabilityDbClient
+  storeId: string
+  dateKey: string
+  durationMin: number
+  timeZone: string
+  staffMembershipId?: string | null
+  notBefore?: Date | null
+  stepMin?: number
+}) {
+  const stepMin = params.stepMin ?? 15
+
+  const context = await buildAvailabilityContext({
+    db: params.db,
+    storeId: params.storeId,
+    timeZone: params.timeZone,
+    requestedDateKey: params.dateKey,
+    durationMin: params.durationMin,
+    searchDays: 1,
+    stepMin,
+    staffMembershipId: params.staffMembershipId ?? null,
+  })
+
+  return findAvailableSlotsForDate({
+    context,
+    dateKey: params.dateKey,
+    notBefore: params.notBefore ?? null,
+  })
+}
+
 async function buildAvailabilityContext(params: {
   db: AvailabilityDbClient
   storeId: string
@@ -462,53 +492,88 @@ function findSuggestedSlots(
   requestedStartAt: Date,
   limit: number
 ) {
-  const requestedTimeMinutes = timeKeyToMinutes(getTimeKeyInTimeZone(requestedStartAt, context.timeZone))
   const suggestions: SuggestedSlot[] = []
   const seen = new Set<string>()
 
   for (let offset = 0; offset < context.searchDays && suggestions.length < limit; offset += 1) {
     const dateKey = addDaysToDateKey(context.requestedDateKey, offset)
-    const weekday = getWeekdayFromDateKey(dateKey)
-    const workingDay = context.workingDaysByWeekday.get(weekday)
+    suggestions.push(
+      ...findAvailableSlotsForDate({
+        context,
+        dateKey,
+        notBefore: offset === 0 ? requestedStartAt : null,
+        limit: limit - suggestions.length,
+        seen,
+      })
+    )
+  }
 
-    if (!workingDay?.enabled || workingDay.intervals.length === 0) {
-      continue
+  return suggestions
+}
+
+function findAvailableSlotsForDate(params: {
+  context: AvailabilityContext
+  dateKey: string
+  notBefore?: Date | null
+  limit?: number
+  seen?: Set<string>
+}) {
+  const suggestions: SuggestedSlot[] = []
+  const seen = params.seen ?? new Set<string>()
+  const weekday = getWeekdayFromDateKey(params.dateKey)
+  const workingDay = params.context.workingDaysByWeekday.get(weekday)
+
+  if (!workingDay?.enabled || workingDay.intervals.length === 0) {
+    return suggestions
+  }
+
+  const notBeforeDateKey = params.notBefore
+    ? getDateKeyInTimeZone(params.notBefore, params.context.timeZone)
+    : null
+  const requestedTimeMinutes =
+    params.notBefore && notBeforeDateKey === params.dateKey
+      ? roundUpToStep(
+          timeKeyToMinutes(getTimeKeyInTimeZone(params.notBefore, params.context.timeZone)),
+          params.context.stepMin
+        )
+      : null
+
+  for (const interval of workingDay.intervals) {
+    let candidateMinutes = timeKeyToMinutes(interval.startTime)
+    const intervalEndMinutes = timeKeyToMinutes(interval.endTime)
+
+    if (requestedTimeMinutes !== null) {
+      candidateMinutes = Math.max(candidateMinutes, requestedTimeMinutes)
     }
 
-    for (const interval of workingDay.intervals) {
-      let candidateMinutes = timeKeyToMinutes(interval.startTime)
-      const intervalEndMinutes = timeKeyToMinutes(interval.endTime)
+    while (
+      candidateMinutes + params.context.durationMin <= intervalEndMinutes &&
+      (params.limit === undefined || suggestions.length < params.limit)
+    ) {
+      const timeKey = minutesToTimeKey(candidateMinutes)
+      const startAt = combineDateKeyAndTime(params.dateKey, timeKey, params.context.timeZone)
 
-      if (offset === 0) {
-        candidateMinutes = Math.max(candidateMinutes, roundUpToStep(requestedTimeMinutes, context.stepMin))
+      if (params.notBefore && startAt.getTime() < params.notBefore.getTime()) {
+        candidateMinutes += params.context.stepMin
+        continue
       }
 
-      while (candidateMinutes + context.durationMin <= intervalEndMinutes && suggestions.length < limit) {
-        const timeKey = minutesToTimeKey(candidateMinutes)
-        const startAt = combineDateKeyAndTime(dateKey, timeKey, context.timeZone)
+      const endAt = addMinutes(startAt, params.context.durationMin)
+      const evaluation = evaluateSlot(params.context, startAt, endAt)
 
-        if (startAt.getTime() < requestedStartAt.getTime()) {
-          candidateMinutes += context.stepMin
-          continue
+      if (evaluation.available) {
+        const key = startAt.toISOString()
+        if (!seen.has(key)) {
+          suggestions.push({
+            startAt,
+            endAt,
+            label: formatDateTimeForBot(startAt, params.context.timeZone),
+          })
+          seen.add(key)
         }
-
-        const endAt = addMinutes(startAt, context.durationMin)
-        const evaluation = evaluateSlot(context, startAt, endAt)
-
-        if (evaluation.available) {
-          const key = startAt.toISOString()
-          if (!seen.has(key)) {
-            suggestions.push({
-              startAt,
-              endAt,
-              label: formatDateTimeForBot(startAt, context.timeZone),
-            })
-            seen.add(key)
-          }
-        }
-
-        candidateMinutes += context.stepMin
       }
+
+      candidateMinutes += params.context.stepMin
     }
   }
 

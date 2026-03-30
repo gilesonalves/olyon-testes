@@ -1,6 +1,6 @@
 # PROJECT_STATUS.md
 
-**Data de ultima atualizacao:** 27 de marco de 2026
+**Data de ultima atualizacao:** 29 de marco de 2026
 
 ## Status geral do projeto Olyon
 
@@ -16,6 +16,7 @@
 [x] Entrada conversacional com boas-vindas e menu inicial hibrido
 [x] Sugestao ativa de horarios com escolha por numero no WhatsApp
 [x] Massa minima real de seed para teste do fluxo WhatsApp
+[x] Fase 2 da pagina `/agendamentos` com modal de slots, telefone mascarado e labels amigaveis
 [x] Fase 1 do financeiro: base de dominio Prisma com `FinanceEntry`
 [x] Fase 2 do financeiro: validator e rota inicial GET/POST de lancamentos
 [x] Fase 3 do financeiro: rota por id com PUT e DELETE
@@ -48,6 +49,7 @@ O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) poss
 - APIs de horarios semanais e bloqueios de agenda persistidas em Prisma.
 - Base de conversas WhatsApp com `Conversation`, `ConversationMessage`, `AppointmentDraft` e `Appointment`.
 - Fluxo de bot via WhatsApp com menu inicial hibrido, selecao de servico, resolucao de profissional, sugestao ativa de horarios, escolha de horario por numero ou texto livre, confirmacao e criacao final do agendamento.
+- Tela `/agendamentos` com listagem real, criacao manual guiada por disponibilidade, telefone mascarado e labels de status/origem para o painel.
 - Respostas JSON consistentes, validacoes no servidor e escopo por loja.
 - Seed oficial com massa minima idempotente para validar agenda, bloqueios, conflitos e equipe no canal WhatsApp.
 
@@ -98,6 +100,15 @@ O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) poss
 - [x] Idempotencia de inbound por `providerMessageId`
 - [x] Sugestao de horarios proximos quando o slot pedido nao estiver disponivel
 - [x] Seed oficial (`prisma/seed.ts`) com loja, servico, profissionais, agenda, bloqueio e appointment existente
+
+### C.1) Painel / Agendamentos
+
+- [x] `/agendamentos` com listagem real via `GET /api/appointments`
+- [x] Criacao manual com revalidacao final da disponibilidade no `POST /api/appointments`
+- [x] `GET /api/appointments/availability` usando a mesma engine central do WhatsApp
+- [x] Modal de horarios disponiveis com selecao guiada de slot
+- [x] Modal de horarios listando todos os slots validos da data escolhida
+- [x] Status em PT-BR, origem amigavel e telefone formatado na interface
 
 ### D) Financeiro (fase 1 - base Prisma)
 
