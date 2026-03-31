@@ -1,6 +1,6 @@
 # PROJECT_STATUS.md
 
-**Data de ultima atualizacao:** 29 de marco de 2026
+**Data de ultima atualizacao:** 30 de marco de 2026
 
 ## Status geral do projeto Olyon
 
@@ -17,6 +17,26 @@
 [x] Sugestao ativa de horarios com escolha por numero no WhatsApp
 [x] Massa minima real de seed para teste do fluxo WhatsApp
 [x] Fase 2 da pagina `/agendamentos` com modal de slots, telefone mascarado e labels amigaveis
+[x] Fase A da pagina `/agendamentos` com agenda diaria visual e filtros operacionais
+[x] Fase B da pagina `/agendamentos` com refinamento visual, mobile adaptado e skeletons reais
+[x] Refinamento desktop da agenda diaria com cards mais compactos e hierarquia operacional melhor
+[x] Agenda desktop operacional com dialog de detalhes, remarcacao real e cancelamento por status
+[x] Migracao desktop de `/agendamentos` para grade semanal de calendario
+[x] Ajuste fino da grade semanal desktop com menos scroll horizontal e cards mais compactos
+[x] Desktop de `/agendamentos` voltou para agenda diaria operacional com colunas por profissional
+[x] POC desktop de `/agendamentos` com FullCalendar Standard usando apenas recursos gratuitos
+[x] Cards de eventos do FullCalendar em `/agendamentos` refinados para leitura operacional real
+[x] Visual do FullCalendar em `/agendamentos` aproximado do estilo classico do print de referencia
+[x] Visualizacao mensal classica do FullCalendar adicionada em `/agendamentos`
+[x] Visao mensal do FullCalendar refinada com celulas fixas e menos densidade visual
+[x] Eventos do FullCalendar com tipografia maior, profissional visivel e sem borda externa duplicada
+[x] Vista desktop de `/agendamentos` com opcao de grade em 3 dias e eventos com fundo mais leve
+[x] Vista desktop de `/agendamentos` definida com `3 dias` como modo padrao
+[x] Bloco textual acima da grade removido e eventos com contraste refinado em `/agendamentos`
+[x] Container externo da agenda sem borda duplicada em `/agendamentos`
+[x] Wrapper desktop da agenda sem padding lateral competindo com o radius do calendario
+[x] Modal do agendamento com abas, remarcacao por slots e cancelamento logico em `/agendamentos`
+[x] Laboratorio isolado `/agendamentos-lab` com FullCalendar Standard para validar layout sem acoplar ao fluxo real
 [x] Fase 1 do financeiro: base de dominio Prisma com `FinanceEntry`
 [x] Fase 2 do financeiro: validator e rota inicial GET/POST de lancamentos
 [x] Fase 3 do financeiro: rota por id com PUT e DELETE
@@ -49,7 +69,8 @@ O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) poss
 - APIs de horarios semanais e bloqueios de agenda persistidas em Prisma.
 - Base de conversas WhatsApp com `Conversation`, `ConversationMessage`, `AppointmentDraft` e `Appointment`.
 - Fluxo de bot via WhatsApp com menu inicial hibrido, selecao de servico, resolucao de profissional, sugestao ativa de horarios, escolha de horario por numero ou texto livre, confirmacao e criacao final do agendamento.
-- Tela `/agendamentos` com listagem real, criacao manual guiada por disponibilidade, telefone mascarado e labels de status/origem para o painel.
+- Tela `/agendamentos` com POC desktop em FullCalendar Standard, visualizacao simplificada no mobile, skeletons reais e criacao/edicao guiadas por disponibilidade real.
+- Laboratorio `/agendamentos-lab` com FullCalendar Standard usando dados mockados para validar layout e renderizacao em isolamento.
 - Respostas JSON consistentes, validacoes no servidor e escopo por loja.
 - Seed oficial com massa minima idempotente para validar agenda, bloqueios, conflitos e equipe no canal WhatsApp.
 
@@ -109,6 +130,38 @@ O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) poss
 - [x] Modal de horarios disponiveis com selecao guiada de slot
 - [x] Modal de horarios listando todos os slots validos da data escolhida
 - [x] Status em PT-BR, origem amigavel e telefone formatado na interface
+- [x] Agenda diaria visual com eixo de horarios e appointments posicionados por intervalo
+- [x] Filtros de data e profissional na operacao do dia
+- [x] Carregamento da agenda separado do carregamento tardio de servicos no formulario
+- [x] Visual dos blocos refinado com melhor hierarquia, badge de status e densidade adaptativa
+- [x] Layout mobile especifico por lista do dia para evitar quebra da timeline
+- [x] Skeletons da pagina, agenda, formulario e modal de horarios
+- [x] Cards desktop com largura mais contida, acento lateral mais forte e prioridade visual para horario/cliente
+- [x] Blocos desktop clicaveis com dialog de detalhes do agendamento
+- [x] `PUT /api/appointments/[id]` para editar, remarcar e cancelar por `status = CANCELED`
+- [x] Remarcacao revalida disponibilidade ignorando o proprio appointment no conflito
+- [x] Desktop migrado de timeline diaria para grade semanal inspirada em calendario
+- [x] Navegacao semanal com `Semana anterior`, `Hoje` e `Proxima semana`
+- [x] Cabecalho semanal com dias clicaveis para ancorar a data ativa da tela
+- [x] Grade desktop com largura minima reduzida para diminuir scroll horizontal
+- [x] Cards desktop com chip de horario, badge e paddings levemente mais compactos
+- [x] Desktop voltou a usar agenda diaria como visao principal
+- [x] Agenda diaria com colunas por profissional para leitura operacional do dia
+- [x] Navegacao principal do desktop voltou para `Dia anterior`, `Hoje` e `Proximo dia`
+- [x] POC desktop com FullCalendar Standard isolada em componente proprio e sem plugins premium
+- [x] Toolbar do Olyon integrada a visualizacao `timeGridDay` e `timeGridWeek` da POC
+- [x] Cards do FullCalendar refinados para nao quebrar em duracoes curtas e manter leitura de cliente, servico e status
+- [x] Eventos do FullCalendar ajustados para um visual mais classico, com barras azuis simples e leitura direta
+- [x] Modo `Mes` adicionado ao desktop de `/agendamentos` com grade classica por dias
+- [x] Modo `Mes` refinado com menos texto por evento, altura estavel de celulas e visual mais neutro
+- [x] Eventos da agenda com fonte ampliada, nome do profissional e remocao da borda duplicada do container
+- [x] Modo `3 dias` adicionado ao desktop com navegacao por blocos de 3 dias e menor saturacao visual dos eventos
+- [x] Modo `3 dias` assumido como visualizacao padrao do desktop em `/agendamentos`
+- [x] Texto explicativo acima da grade removido e blocos da agenda com fundo mais suave e texto mais destacado
+- [x] Moldura externa da agenda removida para evitar dupla borda com a grade do FullCalendar
+- [x] Wrapper desktop sem `p-4`, preservando o radius do calendario sem criar faixa branca ao redor
+- [x] Modal de detalhes com abas, remarcacao por slots validados e cancelamento logico por status
+- [x] `/agendamentos-lab` com FullCalendar Standard em ambiente isolado e eventos mockados
 
 ### D) Financeiro (fase 1 - base Prisma)
 

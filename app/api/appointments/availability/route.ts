@@ -37,6 +37,7 @@ export async function GET(req: Request) {
     const parsed = AppointmentAvailabilityQuerySchema.safeParse({
       serviceId: searchParams.get("serviceId"),
       staffMembershipId: searchParams.get("staffMembershipId"),
+      excludeAppointmentId: searchParams.get("excludeAppointmentId"),
       searchDate: searchParams.get("searchDate"),
       searchStartAt: searchParams.get("searchStartAt"),
     })
@@ -122,6 +123,7 @@ export async function GET(req: Request) {
       durationMin: service.durationMin,
       timeZone,
       staffMembershipId: resolvedStaffMembershipId,
+      excludeAppointmentId: input.excludeAppointmentId,
       notBefore: searchDate === currentDateKey ? new Date() : null,
     })
 

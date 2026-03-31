@@ -200,6 +200,7 @@ export async function checkAvailabilityForSlot(params: {
   durationMin: number
   timeZone: string
   staffMembershipId?: string | null
+  excludeAppointmentId?: string | null
   suggestionsLimit?: number
   searchDays?: number
   stepMin?: number
@@ -218,6 +219,7 @@ export async function checkAvailabilityForSlot(params: {
     searchDays,
     stepMin,
     staffMembershipId: params.staffMembershipId ?? null,
+    excludeAppointmentId: params.excludeAppointmentId ?? null,
   })
 
   const requestedEndAt = addMinutes(params.requestedStartAt, params.durationMin)
@@ -248,6 +250,7 @@ export async function listNextAvailableSlots(params: {
   durationMin: number
   timeZone: string
   staffMembershipId?: string | null
+  excludeAppointmentId?: string | null
   searchStartAt?: Date
   limit?: number
   searchDays?: number
@@ -268,6 +271,7 @@ export async function listNextAvailableSlots(params: {
     searchDays,
     stepMin,
     staffMembershipId: params.staffMembershipId ?? null,
+    excludeAppointmentId: params.excludeAppointmentId ?? null,
   })
 
   return findSuggestedSlots(context, searchStartAt, limit)
@@ -280,6 +284,7 @@ export async function listAvailableSlotsForDate(params: {
   durationMin: number
   timeZone: string
   staffMembershipId?: string | null
+  excludeAppointmentId?: string | null
   notBefore?: Date | null
   stepMin?: number
 }) {
@@ -294,6 +299,7 @@ export async function listAvailableSlotsForDate(params: {
     searchDays: 1,
     stepMin,
     staffMembershipId: params.staffMembershipId ?? null,
+    excludeAppointmentId: params.excludeAppointmentId ?? null,
   })
 
   return findAvailableSlotsForDate({
@@ -312,6 +318,7 @@ async function buildAvailabilityContext(params: {
   searchDays: number
   stepMin: number
   staffMembershipId: string | null
+  excludeAppointmentId: string | null
 }) {
   const lastDateKey = addDaysToDateKey(params.requestedDateKey, params.searchDays - 1)
   const appointmentRangeStart = combineDateKeyAndTime(params.requestedDateKey, "00:00", params.timeZone)
@@ -343,6 +350,7 @@ async function buildAvailabilityContext(params: {
         status: { in: [AppointmentStatus.SCHEDULED, AppointmentStatus.CONFIRMED] },
         startAt: { lt: appointmentRangeEnd },
         endAt: { gt: appointmentRangeStart },
+        ...(params.excludeAppointmentId ? { id: { not: params.excludeAppointmentId } } : {}),
         ...(params.staffMembershipId
           ? {
               OR: [
