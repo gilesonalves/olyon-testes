@@ -10,7 +10,12 @@ import {
 import { requireMembershipRole } from "@/lib/guards/require-membership-role"
 import { AppointmentUpdateSchema } from "@/lib/validators/appointment"
 import { checkAvailabilityForSlot } from "@/lib/appointments/availability"
-import { getBotTimezone } from "@/lib/bot/datetime"
+import {
+  combineDateKeyAndTime,
+  getBotTimezone,
+  getDateKeyInTimeZone,
+  getTimeKeyInTimeZone,
+} from "@/lib/bot/datetime"
 
 type Params = {
   params: Promise<{ id: string }>
@@ -39,7 +44,7 @@ function serializeAppointment(appointment: {
       name: string
     }
   } | null
-}) {
+}, timeZone: string) {
   return {
     id: appointment.id,
     customerName: appointment.customerName,
@@ -47,6 +52,9 @@ function serializeAppointment(appointment: {
     customerEmail: appointment.customerEmail,
     startAt: appointment.startAt.toISOString(),
     endAt: appointment.endAt.toISOString(),
+    date: getDateKeyInTimeZone(appointment.startAt, timeZone),
+    startTime: getTimeKeyInTimeZone(appointment.startAt, timeZone),
+    endTime: getTimeKeyInTimeZone(appointment.endAt, timeZone),
     status: appointment.status,
     source: appointment.source,
     notes: appointment.notes,
@@ -104,11 +112,14 @@ export async function PUT(req: Request, { params }: Params) {
     }
 
     const input = parsed.data
+    const timeZone = getBotTimezone()
     const nextStatus = input.status ?? existing.status
     const hasScheduleChange =
       input.serviceId !== undefined ||
       input.staffMembershipId !== undefined ||
-      input.startAt !== undefined
+      input.date !== undefined ||
+      input.time !== undefined
+    const hasExplicitDateTimeChange = input.date !== undefined && input.time !== undefined
 
     if (nextStatus === "CANCELED" && hasScheduleChange) {
       return badRequest("Nao combine cancelamento com remarcacao no mesmo envio.")
@@ -123,7 +134,10 @@ export async function PUT(req: Request, { params }: Params) {
       nextServiceId = input.serviceId ?? existing.serviceId
       nextStaffMembershipId =
         input.staffMembershipId !== undefined ? input.staffMembershipId : existing.staffMembershipId
-      nextStartAt = input.startAt ? new Date(input.startAt) : existing.startAt
+      nextStartAt =
+        hasExplicitDateTimeChange && input.date && input.time
+          ? combineDateKeyAndTime(input.date, input.time, timeZone)
+          : existing.startAt
 
       if (!nextServiceId) {
         return badRequest("Servico invalido para o agendamento.")
@@ -131,6 +145,10 @@ export async function PUT(req: Request, { params }: Params) {
 
       if (Number.isNaN(nextStartAt.getTime())) {
         return badRequest("Data/hora invalida.")
+      }
+
+      if (hasExplicitDateTimeChange && nextStartAt.getTime() < Date.now()) {
+        return badRequest("Nao e possivel agendar no passado.")
       }
 
       const service = await prisma.service.findFirst({
@@ -172,7 +190,7 @@ export async function PUT(req: Request, { params }: Params) {
         storeId: guard.storeId,
         requestedStartAt: nextStartAt,
         durationMin: service.durationMin,
-        timeZone: getBotTimezone(),
+        timeZone,
         staffMembershipId: nextStaffMembershipId,
         excludeAppointmentId: existing.id,
         suggestionsLimit: 5,
@@ -223,7 +241,7 @@ export async function PUT(req: Request, { params }: Params) {
       },
     })
 
-    return ok(serializeAppointment(appointment))
+    return ok(serializeAppointment(appointment, timeZone))
   } catch (e) {
     console.error("[PUT /api/appointments/[id]]", e)
     return serverError()

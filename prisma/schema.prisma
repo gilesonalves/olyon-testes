@@ -31,6 +31,7 @@ model Store {
   phone                String?
   whatsappPhone        String?
   address              String?
+  clients              Client[]
   complement           String?
   neighborhood         String?
   city                 String?
@@ -64,6 +65,29 @@ model Membership {
   types             MembershipTypeLink[]
 
   @@unique([userId, storeId])
+}
+
+model Client {
+  id             String   @id @default(cuid())
+  storeId        String
+  name           String
+  email          String?
+  cpf            String?
+  phone          String?
+  secondaryPhone String?
+  gender         String?
+  birthDate      DateTime?
+  notes          String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  store          Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId])
+  @@index([storeId, name])
+  @@index([storeId, email])
+  @@index([storeId, cpf])
+  @@index([storeId, isActive])
 }
 
 model MembershipTypeLink {

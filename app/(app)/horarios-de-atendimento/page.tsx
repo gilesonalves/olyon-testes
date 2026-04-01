@@ -29,6 +29,10 @@ import { Controller as RHFController } from "react-hook-form"
 import CalendarMultiSelect from "./components/calendar-multi-select"
 import { formatDate } from "@/lib/utils/date"
 import { getWeekdayBlockedInfo } from "./utils/blockedSchedule"
+import {
+  BlockedScheduleListSkeleton,
+  SchedulePageSkeleton,
+} from "./components/schedule-page-skeleton"
 
 const PAGE_SIZE = 10
 
@@ -60,6 +64,8 @@ export default function HorariosDeAtendimento() {
   const blockedInfoByWeekday = getWeekdayBlockedInfo(items)
   const visibleItems = useMemo(() => items.slice(0, visibleCount), [items, visibleCount])
   const hasMoreItems = visibleItems.length < items.length
+  const showPageSkeleton =
+    weekController.initialLoading || (listController.loading && items.length === 0)
   const weekDays = [
     "Domingo",
     "Segunda",
@@ -78,6 +84,9 @@ export default function HorariosDeAtendimento() {
         </div>
       </HeaderPage>
 
+      {showPageSkeleton ? (
+        <SchedulePageSkeleton />
+      ) : (
       <div className="w-full max-w-5xl bg-white px-4 py-6 sm:px-6 sm:py-7">
 
       {/* ================== */}
@@ -304,7 +313,9 @@ export default function HorariosDeAtendimento() {
         </div>
 
         {/* Lista de bloqueios */}
-        {items.length === 0 ? (
+        {listController.loading && items.length === 0 ? (
+          <BlockedScheduleListSkeleton />
+        ) : items.length === 0 ? (
           <div className="border border-dashed p-4 text-sm text-gray-500">
             Nenhum horário bloqueado.
           </div>
@@ -350,6 +361,7 @@ export default function HorariosDeAtendimento() {
         )}
       </div>
       </div>
+      )}
     </>
   )
 }

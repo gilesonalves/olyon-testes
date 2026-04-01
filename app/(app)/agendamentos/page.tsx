@@ -1,22 +1,32 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import HeaderPage from "@/components/headerPage"
+import { Check, Plus, Search, UserRound } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Textarea } from "@/components/ui/textarea"
 import {
   getAppointmentSourceLabel,
   getAppointmentStatusLabel,
 } from "@/lib/appointments/presentation"
+import { ClientCreateApiSchema } from "@/lib/validators/client"
 import { formatPhone, maskPhone, normalizePhone } from "@/lib/utils/maskPhone"
-import FullCalendarView, { type FullCalendarDesktopView } from "./components/full-calendar-view"
+import AppointmentsPageSkeleton from "./components/appointments-page-skeleton"
+import ProfessionalScheduleBoard from "./components/professional-schedule-board"
+import {
+  type EmptySlotSelection,
+  type ProfessionalColumnItem,
+} from "./components/professional-schedule-column"
 
 type ServiceItem = {
   id: string
@@ -36,6 +46,9 @@ type AppointmentItem = {
   customerName: string
   customerPhone: string | null
   customerEmail: string | null
+  date: string
+  startTime: string
+  endTime: string
   startAt: string
   endAt: string
   status: string
@@ -56,6 +69,9 @@ type AppointmentItem = {
 type AvailabilitySlot = {
   startAt: string
   endAt: string
+  date: string
+  time: string
+  endTime: string
   label: string
 }
 
@@ -75,23 +91,56 @@ type AppointmentUpdatePayload = {
   customerName?: string
   customerPhone?: string | null
   customerEmail?: string | null
-  startAt?: string
+  date?: string
+  time?: string
   notes?: string | null
   status?: string
 }
 
-type AppointmentTone = {
-  accent: string
-  badge: string
-  card: string
-  compactBadge: string
-  metaDot: string
-  mobileCard: string
-  timeChip: string
+type AppointmentClientOption = {
+  id: string
+  name: string
+  email: string | null
+  phone: string | null
+  isActive: boolean
 }
 
-const DEFAULT_DAY_START_MINUTES = 8 * 60
-const DEFAULT_DAY_END_MINUTES = 18 * 60
+type ClientItem = AppointmentClientOption & {
+  cpf: string | null
+  secondaryPhone: string | null
+  birthDate: string | null
+  notes: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+type BlockedScheduleItem = {
+  id: string
+  date: string
+  allDay: boolean
+  startTime?: string
+  endTime?: string
+}
+
+type BlockedScheduleError = {
+  ok: false
+  message?: string
+}
+
+type WeekdayCode = "SUN" | "MON" | "TUE" | "WED" | "THU" | "FRI" | "SAT"
+
+type WeekScheduleDayItem = {
+  weekday: WeekdayCode
+  enabled: boolean
+  intervals: Array<{
+    startTime: string
+    endTime: string
+  }>
+}
+
+type WeekScheduleResponse = {
+  days: WeekScheduleDayItem[]
+}
 
 function parseDateKey(value: string) {
   return new Date(`${value}T12:00:00`)
@@ -106,164 +155,151 @@ function getTodayDateValue() {
   return `${year}-${month}-${day}`
 }
 
-function getLocalDateKey(value: string | Date) {
-  const date = value instanceof Date ? value : new Date(value)
-
-  return [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, "0"),
-    String(date.getDate()).padStart(2, "0"),
-  ].join("-")
+function getWeekdayCodeFromDateKey(dateKey: string): WeekdayCode {
+  return ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"][parseDateKey(dateKey).getDay()] as WeekdayCode
 }
 
-function getMinutesFromDate(value: string | Date) {
-  const date = value instanceof Date ? value : new Date(value)
-  return date.getHours() * 60 + date.getMinutes()
+function getMinutesFromTimeKey(value: string) {
+  const [hours, minutes] = value.split(":").map(Number)
+  return hours * 60 + minutes
 }
 
-function floorToHour(value: number) {
-  return Math.floor(value / 60) * 60
+function formatTimeRange(startTime: string, endTime: string) {
+  return `${startTime} - ${endTime}`
 }
 
-function ceilToHour(value: number) {
-  return Math.ceil(value / 60) * 60
+function formatDateLabel(dateKey: string) {
+  return parseDateKey(dateKey).toLocaleDateString("pt-BR")
 }
 
-function formatTimeLabel(totalMinutes: number) {
-  const hour = Math.floor(totalMinutes / 60)
-  const minute = totalMinutes % 60
-
-  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`
+function formatDateTimeLabel(dateKey: string, time: string) {
+  return `${formatDateLabel(dateKey)} ${time}`
 }
 
-function formatTimeRange(startAt: string, endAt: string) {
-  return `${new Date(startAt).toLocaleTimeString("pt-BR", {
-    hour: "2-digit",
-    minute: "2-digit",
-  })} - ${new Date(endAt).toLocaleTimeString("pt-BR", {
-    hour: "2-digit",
-    minute: "2-digit",
-  })}`
+function formatBlockedScheduleLabel(item: BlockedScheduleItem) {
+  if (item.allDay) {
+    return "Dia inteiro"
+  }
+
+  return `${item.startTime ?? "--:--"} - ${item.endTime ?? "--:--"}`
 }
 
-function addDaysToDateKey(dateKey: string, days: number) {
-  const date = parseDateKey(dateKey)
-  date.setDate(date.getDate() + days)
-  return getLocalDateKey(date)
+function sortClientsByName(items: ClientItem[]) {
+  return [...items].sort((left, right) => left.name.localeCompare(right.name, "pt-BR"))
 }
 
-function getWeekDateKeys(dateKey: string) {
-  const date = parseDateKey(dateKey)
-  const currentDay = date.getDay()
-  const mondayOffset = currentDay === 0 ? -6 : 1 - currentDay
+function AppointmentClientPicker({
+  value,
+  selectedClient,
+  results,
+  loading,
+  error = null,
+  onValueChange,
+  onSelectClient,
+  onCreateClient,
+}: {
+  value: string
+  selectedClient: AppointmentClientOption | null
+  results: AppointmentClientOption[]
+  loading: boolean
+  error?: string | null
+  onValueChange: (value: string) => void
+  onSelectClient: (client: AppointmentClientOption) => void
+  onCreateClient: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const containerRef = useRef<HTMLDivElement | null>(null)
 
-  date.setDate(date.getDate() + mondayOffset)
-
-  const startKey = getLocalDateKey(date)
-  return Array.from({ length: 7 }, (_, index) => addDaysToDateKey(startKey, index))
-}
-
-function getThreeDayDateKeys(dateKey: string) {
-  return Array.from({ length: 3 }, (_, index) => addDaysToDateKey(dateKey, index))
-}
-
-function addMonthsToDateKey(dateKey: string, months: number) {
-  const date = parseDateKey(dateKey)
-  date.setMonth(date.getMonth() + months)
-  return getLocalDateKey(date)
-}
-
-function getMonthKey(dateKey: string) {
-  const date = parseDateKey(dateKey)
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
-}
-
-function getAppointmentTone(status: string): AppointmentTone {
-  if (status === "CONFIRMED") {
-    return {
-      accent: "bg-sky-500",
-      badge: "border-sky-200 bg-sky-50 text-sky-700",
-      compactBadge: "bg-sky-500/10 text-sky-700",
-      metaDot: "bg-sky-500/70",
-      card: "border-sky-200 bg-white text-slate-900 shadow-[0_12px_30px_rgba(14,165,233,0.09)]",
-      mobileCard: "border-sky-200 bg-white",
-      timeChip: "bg-sky-100 text-sky-800",
+  useEffect(() => {
+    function handlePointerDown(event: MouseEvent) {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setOpen(false)
+      }
     }
-  }
 
-  if (status === "CANCELED") {
-    return {
-      accent: "bg-rose-500",
-      badge: "border-rose-200 bg-rose-50 text-rose-700",
-      compactBadge: "bg-rose-500/10 text-rose-700",
-      metaDot: "bg-rose-500/70",
-      card: "border-rose-200 bg-white text-slate-900 shadow-[0_12px_30px_rgba(244,63,94,0.09)]",
-      mobileCard: "border-rose-200 bg-white",
-      timeChip: "bg-rose-100 text-rose-800",
+    document.addEventListener("mousedown", handlePointerDown)
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown)
     }
-  }
+  }, [])
 
-  if (status === "DONE") {
-    return {
-      accent: "bg-slate-500",
-      badge: "border-slate-200 bg-slate-50 text-slate-700",
-      compactBadge: "bg-slate-500/10 text-slate-700",
-      metaDot: "bg-slate-500/70",
-      card: "border-slate-200 bg-white text-slate-900 shadow-[0_12px_30px_rgba(100,116,139,0.09)]",
-      mobileCard: "border-slate-200 bg-white",
-      timeChip: "bg-slate-100 text-slate-800",
-    }
-  }
+  const shouldShowPanel = open && (value.trim().length > 0 || loading || Boolean(error))
+  const trimmedValue = value.trim()
+  const hasExactMatch = results.some((client) => client.name.toLowerCase() === trimmedValue.toLowerCase())
 
-  if (status === "NO_SHOW") {
-    return {
-      accent: "bg-amber-500",
-      badge: "border-amber-200 bg-amber-50 text-amber-700",
-      compactBadge: "bg-amber-500/10 text-amber-700",
-      metaDot: "bg-amber-500/70",
-      card: "border-amber-200 bg-white text-slate-900 shadow-[0_12px_30px_rgba(245,158,11,0.09)]",
-      mobileCard: "border-amber-200 bg-white",
-      timeChip: "bg-amber-100 text-amber-800",
-    }
-  }
-
-  return {
-    accent: "bg-violet-500",
-    badge: "border-violet-200 bg-violet-50 text-violet-700",
-    compactBadge: "bg-violet-500/10 text-violet-700",
-    metaDot: "bg-violet-500/70",
-    card: "border-violet-200 bg-white text-slate-900 shadow-[0_12px_30px_rgba(139,92,246,0.09)]",
-    mobileCard: "border-violet-200 bg-white",
-    timeChip: "bg-violet-100 text-violet-800",
-  }
-}
-
-function FiltersSkeleton() {
   return (
-    <section className="rounded-3xl border border-slate-200 bg-[linear-gradient(135deg,#f8fafc_0%,#ffffff_38%,#eef6ff_100%)] p-5 shadow-sm">
-      <div className="space-y-5">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-          <div className="space-y-3">
-            <Skeleton className="h-3 w-28" />
-            <Skeleton className="h-8 w-64" />
-            <Skeleton className="h-4 w-52" />
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <Skeleton className="h-10 w-32 rounded-xl" />
-            <Skeleton className="h-10 w-20 rounded-xl" />
-            <Skeleton className="h-10 w-36 rounded-xl" />
-          </div>
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[220px_220px_240px_auto]">
-          <Skeleton className="h-11 w-full rounded-xl" />
-          <Skeleton className="h-11 w-full rounded-xl" />
-          <Skeleton className="h-11 w-full rounded-xl xl:w-44" />
-          <Skeleton className="h-11 w-full rounded-xl xl:w-44" />
-        </div>
+    <div ref={containerRef} className="relative">
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+        <input
+          value={value}
+          onChange={(event) => {
+            onValueChange(event.target.value)
+            setOpen(true)
+          }}
+          onFocus={() => setOpen(true)}
+          className="h-11 w-full rounded-xl border border-slate-300 bg-white pl-10 pr-3 text-sm shadow-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+          placeholder="Buscar por nome ou telefone"
+          required
+        />
       </div>
-    </section>
+
+      {selectedClient ? (
+        <div className="mt-2 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50/80 px-3 py-2 text-xs text-emerald-800">
+          <Check className="size-3.5" />
+          <span className="min-w-0 truncate">Cliente existente selecionado: {selectedClient.name}</span>
+        </div>
+      ) : null}
+
+      {shouldShowPanel ? (
+        <div className="absolute left-0 right-0 z-30 mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.12)]">
+          {loading ? (
+            <div className="px-4 py-3 text-sm text-slate-500">Carregando clientes...</div>
+          ) : error ? (
+            <div className="px-4 py-3 text-sm text-red-700">{error}</div>
+          ) : results.length > 0 ? (
+            <div className="max-h-72 overflow-y-auto p-1.5">
+              {results.map((client) => (
+                <button
+                  key={client.id}
+                  type="button"
+                  className={`flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left transition hover:bg-slate-100 ${selectedClient?.id === client.id ? "bg-slate-100" : "bg-white"}`}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => {
+                    onSelectClient(client)
+                    setOpen(false)
+                  }}
+                >
+                  <span className="mt-0.5 inline-flex size-7 items-center justify-center rounded-full bg-slate-100 text-slate-500">
+                    <UserRound className="size-4" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-slate-900">{client.name}</span>
+                    <span className="mt-1 block truncate text-xs text-slate-500">
+                      {client.phone || client.email || "Sem telefone ou e-mail"}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="px-4 py-4">
+              <p className="text-sm text-slate-600">
+                Nenhum cliente encontrado. Deseja cadastrar um novo cliente?
+              </p>
+            </div>
+          )}
+
+          <div className="border-t border-slate-200 bg-slate-50/80 p-2">
+            <Button type="button" variant="ghost" className="w-full justify-start" onClick={onCreateClient}>
+              <Plus className="size-4" />
+              {trimmedValue && !hasExactMatch ? `Cadastrar \"${trimmedValue}\"` : "Cadastrar novo cliente"}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </div>
   )
 }
 
@@ -288,79 +324,6 @@ function AppointmentFormSkeleton() {
         <Skeleton className="h-11 w-40 rounded-xl" />
       </div>
     </div>
-  )
-}
-
-function MobileAgendaSkeleton() {
-  return (
-    <div className="space-y-3 p-4 lg:hidden">
-      {Array.from({ length: 5 }, (_, index) => (
-        <div
-          key={index}
-          className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 shadow-sm"
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div className="space-y-2">
-              <Skeleton className="h-6 w-28 rounded-full" />
-              <Skeleton className="h-5 w-36" />
-            </div>
-            <Skeleton className="h-6 w-24 rounded-full" />
-          </div>
-
-          <div className="mt-4 space-y-2">
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-4 w-5/6" />
-            <Skeleton className="h-4 w-2/3" />
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function DailyAgendaSkeleton() {
-  const rows = Array.from({ length: 11 }, (_, index) => index)
-  const columns = Array.from({ length: 3 }, (_, index) => index)
-
-  return (
-    <>
-      <MobileAgendaSkeleton />
-
-      <div className="hidden p-4 sm:p-6 lg:block">
-        <div className="overflow-hidden rounded-2xl border border-slate-200">
-          <div className="grid grid-cols-[80px_repeat(3,minmax(0,1fr))] border-b border-slate-200 bg-slate-50/80">
-            <div className="border-r border-slate-200 p-3">
-              <Skeleton className="h-4 w-10" />
-            </div>
-
-            {columns.map((column) => (
-              <div key={column} className="border-r border-slate-200 p-3 last:border-r-0">
-                <Skeleton className="h-3 w-20" />
-                <Skeleton className="mt-2 h-4 w-24" />
-              </div>
-            ))}
-          </div>
-
-          <div className="grid grid-cols-[80px_repeat(3,minmax(0,1fr))]">
-            <div className="border-r border-slate-200 bg-slate-50/80 p-3">
-              {rows.map((row) => (
-                <Skeleton key={row} className="mb-8 h-4 w-10" />
-              ))}
-            </div>
-
-            {columns.map((column) => (
-              <div key={column} className="relative border-r border-slate-200 p-2.5 last:border-r-0">
-                <div className="space-y-3">
-                  <Skeleton className="h-20 w-[92%] rounded-xl" />
-                  <Skeleton className="h-24 w-[88%] rounded-xl" />
-                  <Skeleton className="h-16 w-[84%] rounded-xl" />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </>
   )
 }
 
@@ -445,7 +408,7 @@ function AppointmentDetailsDialog({
     setServiceId(appointment.service?.id ?? "")
     setStaffMembershipId(appointment.staff?.membershipId ?? "")
     setNotes(appointment.notes ?? "")
-    setSlotSearchDate(getLocalDateKey(appointment.startAt))
+    setSlotSearchDate(appointment.date)
     setAvailabilityLoading(false)
     setAvailabilityError(null)
     setAvailabilitySlots([])
@@ -481,14 +444,13 @@ function AppointmentDetailsDialog({
   }
 
   const appointmentId = appointment.id
-  const appointmentStartAt = appointment.startAt
   const formattedPhone = formatPhone(appointment.customerPhone)
   const isCanceled = appointment.status === "CANCELED"
   const scheduleLabel = selectedRescheduleSlot
     ? selectedRescheduleSlot.label
-    : `${new Date(appointment.startAt).toLocaleDateString("pt-BR")} • ${formatTimeRange(
-        appointment.startAt,
-        appointment.endAt
+    : `${formatDateLabel(appointment.date)} • ${formatTimeRange(
+        appointment.startTime,
+        appointment.endTime
       )}`
 
   function resolveAvailabilityStaff() {
@@ -584,15 +546,21 @@ function AppointmentDetailsDialog({
         throw new Error("Telefone invalido. Informe DDD + numero.")
       }
 
-      await onSave(appointmentId, {
+      const payload: AppointmentUpdatePayload = {
         serviceId,
         staffMembershipId: staffMembershipId.trim() ? staffMembershipId.trim() : null,
         customerName: customerName.trim(),
         customerPhone: phoneDigits ? phoneDigits : null,
         customerEmail: customerEmail.trim() ? customerEmail.trim() : null,
-        startAt: selectedRescheduleSlot?.startAt ?? appointmentStartAt,
         notes: notes.trim() ? notes.trim() : null,
-      })
+      }
+
+      if (selectedRescheduleSlot) {
+        payload.date = selectedRescheduleSlot.date
+        payload.time = selectedRescheduleSlot.time
+      }
+
+      await onSave(appointmentId, payload)
 
       setActiveTab("details")
       setConfirmCancel(false)
@@ -620,11 +588,11 @@ function AppointmentDetailsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[92vh] flex-col overflow-hidden p-0 sm:max-w-4xl">
+      <DialogContent className="flex max-h-[calc(100vh-1rem)] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] flex-col overflow-hidden p-0 md:max-w-3xl xl:max-w-4xl">
         <DialogHeader className="border-b border-slate-200 px-5 py-4 pr-14 sm:px-6">
           <DialogTitle>{appointment.customerName}</DialogTitle>
           <DialogDescription>
-            {formatTimeRange(appointment.startAt, appointment.endAt)} • {getAppointmentStatusLabel(appointment.status)}
+            {formatTimeRange(appointment.startTime, appointment.endTime)} • {getAppointmentStatusLabel(appointment.status)}
           </DialogDescription>
         </DialogHeader>
 
@@ -701,14 +669,14 @@ function AppointmentDetailsDialog({
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Inicio</p>
                     <p className="mt-1 text-base font-medium text-slate-900">
-                      {new Date(appointment.startAt).toLocaleString("pt-BR")}
+                      {formatDateTimeLabel(appointment.date, appointment.startTime)}
                     </p>
                   </div>
 
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Fim</p>
                     <p className="mt-1 text-base font-medium text-slate-900">
-                      {new Date(appointment.endAt).toLocaleString("pt-BR")}
+                      {formatDateTimeLabel(appointment.date, appointment.endTime)}
                     </p>
                   </div>
 
@@ -913,7 +881,10 @@ function AppointmentDetailsDialog({
                           <button
                             key={slot.startAt}
                             type="button"
-                            onClick={() => setSelectedRescheduleSlot(slot)}
+                            onClick={() => {
+                              setSelectedRescheduleSlot(slot)
+                              setSlotSearchDate(slot.date)
+                            }}
                             className={`w-full rounded-xl border px-4 py-3 text-left transition ${
                               isSelected
                                 ? "border-slate-900 bg-slate-900 text-white"
@@ -922,7 +893,7 @@ function AppointmentDetailsDialog({
                           >
                             <span className="block text-sm font-medium">{slot.label}</span>
                             <span className={`block text-xs ${isSelected ? "text-slate-200" : "text-slate-500"}`}>
-                              Inicio: {new Date(slot.startAt).toLocaleString("pt-BR")}
+                              Inicio: {formatDateTimeLabel(slot.date, slot.time)}
                             </span>
                           </button>
                         )
@@ -946,32 +917,42 @@ function AppointmentDetailsDialog({
 
         <div className="border-t border-slate-200 px-5 py-4 sm:px-6">
           {activeTab === "details" ? (
-            <div className="flex flex-wrap justify-between gap-2">
-              <div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-between">
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="w-full sm:w-auto">
+                  Fechar
+                </Button>
+                <Button type="button" variant="primary" onClick={() => setActiveTab("edit")} className="w-full sm:w-auto">
+                  Editar e remarcar
+                </Button>
                 {!isCanceled && !confirmCancel ? (
                   <Button
                     type="button"
                     variant="destructive"
                     onClick={() => setConfirmCancel(true)}
                     disabled={isSaving || isCanceling}
+                    className="w-full sm:w-auto"
                   >
                     Cancelar agendamento
                   </Button>
                 ) : null}
               </div>
-
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                  Fechar
-                </Button>
-                <Button type="button" variant="primary" onClick={() => setActiveTab("edit")}>
-                  Editar e remarcar
-                </Button>
-              </div>
             </div>
           ) : (
-            <div className="flex flex-wrap justify-between gap-2">
-              <div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-between">
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                <Button type="button" variant="outline" onClick={() => setActiveTab("details")} disabled={isSaving} className="w-full sm:w-auto">
+                  Voltar aos detalhes
+                </Button>
+                <Button
+                  type="button"
+                  variant="primary"
+                  onClick={() => void handleSave()}
+                  disabled={isSaving || servicesLoading}
+                  className="w-full sm:w-auto"
+                >
+                  {isSaving ? "Salvando..." : "Salvar alteracoes"}
+                </Button>
                 {!isCanceled ? (
                   <Button
                     type="button"
@@ -981,24 +962,11 @@ function AppointmentDetailsDialog({
                       setConfirmCancel(true)
                     }}
                     disabled={isSaving || isCanceling}
+                    className="w-full sm:w-auto"
                   >
                     Cancelar agendamento
                   </Button>
                 ) : null}
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="outline" onClick={() => setActiveTab("details")} disabled={isSaving}>
-                  Voltar aos detalhes
-                </Button>
-                <Button
-                  type="button"
-                  variant="primary"
-                  onClick={() => void handleSave()}
-                  disabled={isSaving || servicesLoading}
-                >
-                  {isSaving ? "Salvando..." : "Salvar alteracoes"}
-                </Button>
               </div>
             </div>
           )}
@@ -1012,19 +980,24 @@ export default function AgendamentosPage() {
   const [appointments, setAppointments] = useState<AppointmentItem[]>([])
   const [services, setServices] = useState<ServiceItem[]>([])
   const [team, setTeam] = useState<TeamItem[]>([])
+  const [clients, setClients] = useState<ClientItem[]>([])
+  const [blockedSchedules, setBlockedSchedules] = useState<BlockedScheduleItem[]>([])
+  const [weeklySchedule, setWeeklySchedule] = useState<WeekScheduleDayItem[]>([])
 
   const [appointmentsLoading, setAppointmentsLoading] = useState(true)
   const [teamLoading, setTeamLoading] = useState(true)
   const [servicesLoading, setServicesLoading] = useState(false)
   const [servicesLoaded, setServicesLoaded] = useState(false)
+  const [clientsLoading, setClientsLoading] = useState(false)
+  const [clientsLoaded, setClientsLoaded] = useState(false)
 
   const [appointmentsError, setAppointmentsError] = useState<string | null>(null)
   const [teamError, setTeamError] = useState<string | null>(null)
   const [servicesError, setServicesError] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
+  const [clientsError, setClientsError] = useState<string | null>(null)
 
   const [selectedDate, setSelectedDate] = useState(getTodayDateValue)
-  const [calendarView, setCalendarView] = useState<FullCalendarDesktopView>("3days")
   const [selectedProfessionalFilter, setSelectedProfessionalFilter] = useState("all")
 
   const [saving, setSaving] = useState(false)
@@ -1035,6 +1008,7 @@ export default function AgendamentosPage() {
   const [customerName, setCustomerName] = useState("")
   const [customerPhone, setCustomerPhone] = useState("")
   const [customerEmail, setCustomerEmail] = useState("")
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
   const [selectedSlot, setSelectedSlot] = useState<AvailabilitySlot | null>(null)
   const [notes, setNotes] = useState("")
 
@@ -1046,6 +1020,22 @@ export default function AgendamentosPage() {
 
   const [selectedAppointment, setSelectedAppointment] = useState<AppointmentItem | null>(null)
   const [detailsOpen, setDetailsOpen] = useState(false)
+  const [hiddenProfessionalIds, setHiddenProfessionalIds] = useState<string[]>([])
+  const [blockDialogOpen, setBlockDialogOpen] = useState(false)
+  const [blockingProfessional, setBlockingProfessional] = useState<ProfessionalColumnItem | null>(null)
+  const [blockDate, setBlockDate] = useState(getTodayDateValue)
+  const [blockAllDay, setBlockAllDay] = useState(false)
+  const [blockStartTime, setBlockStartTime] = useState("08:00")
+  const [blockEndTime, setBlockEndTime] = useState("09:00")
+  const [blockSaveError, setBlockSaveError] = useState<string | null>(null)
+  const [blockSaving, setBlockSaving] = useState(false)
+  const [removingBlockId, setRemovingBlockId] = useState<string | null>(null)
+  const [newClientOpen, setNewClientOpen] = useState(false)
+  const [newClientName, setNewClientName] = useState("")
+  const [newClientPhone, setNewClientPhone] = useState("")
+  const [newClientEmail, setNewClientEmail] = useState("")
+  const [newClientSubmitting, setNewClientSubmitting] = useState(false)
+  const [newClientError, setNewClientError] = useState<string | null>(null)
 
   const sortedTeam = useMemo(
     () => [...team].sort((left, right) => left.name.localeCompare(right.name, "pt-BR")),
@@ -1057,6 +1047,69 @@ export default function AgendamentosPage() {
     return sortedTeam.filter((member) => member.serviceIds.includes(serviceId))
   }, [serviceId, sortedTeam])
 
+  const selectedClient = useMemo(
+    () => clients.find((client) => client.id === selectedClientId) ?? null,
+    [clients, selectedClientId]
+  )
+
+  const selectedWeekScheduleDay = useMemo(
+    () => weeklySchedule.find((day) => day.weekday === getWeekdayCodeFromDateKey(selectedDate)) ?? null,
+    [selectedDate, weeklySchedule]
+  )
+
+  const selectedDayWorkingHoursRange = useMemo(() => {
+    if (!selectedWeekScheduleDay?.enabled || selectedWeekScheduleDay.intervals.length === 0) {
+      return null
+    }
+
+    const starts = selectedWeekScheduleDay.intervals.map((interval) => getMinutesFromTimeKey(interval.startTime))
+    const ends = selectedWeekScheduleDay.intervals.map((interval) => getMinutesFromTimeKey(interval.endTime))
+
+    return {
+      startMinutes: Math.min(...starts),
+      endMinutes: Math.max(...ends),
+    }
+  }, [selectedWeekScheduleDay])
+
+  const fallbackWorkingHoursRange = useMemo(() => {
+    const enabledIntervals = weeklySchedule
+      .filter((day) => day.enabled && day.intervals.length > 0)
+      .flatMap((day) => day.intervals)
+
+    if (enabledIntervals.length === 0) {
+      return null
+    }
+
+    const starts = enabledIntervals.map((interval) => getMinutesFromTimeKey(interval.startTime))
+    const ends = enabledIntervals.map((interval) => getMinutesFromTimeKey(interval.endTime))
+
+    return {
+      startMinutes: Math.min(...starts),
+      endMinutes: Math.max(...ends),
+    }
+  }, [weeklySchedule])
+
+  const agendaWorkingHoursRange = selectedDayWorkingHoursRange ?? fallbackWorkingHoursRange
+
+  const selectedDateHasConfiguredWorkingHours = Boolean(selectedDayWorkingHoursRange)
+
+  const filteredClients = useMemo(() => {
+    const query = customerName.trim().toLowerCase()
+    const queryPhone = normalizePhone(customerName)
+
+    if (!query && !queryPhone) {
+      return []
+    }
+
+    return clients
+      .filter((client) => {
+        const matchesName = client.name.toLowerCase().includes(query)
+        const matchesPhone = queryPhone ? normalizePhone(client.phone ?? "").includes(queryPhone) : false
+        return matchesName || matchesPhone
+      })
+      .slice(0, 6)
+  }, [clients, customerName])
+
   const filteredAppointments = useMemo(() => {
     return appointments
       .filter((appointment) => {
@@ -1066,136 +1119,86 @@ export default function AgendamentosPage() {
 
         return appointment.staff?.membershipId === selectedProfessionalFilter
       })
-      .filter((appointment) => getLocalDateKey(appointment.startAt) === selectedDate)
       .sort((left, right) => left.startAt.localeCompare(right.startAt))
-  }, [appointments, selectedDate, selectedProfessionalFilter])
+  }, [appointments, selectedProfessionalFilter])
 
-  const selectedWeekDateKeys = useMemo(() => getWeekDateKeys(selectedDate), [selectedDate])
+  const selectedDayAppointments = useMemo(() => {
+    return filteredAppointments
+      .filter((appointment) => appointment.date === selectedDate)
+      .sort((left, right) => left.startTime.localeCompare(right.startTime))
+  }, [filteredAppointments, selectedDate])
 
-  const weekAppointments = useMemo(() => {
-    const weekDateKeys = new Set(selectedWeekDateKeys)
+  const showUnassignedColumn = useMemo(
+    () =>
+      selectedProfessionalFilter === "all" &&
+      selectedDayAppointments.some((appointment) => !appointment.staff?.membershipId),
+    [selectedDayAppointments, selectedProfessionalFilter]
+  )
 
-    return appointments
-      .filter((appointment) => {
-        if (selectedProfessionalFilter === "all") {
-          return true
-        }
+  const visibleStaffColumns = useMemo<ProfessionalColumnItem[]>(() => {
+    const baseColumns: ProfessionalColumnItem[] =
+      selectedProfessionalFilter === "all"
+        ? sortedTeam.map((member) => ({
+            membershipId: member.membershipId,
+            name: member.name,
+          }))
+        : sortedTeam
+            .filter((member) => member.membershipId === selectedProfessionalFilter)
+            .map((member) => ({
+              membershipId: member.membershipId,
+              name: member.name,
+            }))
 
-        return appointment.staff?.membershipId === selectedProfessionalFilter
+    if (showUnassignedColumn) {
+      baseColumns.push({
+        membershipId: "__unassigned__",
+        name: "Sem profissional",
+        isUnassigned: true,
       })
-      .filter((appointment) => weekDateKeys.has(getLocalDateKey(appointment.startAt)))
-      .sort((left, right) => left.startAt.localeCompare(right.startAt))
-  }, [appointments, selectedProfessionalFilter, selectedWeekDateKeys])
-
-  const selectedThreeDayKeys = useMemo(() => getThreeDayDateKeys(selectedDate), [selectedDate])
-
-  const threeDayAppointments = useMemo(() => {
-    const visibleKeys = new Set(selectedThreeDayKeys)
-
-    return appointments
-      .filter((appointment) => {
-        if (selectedProfessionalFilter === "all") {
-          return true
-        }
-
-        return appointment.staff?.membershipId === selectedProfessionalFilter
-      })
-      .filter((appointment) => visibleKeys.has(getLocalDateKey(appointment.startAt)))
-      .sort((left, right) => left.startAt.localeCompare(right.startAt))
-  }, [appointments, selectedProfessionalFilter, selectedThreeDayKeys])
-
-  const monthAppointments = useMemo(() => {
-    const selectedMonthKey = getMonthKey(selectedDate)
-
-    return appointments
-      .filter((appointment) => {
-        if (selectedProfessionalFilter === "all") {
-          return true
-        }
-
-        return appointment.staff?.membershipId === selectedProfessionalFilter
-      })
-      .filter((appointment) => getMonthKey(getLocalDateKey(appointment.startAt)) === selectedMonthKey)
-      .sort((left, right) => left.startAt.localeCompare(right.startAt))
-  }, [appointments, selectedDate, selectedProfessionalFilter])
-
-  const desktopAppointments =
-    calendarView === "month"
-      ? monthAppointments
-      : calendarView === "3days"
-        ? threeDayAppointments
-      : calendarView === "week"
-        ? weekAppointments
-        : filteredAppointments
-
-  const calendarBounds = useMemo(() => {
-    if (desktopAppointments.length === 0) {
-      return {
-        start: DEFAULT_DAY_START_MINUTES,
-        end: DEFAULT_DAY_END_MINUTES,
-      }
     }
 
-    let earliest = DEFAULT_DAY_START_MINUTES
-    let latest = DEFAULT_DAY_END_MINUTES
+    return baseColumns
+  }, [selectedProfessionalFilter, showUnassignedColumn, sortedTeam])
 
-    for (const appointment of desktopAppointments) {
-      earliest = Math.min(earliest, getMinutesFromDate(appointment.startAt))
-      latest = Math.max(latest, getMinutesFromDate(appointment.endAt))
-    }
+  useEffect(() => {
+    setHiddenProfessionalIds((current) =>
+      current.filter((membershipId) =>
+        visibleStaffColumns.some((professional) => professional.membershipId === membershipId)
+      )
+    )
+  }, [visibleStaffColumns])
 
-    return {
-      start: floorToHour(earliest),
-      end: Math.max(ceilToHour(latest), DEFAULT_DAY_END_MINUTES),
-    }
-  }, [desktopAppointments])
+  const hiddenStaffColumns = useMemo(
+    () =>
+      visibleStaffColumns.filter((professional) =>
+        hiddenProfessionalIds.includes(professional.membershipId)
+      ),
+    [hiddenProfessionalIds, visibleStaffColumns]
+  )
 
-  const calendarDayBoundaries = useMemo(() => {
-    return {
-      start: formatTimeLabel(calendarBounds.start),
-      end: formatTimeLabel(calendarBounds.end),
-    }
-  }, [calendarBounds])
+  const renderedStaffColumns = useMemo(
+    () =>
+      visibleStaffColumns.filter(
+        (professional) => !hiddenProfessionalIds.includes(professional.membershipId)
+      ),
+    [hiddenProfessionalIds, visibleStaffColumns]
+  )
 
   const showInitialPageSkeleton = appointmentsLoading && appointments.length === 0
-  function handleGoToToday() {
-    setSelectedDate(getTodayDateValue())
-  }
 
-  function handlePreviousPeriod() {
-    setSelectedDate((current) => {
-      if (calendarView === "month") {
-        return addMonthsToDateKey(current, -1)
-      }
+  const blockDateBlockedSchedules = useMemo(
+    () => blockedSchedules.filter((item) => item.date === blockDate),
+    [blockDate, blockedSchedules]
+  )
 
-      if (calendarView === "3days") {
-        return addDaysToDateKey(current, -3)
-      }
-
-      return addDaysToDateKey(current, calendarView === "week" ? -7 : -1)
-    })
-  }
-
-  function handleNextPeriod() {
-    setSelectedDate((current) => {
-      if (calendarView === "month") {
-        return addMonthsToDateKey(current, 1)
-      }
-
-      if (calendarView === "3days") {
-        return addDaysToDateKey(current, 3)
-      }
-
-      return addDaysToDateKey(current, calendarView === "week" ? 7 : 1)
-    })
-  }
-
-  const loadAppointments = useCallback(async () => {
+  const loadAppointments = useCallback(async (date: string) => {
     setAppointmentsLoading(true)
     setAppointmentsError(null)
 
     try {
-      const response = await fetch("/api/appointments", { cache: "no-store" })
+      const response = await fetch(`/api/appointments?date=${encodeURIComponent(date)}`, {
+        cache: "no-store",
+      })
       const json = (await response.json()) as ApiSuccess<AppointmentItem[]> | ApiError
 
       if (!response.ok || !json.ok) {
@@ -1252,6 +1255,61 @@ export default function AgendamentosPage() {
     }
   }, [])
 
+  const loadClients = useCallback(async () => {
+    setClientsLoading(true)
+    setClientsError(null)
+
+    try {
+      const response = await fetch("/api/clients", { cache: "no-store" })
+      const json = (await response.json()) as ApiSuccess<ClientItem[]> | ApiError
+
+      if (!response.ok || !json.ok) {
+        throw new Error(json.ok ? "Erro ao carregar clientes." : json.error)
+      }
+
+      setClients(sortClientsByName(json.data))
+      setClientsLoaded(true)
+    } catch (error) {
+      setClientsError(error instanceof Error ? error.message : "Erro ao carregar clientes.")
+      setClientsLoaded(false)
+    } finally {
+      setClientsLoading(false)
+    }
+  }, [])
+
+  const loadBlockedSchedules = useCallback(async () => {
+    try {
+      const response = await fetch("/api/schedule/blocked", { cache: "no-store" })
+      const json = (await response.json()) as ApiSuccess<BlockedScheduleItem[]> | BlockedScheduleError
+
+      if (!response.ok || !json.ok) {
+        throw new Error(json.ok ? "Erro ao carregar bloqueios." : (json.message ?? "Erro ao carregar bloqueios."))
+      }
+
+      setBlockedSchedules(json.data)
+    } catch (error) {
+      console.error(
+        "[agendamentos] Erro ao carregar bloqueios da agenda",
+        error instanceof Error ? error.message : error
+      )
+    }
+  }, [])
+
+  const loadWeeklySchedule = useCallback(async () => {
+    try {
+      const response = await fetch("/api/schedule/weekly", { cache: "no-store" })
+      const json = (await response.json()) as ApiSuccess<WeekScheduleResponse> | { ok: false; message?: string }
+
+      if (!response.ok || !json.ok) {
+        throw new Error(json.ok ? "Erro ao carregar horarios de atendimento." : (json.message ?? "Erro ao carregar horarios de atendimento."))
+      }
+
+      setWeeklySchedule(json.data.days)
+    } catch {
+      setWeeklySchedule([])
+    }
+  }, [])
+
   const ensureFormDependencies = useCallback(async () => {
     if (!servicesLoaded && !servicesLoading) {
       await loadServices()
@@ -1260,12 +1318,37 @@ export default function AgendamentosPage() {
     if (team.length === 0 && !teamLoading) {
       await loadTeam()
     }
-  }, [loadServices, loadTeam, servicesLoaded, servicesLoading, team.length, teamLoading])
+
+    if (!clientsLoaded && !clientsLoading) {
+      await loadClients()
+    }
+  }, [
+    clientsLoaded,
+    clientsLoading,
+    loadClients,
+    loadServices,
+    loadTeam,
+    servicesLoaded,
+    servicesLoading,
+    team.length,
+    teamLoading,
+  ])
 
   useEffect(() => {
-    void loadAppointments()
+    void loadAppointments(selectedDate)
+  }, [loadAppointments, selectedDate])
+
+  useEffect(() => {
     void loadTeam()
-  }, [loadAppointments, loadTeam])
+    void loadBlockedSchedules()
+    void loadWeeklySchedule()
+  }, [loadBlockedSchedules, loadTeam, loadWeeklySchedule])
+
+  useEffect(() => {
+    if (!blockDialogOpen) {
+      setBlockDate(selectedDate)
+    }
+  }, [blockDialogOpen, selectedDate])
 
   useEffect(() => {
     if (!serviceId) {
@@ -1286,6 +1369,16 @@ export default function AgendamentosPage() {
   useEffect(() => {
     setSelectedSlot(null)
   }, [serviceId, staffMembershipId])
+
+  useEffect(() => {
+    if (!selectedSlot) {
+      return
+    }
+
+    if (selectedSlot.date !== selectedDate) {
+      setSelectedSlot(null)
+    }
+  }, [selectedDate, selectedSlot])
 
   useEffect(() => {
     if (!selectedSlot) {
@@ -1324,14 +1417,22 @@ export default function AgendamentosPage() {
         throw new Error(json.ok ? "Nao foi possivel salvar o agendamento." : json.error)
       }
 
-      setAppointments((current) =>
-        current
+      setAppointments((current) => {
+        if (json.data.date !== selectedDate) {
+          return current.filter((appointment) => appointment.id !== appointmentId)
+        }
+
+        return current
           .map((appointment) => (appointment.id === appointmentId ? json.data : appointment))
-          .sort((left, right) => left.startAt.localeCompare(right.startAt))
-      )
+          .sort((left, right) => left.startTime.localeCompare(right.startTime))
+      })
       setSelectedAppointment(json.data)
+
+      if (json.data.date !== selectedDate) {
+        setSelectedDate(json.data.date)
+      }
     },
-    []
+    [selectedDate]
   )
 
   const handleAppointmentCanceled = useCallback(
@@ -1349,6 +1450,7 @@ export default function AgendamentosPage() {
     setCustomerName("")
     setCustomerPhone("")
     setCustomerEmail("")
+    setSelectedClientId(null)
     setSelectedSlot(null)
     setNotes("")
     setAvailabilityOpen(false)
@@ -1356,20 +1458,7 @@ export default function AgendamentosPage() {
     setAvailabilitySlots([])
     setSlotSearchDate(selectedDate)
     setFormError(null)
-  }
-
-  async function handleToggleForm() {
-    const nextOpen = !showForm
-
-    setFormError(null)
-    setShowForm(nextOpen)
-
-    if (!nextOpen) {
-      return
-    }
-
-    setSlotSearchDate(selectedDate)
-    await ensureFormDependencies()
+    setNewClientError(null)
   }
 
   function handleServiceChange(nextServiceId: string) {
@@ -1379,6 +1468,52 @@ export default function AgendamentosPage() {
   function handleStaffChange(nextStaffMembershipId: string) {
     setStaffMembershipId(nextStaffMembershipId)
   }
+
+  function handleCustomerNameChange(nextValue: string) {
+    setCustomerName(nextValue)
+
+    if (selectedClientId && selectedClient && nextValue.trim() !== selectedClient.name) {
+      setSelectedClientId(null)
+      setCustomerPhone("")
+      setCustomerEmail("")
+    }
+  }
+
+  function handleSelectClient(client: AppointmentClientOption) {
+    setSelectedClientId(client.id)
+    setCustomerName(client.name)
+    setCustomerPhone(formatPhone(client.phone) ?? "")
+    setCustomerEmail(client.email ?? "")
+    setNewClientError(null)
+    setFormError(null)
+  }
+
+  function handleOpenNewClientDialog() {
+    setNewClientName(customerName.trim())
+    setNewClientPhone(customerPhone)
+    setNewClientEmail(customerEmail)
+    setNewClientError(null)
+    setNewClientOpen(true)
+  }
+
+  function handleSelectedDateChange(nextDate: string) {
+    setSelectedDate(nextDate)
+  }
+
+  const handleGridEmptySlotClick = useCallback(
+    async (slot: EmptySlotSelection) => {
+      setShowForm(true)
+      setAvailabilityOpen(false)
+      setFormError(null)
+      setSelectedSlot(slot)
+      setSlotSearchDate(slot.date)
+      setSelectedDate(slot.date)
+      setStaffMembershipId(slot.staffMembershipId ?? "")
+
+      await ensureFormDependencies()
+    },
+    [ensureFormDependencies]
+  )
 
   const resolveAvailabilityStaff = useCallback(() => {
     if (!serviceId) {
@@ -1535,7 +1670,8 @@ export default function AgendamentosPage() {
         customerName: customerName.trim(),
         customerPhone: phoneDigits ? phoneDigits : undefined,
         customerEmail: customerEmail.trim() ? customerEmail.trim() : undefined,
-        startAt: selectedSlot.startAt,
+        date: selectedSlot.date,
+        time: selectedSlot.time,
         notes: notes.trim() ? notes.trim() : undefined,
       }
 
@@ -1554,15 +1690,159 @@ export default function AgendamentosPage() {
       }
 
       setAppointments((current) =>
-        [...current, json.data].sort((left, right) => left.startAt.localeCompare(right.startAt))
+        json.data.date === selectedDate
+          ? [...current, json.data].sort((left, right) => left.startTime.localeCompare(right.startTime))
+          : [json.data]
       )
 
+      handleSelectedDateChange(json.data.date)
       resetForm()
       setShowForm(false)
     } catch (e) {
       setFormError(e instanceof Error ? e.message : "Erro ao criar agendamento.")
     } finally {
       setSaving(false)
+    }
+  }
+
+  function handleHideProfessionalColumn(professional: ProfessionalColumnItem) {
+    setHiddenProfessionalIds((current) => {
+      if (current.includes(professional.membershipId)) {
+        return current
+      }
+
+      return [...current, professional.membershipId]
+    })
+  }
+
+  function handleRestoreProfessionalColumn(membershipId: string) {
+    setHiddenProfessionalIds((current) => current.filter((item) => item !== membershipId))
+  }
+
+  function handleOpenBlockDialog(professional: ProfessionalColumnItem) {
+    setBlockingProfessional(professional)
+    setBlockDate(selectedDate)
+    setBlockAllDay(false)
+    setBlockStartTime("08:00")
+    setBlockEndTime("09:00")
+    setBlockSaveError(null)
+    setBlockDialogOpen(true)
+  }
+
+  async function handleCreateBlock(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setBlockSaving(true)
+    setBlockSaveError(null)
+
+    try {
+      if (!blockAllDay && (!blockStartTime || !blockEndTime)) {
+        throw new Error("Informe horario inicial e final para o bloqueio.")
+      }
+
+      if (!blockAllDay && blockEndTime <= blockStartTime) {
+        throw new Error("O horario final precisa ser maior que o horario inicial.")
+      }
+
+      const response = await fetch("/api/schedule/blocked", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          dates: [blockDate],
+          allDay: blockAllDay,
+          startTime: blockAllDay ? undefined : blockStartTime,
+          endTime: blockAllDay ? undefined : blockEndTime,
+        }),
+      })
+
+      const json = (await response.json()) as
+        | ApiSuccess<{ created: number }>
+        | { ok: false; message?: string }
+
+      if (!response.ok || !json.ok) {
+        throw new Error(json.ok ? "Nao foi possivel criar o bloqueio." : (json.message ?? "Nao foi possivel criar o bloqueio."))
+      }
+
+      setBlockDialogOpen(false)
+      setBlockingProfessional(null)
+      await loadBlockedSchedules()
+    } catch (error) {
+      setBlockSaveError(
+        error instanceof Error ? error.message : "Erro ao salvar bloqueio de horario."
+      )
+    } finally {
+      setBlockSaving(false)
+    }
+  }
+
+  async function handleRemoveBlock(blockId: string) {
+    setRemovingBlockId(blockId)
+    setBlockSaveError(null)
+
+    try {
+      const response = await fetch(`/api/schedule/blocked/${blockId}`, {
+        method: "DELETE",
+      })
+
+      const json = (await response.json()) as ApiSuccess<{ id: string }> | BlockedScheduleError
+
+      if (!response.ok || !json.ok) {
+        throw new Error(json.ok ? "Nao foi possivel remover o bloqueio." : (json.message ?? "Nao foi possivel remover o bloqueio."))
+      }
+
+      setBlockedSchedules((current) => current.filter((item) => item.id !== blockId))
+    } catch (error) {
+      setBlockSaveError(
+        error instanceof Error ? error.message : "Erro ao remover bloqueio da agenda."
+      )
+    } finally {
+      setRemovingBlockId(null)
+    }
+  }
+
+  async function handleCreateClient(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setNewClientSubmitting(true)
+    setNewClientError(null)
+
+    try {
+      const payload = {
+        name: newClientName.trim(),
+        phone: normalizePhone(newClientPhone) || undefined,
+        email: newClientEmail.trim() || undefined,
+        isActive: true,
+      }
+
+      const parsed = ClientCreateApiSchema.safeParse(payload)
+
+      if (!parsed.success) {
+        throw new Error(
+          parsed.error.issues.map((issue) => issue.message).join(" • ") || "Dados inválidos para o cliente."
+        )
+      }
+
+      const response = await fetch("/api/clients", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(parsed.data),
+      })
+
+      const json = (await response.json()) as ApiSuccess<ClientItem> | ApiError
+
+      if (!response.ok || !json.ok) {
+        throw new Error(json.ok ? "Nao foi possivel cadastrar o cliente." : json.error)
+      }
+
+      setClients((current) => sortClientsByName([...current, json.data]))
+      handleSelectClient(json.data)
+      setNewClientOpen(false)
+    } catch (error) {
+      setNewClientError(error instanceof Error ? error.message : "Erro ao cadastrar cliente.")
+    } finally {
+      setNewClientSubmitting(false)
     }
   }
 
@@ -1574,39 +1854,17 @@ export default function AgendamentosPage() {
         </div>
       </HeaderPage>
 
-      <div className="space-y-6 bg-white px-4 py-6 sm:px-6 sm:py-7">
-        {showInitialPageSkeleton ? (
-          <FiltersSkeleton />
-        ) : (
+      {showInitialPageSkeleton ? (
+        <AppointmentsPageSkeleton />
+      ) : (
+      <div className="w-full min-w-0 max-w-full space-y-6 overflow-x-hidden bg-white px-4 py-6 sm:px-6 sm:py-7">
           <section className="rounded-3xl border border-slate-200 bg-[linear-gradient(135deg,#f8fafc_0%,#ffffff_38%,#eef6ff_100%)] p-5 shadow-sm">
-            <div className="flex flex-col gap-5">
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" variant="outline" onClick={handlePreviousPeriod}>
-                    {calendarView === "month"
-                      ? "Mes anterior"
-                      : calendarView === "3days"
-                        ? "3 dias anteriores"
-                      : calendarView === "week"
-                        ? "Semana anterior"
-                        : "Dia anterior"}
-                  </Button>
-                  <Button type="button" variant="outline" onClick={handleGoToToday}>
-                    Hoje
-                  </Button>
-                  <Button type="button" variant="outline" onClick={handleNextPeriod}>
-                    {calendarView === "month"
-                      ? "Proximo mes"
-                      : calendarView === "3days"
-                        ? "Proximos 3 dias"
-                      : calendarView === "week"
-                        ? "Proxima semana"
-                        : "Proximo dia"}
-                  </Button>
-                </div>
-              </div>
+            <div className="flex flex-col gap-5 2xl:flex-row 2xl:items-end 2xl:justify-between">
+              
 
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[220px_220px_240px_auto]">
+              <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-[auto_220px_240px_auto]">
+                
+
                 <div className="grid gap-2">
                   <label className="text-xs font-medium uppercase tracking-wide text-slate-500">
                     Data de referencia
@@ -1614,36 +1872,9 @@ export default function AgendamentosPage() {
                   <input
                     type="date"
                     value={selectedDate}
-                    onChange={(e) => setSelectedDate(e.target.value)}
+                    onChange={(e) => handleSelectedDateChange(e.target.value)}
                     className="h-11 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm"
                   />
-                </div>
-
-                <div className="grid gap-2">
-                  <label className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Visualizacao
-                  </label>
-                  <>
-                    <select
-                      value={calendarView}
-                      onChange={(e) => setCalendarView(e.target.value as FullCalendarDesktopView)}
-                      className="hidden h-11 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm lg:block"
-                    >
-                      <option value="3days">3 dias</option>
-                      <option value="month">Mes</option>
-                      <option value="day">Dia</option>
-                      <option value="week">Semana</option>
-                    </select>
-                    <div className="flex h-11 items-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm lg:hidden">
-                      {calendarView === "month"
-                        ? "Mes"
-                        : calendarView === "3days"
-                          ? "3 dias"
-                        : calendarView === "week"
-                          ? "Semana"
-                          : "Dia"}
-                    </div>
-                  </>
                 </div>
 
                 <div className="grid gap-2">
@@ -1665,19 +1896,9 @@ export default function AgendamentosPage() {
                   </select>
                 </div>
 
-                <div className="flex items-end">
-                  <Button
-                    type="button"
-                    variant="primary"
-                    className="h-11 w-full cursor-pointer xl:w-auto"
-                    onClick={() => {
-                      void handleToggleForm()
-                    }}
-                  >
-                    {showForm ? "Fechar formulario" : "Novo agendamento"}
-                  </Button>
-                </div>
+                
               </div>
+
             </div>
 
             {teamError ? (
@@ -1686,7 +1907,6 @@ export default function AgendamentosPage() {
               </p>
             ) : null}
           </section>
-        )}
 
         {showForm ? (
           <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -1741,55 +1961,21 @@ export default function AgendamentosPage() {
                         </option>
                       ))}
                     </select>
-                    {!serviceId ? (
-                      <p className="text-xs text-slate-500">
-                        Selecione um servico para liberar a equipe.
-                      </p>
-                    ) : eligibleTeam.length === 0 ? (
-                      <p className="text-xs text-amber-700">
-                        Nenhum profissional elegivel foi encontrado para este servico.
-                      </p>
-                    ) : !staffMembershipId ? (
-                      <p className="text-xs text-slate-500">
-                        Se houver mais de um profissional elegivel, selecione um antes de abrir o
-                        modal de horarios.
-                      </p>
-                    ) : null}
                   </div>
                 </div>
 
-                <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr_1fr]">
+                <div className="grid gap-4">
                   <div className="grid gap-2">
                     <label className="text-sm font-medium text-slate-700">Cliente</label>
-                    <input
+                    <AppointmentClientPicker
                       value={customerName}
-                      onChange={(e) => setCustomerName(e.target.value)}
-                      className="rounded-xl border border-slate-300 px-3 py-2.5"
-                      placeholder="Nome do cliente"
-                      required
-                    />
-                  </div>
-
-                  <div className="grid gap-2">
-                    <label className="text-sm font-medium text-slate-700">Telefone</label>
-                    <input
-                      value={customerPhone}
-                      onChange={(e) => setCustomerPhone(maskPhone(e.target.value))}
-                      className="rounded-xl border border-slate-300 px-3 py-2.5"
-                      placeholder="(27) 99999-9999"
-                      inputMode="tel"
-                      maxLength={15}
-                    />
-                  </div>
-
-                  <div className="grid gap-2">
-                    <label className="text-sm font-medium text-slate-700">E-mail</label>
-                    <input
-                      type="email"
-                      value={customerEmail}
-                      onChange={(e) => setCustomerEmail(e.target.value)}
-                      className="rounded-xl border border-slate-300 px-3 py-2.5"
-                      placeholder="cliente@email.com"
+                      selectedClient={selectedClient}
+                      results={filteredClients}
+                      loading={clientsLoading}
+                      error={clientsError}
+                      onValueChange={handleCustomerNameChange}
+                      onSelectClient={handleSelectClient}
+                      onCreateClient={handleOpenNewClientDialog}
                     />
                   </div>
                 </div>
@@ -1823,10 +2009,10 @@ export default function AgendamentosPage() {
 
                 <div className="grid gap-2">
                   <label className="text-sm font-medium text-slate-700">Observacoes</label>
-                  <textarea
+                  <Textarea
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
-                    className="min-h-28 rounded-xl border border-slate-300 px-3 py-2.5"
+                    className="min-h-28 rounded-xl"
                     placeholder="Observacoes do agendamento"
                   />
                 </div>
@@ -1847,100 +2033,57 @@ export default function AgendamentosPage() {
           </section>
         ) : null}
 
-        <section className="overflow-hidden rounded-3xl bg-white shadow-sm lg:bg-transparent lg:shadow-none">
-          {appointmentsLoading ? (
-            <DailyAgendaSkeleton />
-          ) : appointmentsError ? (
-            <div className="p-6">
-              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700">
-                {appointmentsError}
+        {hiddenStaffColumns.length > 0 ? (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-600">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p>
+                {hiddenStaffColumns.length} {hiddenStaffColumns.length === 1 ? "coluna oculta" : "colunas ocultas"} nesta visao.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {hiddenStaffColumns.map((professional) => (
+                  <Button
+                    key={professional.membershipId}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleRestoreProfessionalColumn(professional.membershipId)}
+                  >
+                    Mostrar {professional.name}
+                  </Button>
+                ))}
               </div>
             </div>
-          ) : (
-            <>
-              <div className="space-y-3 p-4 lg:hidden">
-                {filteredAppointments.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 px-5 py-8 text-center shadow-sm">
-                    <p className="text-base font-medium text-slate-900">
-                      Nenhum agendamento para este dia.
-                    </p>
-                    <p className="mt-2 text-sm text-slate-500">
-                      Ajuste a data, troque o filtro de profissional ou crie um novo agendamento.
-                    </p>
-                  </div>
-                ) : (
-                  filteredAppointments.map((appointment) => {
-                    const formattedPhone = formatPhone(appointment.customerPhone)
-                    const tone = getAppointmentTone(appointment.status)
+          </div>
+        ) : null}
 
-                    return (
-                      <article
-                        key={`mobile-${appointment.id}`}
-                        className={`overflow-hidden rounded-2xl border p-4 shadow-sm ${tone.mobileCard}`}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <span
-                              className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${tone.timeChip}`}
-                            >
-                              {formatTimeRange(appointment.startAt, appointment.endAt)}
-                            </span>
-                            <h3 className="mt-3 truncate text-base font-semibold text-slate-950">
-                              {appointment.customerName}
-                            </h3>
-                          </div>
+        {!selectedDateHasConfiguredWorkingHours && weeklySchedule.length > 0 ? (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-600">
+            Nao ha horario de atendimento configurado para este dia. A grade usa apenas o range ja definido na configuracao semanal para manter a leitura da agenda sem estender ate um horario fixo.
+          </div>
+        ) : null}
 
-                          <span
-                            className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${tone.badge}`}
-                          >
-                            {getAppointmentStatusLabel(appointment.status)}
-                          </span>
-                        </div>
+        <ProfessionalScheduleBoard
+          selectedDate={selectedDate}
+          appointments={selectedDayAppointments}
+          professionals={renderedStaffColumns}
+          workingHoursRange={agendaWorkingHoursRange}
+          loading={appointmentsLoading}
+          error={appointmentsError}
+          onAppointmentClick={handleAppointmentClick}
+          onEmptySlotClick={(slot) => {
+            void handleGridEmptySlotClick(slot)
+          }}
+          onBlockSchedule={handleOpenBlockDialog}
+          onHideColumn={handleHideProfessionalColumn}
+        />
 
-                        <div className="mt-4 space-y-2 text-sm text-slate-600">
-                          <p className="truncate text-slate-900">
-                            <span className="font-medium text-slate-500">Servico:</span>{" "}
-                            {appointment.service?.name ?? "Servico nao informado"}
-                          </p>
-                          <p className="truncate text-slate-900">
-                            <span className="font-medium text-slate-500">Profissional:</span>{" "}
-                            {appointment.staff?.name ?? "Sem profissional"}
-                          </p>
-                          {formattedPhone ? (
-                            <p className="truncate text-slate-900">
-                              <span className="font-medium text-slate-500">Telefone:</span>{" "}
-                              {formattedPhone}
-                            </p>
-                          ) : null}
-                        </div>
-
-                        <div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-200/80 pt-3 text-xs text-slate-500">
-                          <span className="truncate">
-                            {getAppointmentSourceLabel(appointment.source, appointment.metadata)}
-                          </span>
-                          <span className="shrink-0">
-                            {appointment.service?.durationMin ?? "--"} min
-                          </span>
-                        </div>
-                      </article>
-                    )
-                  })
-                )}
-              </div>
-
-              <div className="hidden lg:block">
-                <FullCalendarView
-                  appointments={desktopAppointments}
-                  selectedDate={selectedDate}
-                  view={calendarView}
-                  dayBoundaries={calendarDayBoundaries}
-                  onAppointmentClick={handleAppointmentClick}
-                />
-              </div>
-            </>
-          )}
-        </section>
+        {!appointmentsLoading && !appointmentsError && selectedDayAppointments.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 px-4 py-5 text-sm text-slate-600">
+            Nenhum agendamento neste dia. As agendas por profissional continuam abertas para destacar horários livres e facilitar novos encaixes.
+          </div>
+        ) : null}
       </div>
+      )}
 
       <AppointmentDetailsDialog
         appointment={selectedAppointment}
@@ -1952,6 +2095,124 @@ export default function AgendamentosPage() {
         onSave={handleAppointmentSaved}
         onCancel={handleAppointmentCanceled}
       />
+
+      <Dialog
+        open={blockDialogOpen}
+        onOpenChange={(open) => {
+          setBlockDialogOpen(open)
+          if (!open) {
+            setBlockSaveError(null)
+            setBlockingProfessional(null)
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Bloquear e desbloquear horarios</DialogTitle>
+            <DialogDescription>
+              Configure um bloqueio para {blockingProfessional?.name ?? "a agenda"} em {parseDateKey(blockDate).toLocaleDateString("pt-BR")}. O bloqueio usa a regra atual disponivel na agenda, sem alterar o backend de appointments.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form className="grid gap-4" onSubmit={handleCreateBlock}>
+            {blockDateBlockedSchedules.length > 0 ? (
+              <div className="grid gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4">
+                <div>
+                  <p className="text-sm font-medium text-slate-900">Bloqueios ativos na data</p>
+                  <p className="text-xs text-slate-500">Remova um bloqueio existente para liberar novos agendamentos nesse periodo.</p>
+                </div>
+
+                {blockDateBlockedSchedules.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5"
+                  >
+                    <div>
+                      <p className="text-sm font-medium text-slate-900">{formatBlockedScheduleLabel(item)}</p>
+                      <p className="text-xs text-slate-500">
+                        {item.allDay ? "Dia inteiro bloqueado" : "Faixa bloqueada"}
+                      </p>
+                    </div>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={removingBlockId === item.id}
+                      onClick={() => void handleRemoveBlock(item.id)}
+                    >
+                      {removingBlockId === item.id ? "Removendo..." : "Desbloquear"}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-sm text-slate-600">
+              Crie um novo bloqueio para impedir encaixes nesse periodo ou remova um bloqueio ativo para liberar a agenda novamente.
+            </div>
+
+            <div className="grid gap-2">
+              <label className="text-sm font-medium text-slate-700">Data</label>
+              <input
+                type="date"
+                value={blockDate}
+                onChange={(event) => setBlockDate(event.target.value)}
+                className="h-11 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+              />
+            </div>
+
+            <label className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={blockAllDay}
+                onChange={(event) => setBlockAllDay(event.target.checked)}
+                className="size-4 rounded border-slate-300"
+              />
+              Bloquear o dia inteiro
+            </label>
+
+            {!blockAllDay ? (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid gap-2">
+                  <label className="text-sm font-medium text-slate-700">Inicio</label>
+                  <input
+                    type="time"
+                    value={blockStartTime}
+                    onChange={(event) => setBlockStartTime(event.target.value)}
+                    className="h-11 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <label className="text-sm font-medium text-slate-700">Fim</label>
+                  <input
+                    type="time"
+                    value={blockEndTime}
+                    onChange={(event) => setBlockEndTime(event.target.value)}
+                    className="h-11 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+            ) : null}
+
+            {blockSaveError ? (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {blockSaveError}
+              </div>
+            ) : null}
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setBlockDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit" variant="primary" disabled={blockSaving}>
+                {blockSaving ? "Salvando..." : "Salvar bloqueio"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={availabilityOpen} onOpenChange={setAvailabilityOpen}>
         <DialogContent className="sm:max-w-xl">
@@ -2005,13 +2266,15 @@ export default function AgendamentosPage() {
                     type="button"
                     onClick={() => {
                       setSelectedSlot(slot)
+                      setSlotSearchDate(slot.date)
+                      setSelectedDate(slot.date)
                       setAvailabilityOpen(false)
                     }}
                     className="w-full rounded-xl border border-slate-200 px-4 py-3 text-left transition hover:border-slate-400 hover:bg-slate-50"
                   >
                     <span className="block text-sm font-medium text-slate-800">{slot.label}</span>
                     <span className="block text-xs text-slate-500">
-                      Inicio: {new Date(slot.startAt).toLocaleString("pt-BR")}
+                      Inicio: {formatDateTimeLabel(slot.date, slot.time)}
                     </span>
                   </button>
                 ))
@@ -2020,7 +2283,67 @@ export default function AgendamentosPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={newClientOpen} onOpenChange={setNewClientOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Novo cliente</DialogTitle>
+            <DialogDescription>
+              Cadastre um cliente rapidamente sem sair do agendamento. Ao salvar, ele volta ja selecionado no formulario.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form className="grid gap-4" onSubmit={handleCreateClient}>
+            <div className="grid gap-2">
+              <label className="text-sm font-medium text-slate-700">Nome</label>
+              <Input
+                value={newClientName}
+                onChange={(event) => setNewClientName(event.target.value)}
+                placeholder="Nome do cliente"
+                required
+              />
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <label className="text-sm font-medium text-slate-700">Telefone</label>
+                <Input
+                  value={newClientPhone}
+                  onChange={(event) => setNewClientPhone(maskPhone(event.target.value))}
+                  placeholder="(27) 99999-9999"
+                  inputMode="tel"
+                  maxLength={15}
+                />
+              </div>
+
+              <div className="grid gap-2">
+                <label className="text-sm font-medium text-slate-700">E-mail</label>
+                <Input
+                  type="email"
+                  value={newClientEmail}
+                  onChange={(event) => setNewClientEmail(event.target.value)}
+                  placeholder="cliente@email.com"
+                />
+              </div>
+            </div>
+
+            {newClientError ? (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {newClientError}
+              </div>
+            ) : null}
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setNewClientOpen(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit" variant="primary" disabled={newClientSubmitting}>
+                {newClientSubmitting ? "Salvando..." : "Salvar cliente"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
-

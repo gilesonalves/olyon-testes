@@ -1,11 +1,13 @@
 # PROJECT_STATUS.md
 
-**Data de ultima atualizacao:** 30 de marco de 2026
+**Data de ultima atualizacao:** 01 de abril de 2026
 
 ## Status geral do projeto Olyon
 
 ### Estado atual
 
+[x] CRUD de Clientes no codigo com UI, validacao e rotas dedicadas
+[ ] Migracao Prisma de Clientes aplicada no banco de desenvolvimento
 [x] CRUD de Usuarios  
 [x] CRUD de Servicos  
 [x] CRUD de Equipe  
@@ -17,6 +19,12 @@
 [x] Sugestao ativa de horarios com escolha por numero no WhatsApp
 [x] Massa minima real de seed para teste do fluxo WhatsApp
 [x] Fase 2 da pagina `/agendamentos` com modal de slots, telefone mascarado e labels amigaveis
+[x] Correcao do create manual em `/agendamentos` para datas futuras com payload seguro `date + time`
+[x] Listagem de agendamentos por data em `/api/appointments?date=YYYY-MM-DD` com intervalo diario seguro
+[x] Formulario de novo agendamento em `/agendamentos` simplificado sem campos visiveis de telefone e e-mail
+[x] Scroll horizontal de multiplos profissionais isolado no container da agenda em `/agendamentos`
+[x] Shell autenticado ajustado com `min-w-0` e `overflow-x-hidden` para manter filtros fixos e scroll so nas colunas da agenda
+[x] Card visual de bloqueios ativos removido de `/agendamentos` sem alterar a regra de indisponibilidade
 [x] Fase A da pagina `/agendamentos` com agenda diaria visual e filtros operacionais
 [x] Fase B da pagina `/agendamentos` com refinamento visual, mobile adaptado e skeletons reais
 [x] Refinamento desktop da agenda diaria com cards mais compactos e hierarquia operacional melhor
@@ -37,6 +45,19 @@
 [x] Wrapper desktop da agenda sem padding lateral competindo com o radius do calendario
 [x] Modal do agendamento com abas, remarcacao por slots e cancelamento logico em `/agendamentos`
 [x] Laboratorio isolado `/agendamentos-lab` com FullCalendar Standard para validar layout sem acoplar ao fluxo real
+[x] `/agendamentos` refatorado para calendario mensal limpo com resumo por dia e sheet de detalhe
+[x] `/agendamentos` refatorado novamente para agenda diaria operacional por profissional
+[x] Regua visual de `/agendamentos` refinada para marcacoes principais de 15 minutos com cards posicionados por minuto real
+[x] Cards de `/agendamentos` encaixados na malha da coluna com grid por linhas de 15 minutos
+[x] Cards de `/agendamentos` mantidos sempre visiveis acima da malha e header da coluna simplificado com menu funcional
+[x] Cards de `/agendamentos` reintegrados como itens diretos da grid da coluna, sem camada absoluta sobreposta
+[x] Formulario de novo agendamento refinado com busca de clientes existentes, cadastro rapido inline e desbloqueio explicito de bloqueios ativos
+[x] Mobile de `/agendamentos` refinado com grade mensal responsiva sem espremimento de 7 colunas
+[x] Mobile de `/agendamentos` com 1 coluna abaixo de 420px e CTA para ver so dias com agendamento
+[x] Modal de edicao de `/agendamentos` ajustado para telas pequenas e grade mensal ampla adiada para telas maiores
+[x] Loading visual de `/agendamentos` e `/horarios-de-atendimento` com skeletons de rota e estados iniciais sem tela em branco
+[x] Loading padronizado nas paginas principais com skeleton + texto curto em `/agendamentos`, `/horarios-de-atendimento`, `/usuarios`, `/equipe` e `/eventos`
+[x] Rota `/clientes` criada com base visual inicial e menu lateral ajustado com `Home -> /dashboard`
 [x] Fase 1 do financeiro: base de dominio Prisma com `FinanceEntry`
 [x] Fase 2 do financeiro: validator e rota inicial GET/POST de lancamentos
 [x] Fase 3 do financeiro: rota por id com PUT e DELETE
@@ -64,15 +85,20 @@
 
 O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) possui hoje:
 
+- CRUD real de Clientes implementado em codigo, separado do dominio de Usuarios do sistema.
 - CRUD real e multi-tenant de Usuarios, Servicos, Equipe e Eventos.
 - Base de dominio multi-tenant do financeiro em Prisma com `FinanceEntry` (fase 1, sem CRUD/API/UI).
 - APIs de horarios semanais e bloqueios de agenda persistidas em Prisma.
 - Base de conversas WhatsApp com `Conversation`, `ConversationMessage`, `AppointmentDraft` e `Appointment`.
 - Fluxo de bot via WhatsApp com menu inicial hibrido, selecao de servico, resolucao de profissional, sugestao ativa de horarios, escolha de horario por numero ou texto livre, confirmacao e criacao final do agendamento.
-- Tela `/agendamentos` com POC desktop em FullCalendar Standard, visualizacao simplificada no mobile, skeletons reais e criacao/edicao guiadas por disponibilidade real.
+- Tela `/agendamentos` com calendario mensal limpo, resumo por dia, sheet de detalhe, skeletons reais e criacao/edicao guiadas por disponibilidade real.
+- Tela `/agendamentos` agora com agenda diaria operacional por profissional como experiencia principal, preservando criacao, detalhe, edicao e disponibilidade reais.
+- Criacao manual e remarcacao em `/agendamentos` agora trafegam `date + time`, montam `startAt/endAt` de forma explicita no backend e mantem a mesma engine de disponibilidade como fonte de verdade.
+- `GET /api/appointments` agora aceita filtro por `date` e retorna o dia inteiro com intervalo seguro no timezone da agenda, evitando parse ambiguo no frontend.
 - Laboratorio `/agendamentos-lab` com FullCalendar Standard usando dados mockados para validar layout e renderizacao em isolamento.
 - Respostas JSON consistentes, validacoes no servidor e escopo por loja.
 - Seed oficial com massa minima idempotente para validar agenda, bloqueios, conflitos e equipe no canal WhatsApp.
+- A aplicacao da migracao Prisma de `Client` no banco atual ficou pendente porque o ambiente de desenvolvimento ja estava com drift em relacao ao historico local de migrations.
 
 ---
 
@@ -80,6 +106,7 @@ O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) poss
 
 ### A) CRUDs principais
 
+- [x] Clientes com pagina real, formulario de novo/edicao e CRUD em `/api/clients`
 - [x] Usuarios
 - [x] Servicos
 - [x] Equipe
@@ -125,10 +152,13 @@ O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) poss
 ### C.1) Painel / Agendamentos
 
 - [x] `/agendamentos` com listagem real via `GET /api/appointments`
+- [x] `GET /api/appointments?date=YYYY-MM-DD` lista corretamente os agendamentos do dia selecionado
 - [x] Criacao manual com revalidacao final da disponibilidade no `POST /api/appointments`
+- [x] Criacao manual e remarcacao trafegam `date + time` e montam `startAt/endAt` com parse explicito no backend
 - [x] `GET /api/appointments/availability` usando a mesma engine central do WhatsApp
 - [x] Modal de horarios disponiveis com selecao guiada de slot
 - [x] Modal de horarios listando todos os slots validos da data escolhida
+- [x] Respostas de slots e appointments incluem `date`, `startTime` e `endTime` para reduzir dependencia de parse local ambiguo
 - [x] Status em PT-BR, origem amigavel e telefone formatado na interface
 - [x] Agenda diaria visual com eixo de horarios e appointments posicionados por intervalo
 - [x] Filtros de data e profissional na operacao do dia
@@ -162,6 +192,30 @@ O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) poss
 - [x] Wrapper desktop sem `p-4`, preservando o radius do calendario sem criar faixa branca ao redor
 - [x] Modal de detalhes com abas, remarcacao por slots validados e cancelamento logico por status
 - [x] `/agendamentos-lab` com FullCalendar Standard em ambiente isolado e eventos mockados
+- [x] Desktop e mobile de `/agendamentos` unificados em calendario mensal limpo com selecao de dia
+- [x] Dias do calendario com contador, resumo curto e destaque de hoje/selecionado/fora do mes
+- [x] Sheet lateral com lista cronologica dos agendamentos do dia e empty state consistente
+- [x] Mobile do calendario mensal adaptado para cards de dias em 2 colunas no mes atual
+- [x] Mobile do calendario mensal ajustado para 1 coluna em telas muito estreitas e filtro rapido de dias com agendamento
+- [x] Modal de detalhes/edicao com rodape empilhado no mobile e calendario em cards ate telas intermediarias
+- [x] `loading.tsx` em `/agendamentos` com skeleton visual da navegacao e do calendario mensal
+- [x] `loading.tsx` em `/horarios-de-atendimento` com skeleton visual da semana e da listagem de bloqueios
+- [x] `/horarios-de-atendimento` usando skeleton interno no carregamento inicial dos controllers
+- [x] Skeletons de `/agendamentos` e `/horarios-de-atendimento` com texto curto de carregamento embutido
+- [x] `/usuarios`, `/equipe` e `/eventos` com skeleton interno no primeiro carregamento client-side
+- [x] `loading.tsx` complementar criado para `/usuarios`, `/equipe` e `/eventos`
+- [x] Componente reutilizavel de skeleton para paginas de listagem administrativas
+- [x] Sidebar com grupo `Home` apontando para `/dashboard`
+- [x] Item `Clientes` corrigido para `/clientes` sem desvio para dashboard
+- [x] `/clientes` criada com estrutura visual inicial consistente baseada na organizacao de `/usuarios`
+- [x] `/agendamentos` voltou a priorizar a leitura operacional do dia com colunas por profissional e eixo de horarios
+- [x] Clique em bloco da agenda abre o detalhe existente e clique em area vazia preenche novo agendamento com data, horario e profissional
+- [x] Blocos da grade diaria ampliados para exibir mais informacoes e ocupar visualmente a faixa horaria como agenda operacional classica
+- [x] Estrutura visual de `/agendamentos` corrigida para varias mini agendas independentes, uma por profissional, sem regua global compartilhada
+- [x] `/clientes` evoluida para listagem real, loading padronizado e fluxo de novo/edicao exclusivo do dominio de clientes
+- [x] `ClientForm` reutilizavel com mascara de CPF/telefone, genero, observacoes e status ativo
+- [x] `GET/POST/PUT/DELETE` de clientes com `storeId` protegido no backend e validacao por Zod
+- [ ] Migracao Prisma do model `Client` aplicada no banco de desenvolvimento atual
 
 ### D) Financeiro (fase 1 - base Prisma)
 
@@ -344,12 +398,17 @@ O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) poss
 - As opcoes 2 e 3 do menu ainda usam fallback honesto, porque desmarcar/remarcar e informacoes detalhadas de atendimento nao estao implementados neste canal.
 - As sugestoes numeradas sao sempre revalidadas antes de salvar ou confirmar o slot, para evitar confirmar horario que ficou indisponivel.
 - O seed oficial foi ajustado para nao deixar appointment antigo sem profissional bloqueando a loja inteira durante os testes.
+- O create manual falhava para datas futuras porque a tela limpava o slot escolhido quando `selectedDate` ficava diferente da data buscada no modal; agora a selecao sincroniza a data da tela e o backend recebe `date + time`.
+- A listagem operacional por data deixou de depender apenas de filtro client-side em `new Date(iso)` e passou a usar `GET /api/appointments?date=...` com intervalo diario seguro no timezone configurado.
+- O card visual de bloqueios ativos do dia saiu da UI de `/agendamentos`, mas os bloqueios continuam sendo carregados para o dialog e a indisponibilidade continua sendo validada pela engine do backend.
 
 ---
 
 ## 5. Verificacoes realizadas
 
 - [x] `yarn eslint app/api/webhooks/whatsapp/route.ts src/lib/appointments/availability.ts src/lib/bot/flow.ts src/lib/bot/types.ts prisma/seed.ts`
+- [x] `yarn eslint app/api/appointments/route.ts app/api/appointments/[id]/route.ts app/api/appointments/availability/route.ts src/lib/validators/appointment.ts app/(app)/agendamentos/page.tsx app/(app)/agendamentos/components/professional-schedule-board.tsx app/(app)/agendamentos/components/professional-schedule-column.tsx app/(app)/agendamentos/components/appointment-card.tsx`
+- [x] `yarn tsc --noEmit --pretty false --incremental false --ignoreDeprecations 5.0`
 - [x] Smoke test local do flow com:
   - [x] `oi`
   - [x] `1`
@@ -363,6 +422,7 @@ O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) poss
 
 Observacao:
 
+- O `tsc` continua falhando por erros antigos fora do escopo em `.next/dev/types/validator.ts`, `app/(app)/contas-a-pagar/novo/page.tsx`, `app/(app)/usuarios/controllers/index.tsx`, `src/components/ui/app-sidebar.tsx`, `src/lib/auth-options.ts` e `src/scripts/seed.ts`, mas nao apontou erro novo nos arquivos ajustados do fluxo de agendamentos.
 - `yarn tsc --noEmit --ignoreDeprecations 5.0` continua falhando por erros antigos fora do escopo desta entrega (`.next/dev/types`, `usuarios/controllers`, `auth-options`, `seed`, etc.), mas nao apontou erros novos nos arquivos desta feature.
 
 ---
@@ -370,6 +430,14 @@ Observacao:
 ## 6. Arquivos principais desta etapa
 
 - `app/api/webhooks/whatsapp/route.ts`
+- `app/api/appointments/route.ts`
+- `app/api/appointments/[id]/route.ts`
+- `app/api/appointments/availability/route.ts`
+- `src/lib/validators/appointment.ts`
+- `app/(app)/agendamentos/page.tsx`
+- `app/(app)/agendamentos/components/professional-schedule-board.tsx`
+- `app/(app)/agendamentos/components/professional-schedule-column.tsx`
+- `app/(app)/agendamentos/components/appointment-card.tsx`
 - `src/lib/appointments/availability.ts`
 - `src/lib/bot/flow.ts`
 - `src/lib/bot/types.ts`
@@ -385,7 +453,8 @@ Observacao:
 2. Disponibilizar dados reais de atendimento no menu de informacoes quando o produto tiver esses campos.
 3. Coletar nome do cliente no fluxo WhatsApp antes da confirmacao final.
 4. Evoluir disponibilidade por profissional para agendas individuais quando o produto suportar agenda propria por staff.
-5. Limpar type errors e warnings antigos fora do escopo da feature.
+5. Cobrir create manual, remarcacao e listagem por data com testes automatizados de integracao.
+6. Limpar type errors e warnings antigos fora do escopo da feature.
 
 ---
 
@@ -393,6 +462,7 @@ Observacao:
 
 | Data | Mudanca |
 |------|---------|
+| 01/04/2026 | Agenda: create manual passou a aceitar datas futuras com `date + time`, listagem por data foi movida para `GET /api/appointments?date=...` e a UI deixou de depender de parse local ambiguo |
 | 09/03/2026 | WhatsApp: sugestao ativa de horarios com escolha por numero em `CHOOSING_TIME` e seed minima real para teste fim a fim |
 | 09/03/2026 | WhatsApp: entrada conversacional com boas-vindas, menu inicial hibrido e atalhos diretos em `IDLE` |
 | 09/03/2026 | WhatsApp: selecao de profissional com auto-selecao, escolha por numero/nome e conflito de agenda por profissional |

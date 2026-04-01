@@ -385,7 +385,7 @@
   dependencies:
     preact "~10.12.1"
 
-"@fullcalendar/daygrid@~6.1.20":
+"@fullcalendar/daygrid@^6.1.20", "@fullcalendar/daygrid@~6.1.20":
   version "6.1.20"
   resolved "https://registry.yarnpkg.com/@fullcalendar/daygrid/-/daygrid-6.1.20.tgz#fcf33af4ea908b46fd755414278341811e01bdf8"
 

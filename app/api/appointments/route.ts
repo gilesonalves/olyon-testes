@@ -8,9 +8,18 @@ import {
   unauthorized,
 } from "@/lib/api/response"
 import { requireMembershipRole } from "@/lib/guards/require-membership-role"
-import { AppointmentCreateSchema } from "@/lib/validators/appointment"
+import {
+  AppointmentCreateSchema,
+  AppointmentListQuerySchema,
+} from "@/lib/validators/appointment"
 import { checkAvailabilityForSlot } from "@/lib/appointments/availability"
-import { getBotTimezone } from "@/lib/bot/datetime"
+import {
+  addDaysToDateKey,
+  combineDateKeyAndTime,
+  getBotTimezone,
+  getDateKeyInTimeZone,
+  getTimeKeyInTimeZone,
+} from "@/lib/bot/datetime"
 
 function serializeAppointment(appointment: {
   id: string
@@ -35,7 +44,7 @@ function serializeAppointment(appointment: {
       name: string
     }
   } | null
-}) {
+}, timeZone: string) {
   return {
     id: appointment.id,
     customerName: appointment.customerName,
@@ -43,6 +52,9 @@ function serializeAppointment(appointment: {
     customerEmail: appointment.customerEmail,
     startAt: appointment.startAt.toISOString(),
     endAt: appointment.endAt.toISOString(),
+    date: getDateKeyInTimeZone(appointment.startAt, timeZone),
+    startTime: getTimeKeyInTimeZone(appointment.startAt, timeZone),
+    endTime: getTimeKeyInTimeZone(appointment.endAt, timeZone),
     status: appointment.status,
     source: appointment.source,
     notes: appointment.notes,
@@ -58,17 +70,51 @@ function serializeAppointment(appointment: {
   }
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
     const guard = await requireMembershipRole("STAFF")
     if (!guard.ok) {
       return guard.status === 401 ? unauthorized(guard.error) : forbidden(guard.error)
     }
 
+    const { searchParams } = new URL(req.url)
+    const parsedQuery = AppointmentListQuerySchema.safeParse({
+      date: searchParams.get("date"),
+    })
+
+    if (!parsedQuery.success) {
+      return badRequest(
+        parsedQuery.error.issues.map((issue) => issue.message).join(" | ") || "Query invalida"
+      )
+    }
+
+    const timeZone = getBotTimezone()
+    const where: {
+      storeId: string
+      startAt?: {
+        gte: Date
+        lte: Date
+      }
+    } = {
+      storeId: guard.storeId,
+    }
+
+    if (parsedQuery.data.date) {
+      const dayStart = combineDateKeyAndTime(parsedQuery.data.date, "00:00", timeZone)
+      const nextDayStart = combineDateKeyAndTime(
+        addDaysToDateKey(parsedQuery.data.date, 1),
+        "00:00",
+        timeZone
+      )
+
+      where.startAt = {
+        gte: dayStart,
+        lte: new Date(nextDayStart.getTime() - 1),
+      }
+    }
+
     const appointments = await prisma.appointment.findMany({
-      where: {
-        storeId: guard.storeId,
-      },
+      where,
       include: {
         service: {
           select: {
@@ -94,7 +140,7 @@ export async function GET() {
       ],
     })
 
-    return ok(appointments.map(serializeAppointment))
+    return ok(appointments.map((appointment) => serializeAppointment(appointment, timeZone)))
   } catch (e) {
     console.error("[GET /api/appointments]", e)
     return serverError()
@@ -118,6 +164,7 @@ export async function POST(req: Request) {
     }
 
     const input = parsed.data
+    const timeZone = getBotTimezone()
 
     const service = await prisma.service.findFirst({
       where: {
@@ -154,17 +201,19 @@ export async function POST(req: Request) {
       }
     }
 
-    const requestedStartAt = new Date(input.startAt)
+    const requestedStartAt = combineDateKeyAndTime(input.date, input.time, timeZone)
     if (Number.isNaN(requestedStartAt.getTime())) {
       return badRequest("Data/hora invalida.")
+    }
+
+    if (requestedStartAt.getTime() < Date.now()) {
+      return badRequest("Nao e possivel agendar no passado.")
     }
 
     const createdByUser = await prisma.user.findUnique({
       where: { id: guard.userId },
       select: { name: true },
     })
-
-    const timeZone = getBotTimezone()
 
     const availability = await checkAvailabilityForSlot({
       db: prisma,
@@ -221,7 +270,7 @@ export async function POST(req: Request) {
       },
     })
 
-    return created(serializeAppointment(appointment))
+    return created(serializeAppointment(appointment, timeZone))
   } catch (e) {
     console.error("[POST /api/appointments]", e)
     return serverError()

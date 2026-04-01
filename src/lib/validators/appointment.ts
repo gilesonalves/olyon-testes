@@ -19,6 +19,18 @@ function isValidDateKey(value: string) {
   )
 }
 
+function isValidTimeKey(value: string) {
+  const match = value.match(/^(\d{2}):(\d{2})$/)
+  if (!match) {
+    return false
+  }
+
+  const hour = Number(match[1])
+  const minute = Number(match[2])
+
+  return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59
+}
+
 const nullableTrimmedString = z
   .union([z.string(), z.null(), z.undefined()])
   .transform((value) => {
@@ -62,6 +74,14 @@ const nullableDateKeyString = z
     message: "Data da busca invalida.",
   })
 
+const dateKeyString = z.string().trim().refine(isValidDateKey, {
+  message: "Data invalida.",
+})
+
+const timeKeyString = z.string().trim().refine(isValidTimeKey, {
+  message: "Horario invalido.",
+})
+
 export const AppointmentCreateSchema = z.object({
   serviceId: z.string().trim().min(1, "Servico e obrigatorio."),
   staffMembershipId: nullableTrimmedString,
@@ -74,7 +94,8 @@ export const AppointmentCreateSchema = z.object({
     if (value === null) return true
     return z.string().email().safeParse(value).success
   }, "E-mail invalido."),
-  startAt: z.string().datetime("Data/hora invalida."),
+  date: dateKeyString,
+  time: timeKeyString,
   notes: nullableTrimmedString,
 })
 
@@ -121,13 +142,22 @@ export const AppointmentUpdateSchema = z
       if (value === undefined || value === null) return true
       return z.string().email().safeParse(value).success
     }, "E-mail invalido."),
-    startAt: z.string().datetime("Data/hora invalida.").optional(),
+    date: dateKeyString.optional(),
+    time: timeKeyString.optional(),
     notes: optionalNullableTrimmedString,
     status: AppointmentStatusSchema.optional(),
+  })
+  .refine((value) => (value.date === undefined) === (value.time === undefined), {
+    message: "Informe data e horario juntos para remarcar o agendamento.",
+    path: ["date"],
   })
   .refine((value) => Object.values(value).some((item) => item !== undefined), {
     message: "Informe ao menos um campo para atualizar o agendamento.",
   })
+
+export const AppointmentListQuerySchema = z.object({
+  date: nullableDateKeyString,
+})
 
 export const AppointmentAvailabilityQuerySchema = z.object({
   serviceId: z.string().trim().min(1, "Servico e obrigatorio."),
@@ -142,4 +172,5 @@ export const AppointmentAvailabilityQuerySchema = z.object({
 
 export type AppointmentCreateInput = z.infer<typeof AppointmentCreateSchema>
 export type AppointmentUpdateInput = z.infer<typeof AppointmentUpdateSchema>
+export type AppointmentListQueryInput = z.infer<typeof AppointmentListQuerySchema>
 export type AppointmentAvailabilityQueryInput = z.infer<typeof AppointmentAvailabilityQuerySchema>

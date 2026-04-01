@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input"
 import { Controller as RHFController } from "react-hook-form"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "sonner"
+import ListPageSkeleton from "@/components/loading/list-page-skeleton"
 
 import { Controller } from "./controllers"
 import Servicos from "./components/servicos"
@@ -73,6 +74,7 @@ console.log("[events] first item from API:", json?.data?.[0])
   const empty = useMemo(() => !loading && items.length === 0, [loading, items.length])
   const visibleItems = useMemo(() => items.slice(0, visibleCount), [items, visibleCount])
   const hasMoreItems = visibleItems.length < items.length
+  const showInitialSkeleton = loading && items.length === 0
 
   async function toggleActive(id: string, next: boolean) {
     if (!id) {
@@ -224,8 +226,10 @@ console.log("[events] first item from API:", json?.data?.[0])
         </div>
       </HeaderPage>
 
+      {showInitialSkeleton ? (
+        <ListPageSkeleton message="Carregando eventos..." />
+      ) : (
       <div className="bg-white px-6 py-7">
-        {loading && <p className="text-sm text-muted-foreground">Carregando...</p>}
 
         {empty && (
           <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
@@ -280,6 +284,7 @@ console.log("[events] first item from API:", json?.data?.[0])
           ) : null}
         </div>
       </div>
+      )}
     </>
   )
 }

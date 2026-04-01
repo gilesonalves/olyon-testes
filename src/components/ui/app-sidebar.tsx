@@ -26,6 +26,16 @@ const data = {
   versions: ["1.0.1", "1.1.0-alpha", "2.0.0-beta1"],
   navMain: [
     {
+      title: "Home",
+      url: "#",
+      items: [
+        {
+          title: "Home",
+          url: "/dashboard",
+        },
+      ],
+    },
+    {
       title: "Eventos",
       url: "#",
       items: [
@@ -99,7 +109,7 @@ const data = {
         },
         {
           title: "Clientes",
-          url: "/",
+          url: "/clientes",
         },
 
       ],
