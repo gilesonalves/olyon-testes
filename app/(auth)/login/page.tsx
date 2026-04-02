@@ -2,17 +2,30 @@
 import { Controller as ControllerForm } from "react-hook-form"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
+import { Suspense } from "react"
 import { Controller } from "./controllers"
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 
+function LoginErrorMessage() {
+  const searchParams = useSearchParams()
+  const errorParam = searchParams.get("error")
+
+  if (!errorParam) {
+    return null
+  }
+
+  return (
+    <p className="mt-4 text-sm font-medium text-red-600">
+      Credenciais invalidas ou acesso negado.
+    </p>
+  )
+}
 
 export default function Login() {
   const { form, onSubmit } = Controller()
-  const searchParams = useSearchParams()
-  const errorParam = searchParams.get("error")
-  const showError = Boolean(errorParam)
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-white px-4">
       <div className="w-full max-w-md">
@@ -78,11 +91,9 @@ export default function Login() {
             />
 
           </FieldGroup>
-          {showError && (
-            <p className="text-sm text-red-600 font-medium mt-4">
-              Credenciais invalidas ou acesso negado.
-            </p>
-          )}
+          <Suspense fallback={null}>
+            <LoginErrorMessage />
+          </Suspense>
           <Button type="submit" variant={"primary"} className="w-full cursor-pointer mt-6">
             Entrar
           </Button>

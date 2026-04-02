@@ -53,16 +53,18 @@ model Store {
 }
 
 model Membership {
-  id                String               @id @default(cuid())
-  role              MembershipRole
-  userId            String
-  storeId           String
-  appointments      Appointment[]
-  appointmentDrafts AppointmentDraft[]
-  store             Store                @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  user              User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  services          MembershipService[]
-  types             MembershipTypeLink[]
+  id                        String                    @id @default(cuid())
+  role                      MembershipRole
+  userId                    String
+  storeId                   String
+  appointments              Appointment[]
+  appointmentDrafts         AppointmentDraft[]
+  blockedSchedules          BlockedSchedule[]
+  professionalWeekSchedules MembershipWeekScheduleDay[]
+  store                     Store                     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  user                      User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  services                  MembershipService[]
+  types                     MembershipTypeLink[]
 
   @@unique([userId, storeId])
 }
@@ -335,18 +337,47 @@ model WeekScheduleInterval {
   @@index([dayId])
 }
 
+model MembershipWeekScheduleDay {
+  id           String                         @id @default(cuid())
+  membershipId String
+  weekday      Weekday
+  enabled      Boolean                        @default(false)
+  createdAt    DateTime                       @default(now())
+  updatedAt    DateTime                       @updatedAt
+  membership   Membership                     @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  intervals    MembershipWeekScheduleInterval[]
+
+  @@unique([membershipId, weekday])
+  @@index([membershipId])
+}
+
+model MembershipWeekScheduleInterval {
+  id        String                    @id @default(cuid())
+  dayId     String
+  startTime String
+  endTime   String
+  createdAt DateTime                  @default(now())
+  updatedAt DateTime                  @updatedAt
+  day       MembershipWeekScheduleDay @relation(fields: [dayId], references: [id], onDelete: Cascade)
+
+  @@index([dayId])
+}
+
 model BlockedSchedule {
-  id        String   @id @default(cuid())
-  storeId   String
-  date      DateTime
-  allDay    Boolean  @default(false)
-  startTime String?
-  endTime   String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  id           String      @id @default(cuid())
+  storeId      String
+  membershipId String?
+  date         DateTime
+  allDay       Boolean     @default(false)
+  startTime    String?
+  endTime      String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  membership   Membership? @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  store        Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
   @@index([storeId, date])
+  @@index([membershipId, date])
 }
 
 model WhatsAppConnection {

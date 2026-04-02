@@ -96,6 +96,7 @@ export const AppointmentCreateSchema = z.object({
   }, "E-mail invalido."),
   date: dateKeyString,
   time: timeKeyString,
+  allowPastScheduling: z.boolean().optional().default(false),
   notes: nullableTrimmedString,
 })
 
@@ -144,6 +145,7 @@ export const AppointmentUpdateSchema = z
     }, "E-mail invalido."),
     date: dateKeyString.optional(),
     time: timeKeyString.optional(),
+    allowPastScheduling: z.boolean().optional(),
     notes: optionalNullableTrimmedString,
     status: AppointmentStatusSchema.optional(),
   })
@@ -170,7 +172,28 @@ export const AppointmentAvailabilityQuerySchema = z.object({
   path: ["searchDate"],
 })
 
+export const PublicAppointmentAvailabilityQuerySchema = z.object({
+  serviceId: z.string().trim().min(1, "Servico e obrigatorio."),
+  staffMembershipId: z.string().trim().min(1, "Profissional e obrigatorio."),
+  searchDate: dateKeyString,
+})
+
+export const PublicAppointmentCreateSchema = AppointmentCreateSchema
+  .omit({ allowPastScheduling: true })
+  .refine((value) => value.staffMembershipId !== null, {
+    message: "Profissional e obrigatorio.",
+    path: ["staffMembershipId"],
+  })
+  .refine((value) => value.customerPhone !== null, {
+    message: "Telefone invalido. Informe DDD + numero.",
+    path: ["customerPhone"],
+  })
+
 export type AppointmentCreateInput = z.infer<typeof AppointmentCreateSchema>
 export type AppointmentUpdateInput = z.infer<typeof AppointmentUpdateSchema>
 export type AppointmentListQueryInput = z.infer<typeof AppointmentListQuerySchema>
 export type AppointmentAvailabilityQueryInput = z.infer<typeof AppointmentAvailabilityQuerySchema>
+export type PublicAppointmentAvailabilityQueryInput = z.infer<
+  typeof PublicAppointmentAvailabilityQuerySchema
+>
+export type PublicAppointmentCreateInput = z.infer<typeof PublicAppointmentCreateSchema>

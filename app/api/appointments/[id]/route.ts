@@ -147,7 +147,11 @@ export async function PUT(req: Request, { params }: Params) {
         return badRequest("Data/hora invalida.")
       }
 
-      if (hasExplicitDateTimeChange && nextStartAt.getTime() < Date.now()) {
+      if (
+        hasExplicitDateTimeChange &&
+        !input.allowPastScheduling &&
+        nextStartAt.getTime() < Date.now()
+      ) {
         return badRequest("Nao e possivel agendar no passado.")
       }
 

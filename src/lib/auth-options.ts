@@ -10,7 +10,7 @@ type AuthUser = {
   email?: string | null
   role?: MembershipRole
   storeId?: string
-  globalRole?: string | null
+  globalRole?: string
 }
 
 export const authOptions: NextAuthOptions = {
@@ -47,7 +47,7 @@ export const authOptions: NextAuthOptions = {
             id: user.id,
             email: user.email ?? undefined,
             name: user.name,
-            globalRole: user.globalRole,
+            globalRole: user.globalRole ?? undefined,
           }
         }
 

@@ -1,6 +1,6 @@
 # PROJECT_STATUS.md
 
-**Data de ultima atualizacao:** 01 de abril de 2026
+**Data de ultima atualizacao:** 02 de abril de 2026
 
 ## Status geral do projeto Olyon
 
@@ -11,7 +11,7 @@
 [x] CRUD de Usuarios  
 [x] CRUD de Servicos  
 [x] CRUD de Equipe  
-[x] CRUD de Eventos  
+[x] Tela redundante `/eventos` removida com Servicos como fonte principal para combinacoes
 [x] Horarios semanais e bloqueios de agenda  
 [x] Fluxo WhatsApp de agendamento ate a criacao do `Appointment`  
 [x] Selecao de profissional no fluxo WhatsApp  
@@ -25,6 +25,13 @@
 [x] Scroll horizontal de multiplos profissionais isolado no container da agenda em `/agendamentos`
 [x] Shell autenticado ajustado com `min-w-0` e `overflow-x-hidden` para manter filtros fixos e scroll so nas colunas da agenda
 [x] Card visual de bloqueios ativos removido de `/agendamentos` sem alterar a regra de indisponibilidade
+[x] `/agendamentos` com novo agendamento em modal com scroll interno e pre-preenchimento por slot/profissional
+[x] Modal de novo agendamento em `/agendamentos` abre com profissional travado e servicos filtrados quando o slot vem da coluna dele
+[x] Modal de `/agendamentos` com excecao explicita para registro retroativo sem liberar passado por padrao
+[x] Modal retroativo de `/agendamentos` agora revela campos manuais de data/hora e mantem o CTA de salvar fixo fora da area rolavel
+[x] Cancelamento em `/agendamentos` libera o slot corretamente e deixa de contar/renderizar appointments inativos na agenda
+[x] `/agendamentos` com expediente individual por profissional, fallback seguro da loja e bloqueio por profissional
+[x] `/agendamentos` com scroll vertical proprio em cada coluna e horario centralizado horizontalmente nas celulas
 [x] Fase A da pagina `/agendamentos` com agenda diaria visual e filtros operacionais
 [x] Fase B da pagina `/agendamentos` com refinamento visual, mobile adaptado e skeletons reais
 [x] Refinamento desktop da agenda diaria com cards mais compactos e hierarquia operacional melhor
@@ -56,7 +63,7 @@
 [x] Mobile de `/agendamentos` com 1 coluna abaixo de 420px e CTA para ver so dias com agendamento
 [x] Modal de edicao de `/agendamentos` ajustado para telas pequenas e grade mensal ampla adiada para telas maiores
 [x] Loading visual de `/agendamentos` e `/horarios-de-atendimento` com skeletons de rota e estados iniciais sem tela em branco
-[x] Loading padronizado nas paginas principais com skeleton + texto curto em `/agendamentos`, `/horarios-de-atendimento`, `/usuarios`, `/equipe` e `/eventos`
+[x] Loading padronizado nas paginas principais com skeleton + texto curto em `/agendamentos`, `/horarios-de-atendimento`, `/usuarios` e `/equipe`
 [x] Rota `/clientes` criada com base visual inicial e menu lateral ajustado com `Home -> /dashboard`
 [x] Fase 1 do financeiro: base de dominio Prisma com `FinanceEntry`
 [x] Fase 2 do financeiro: validator e rota inicial GET/POST de lancamentos
@@ -86,7 +93,8 @@
 O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) possui hoje:
 
 - CRUD real de Clientes implementado em codigo, separado do dominio de Usuarios do sistema.
-- CRUD real e multi-tenant de Usuarios, Servicos, Equipe e Eventos.
+- CRUD real e multi-tenant de Usuarios, Servicos e Equipe.
+- Tela redundante `/eventos` removida da navegacao e da API; combinacoes como `corte + barba` permanecem cobertas por `Servicos`.
 - Base de dominio multi-tenant do financeiro em Prisma com `FinanceEntry` (fase 1, sem CRUD/API/UI).
 - APIs de horarios semanais e bloqueios de agenda persistidas em Prisma.
 - Base de conversas WhatsApp com `Conversation`, `ConversationMessage`, `AppointmentDraft` e `Appointment`.
@@ -95,6 +103,13 @@ O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) poss
 - Tela `/agendamentos` agora com agenda diaria operacional por profissional como experiencia principal, preservando criacao, detalhe, edicao e disponibilidade reais.
 - Criacao manual e remarcacao em `/agendamentos` agora trafegam `date + time`, montam `startAt/endAt` de forma explicita no backend e mantem a mesma engine de disponibilidade como fonte de verdade.
 - `GET /api/appointments` agora aceita filtro por `date` e retorna o dia inteiro com intervalo seguro no timezone da agenda, evitando parse ambiguo no frontend.
+- A agenda de `/agendamentos` agora respeita o expediente configurado de cada profissional, com fallback para o horario geral da loja quando nao houver configuracao individual.
+- O formulario de novo agendamento saiu do topo da pagina e passou a abrir em modal com scroll interno, preservando o restante do layout.
+- Quando o modal abre a partir da coluna de um profissional, ele trava esse profissional e mostra apenas os servicos ativos vinculados a ele.
+- O modal de `/agendamentos` passou a ter uma opcao explicita para registrar atendimento ja realizado; sem marcar essa opcao, a trava de passado continua identica ao comportamento anterior.
+- Quando essa excecao retroativa e marcada, o modal agora exibe campos manuais de data e hora e usa esse preenchimento no create sem depender do slot visual.
+- `GET /api/appointments` e a montagem da agenda operacional passaram a considerar apenas statuses ativos, liberando o slot imediatamente apos cancelamento.
+- A disponibilidade passou a considerar bloqueios globais da loja e bloqueios especificos do profissional na mesma engine central.
 - Laboratorio `/agendamentos-lab` com FullCalendar Standard usando dados mockados para validar layout e renderizacao em isolamento.
 - Respostas JSON consistentes, validacoes no servidor e escopo por loja.
 - Seed oficial com massa minima idempotente para validar agenda, bloqueios, conflitos e equipe no canal WhatsApp.
@@ -110,7 +125,7 @@ O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) poss
 - [x] Usuarios
 - [x] Servicos
 - [x] Equipe
-- [x] Eventos com vinculo de servicos
+- [x] Servicos permanecem como fonte unica para combinacoes operacionais
 
 ### B) Agenda
 
@@ -156,6 +171,15 @@ O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) poss
 - [x] Criacao manual com revalidacao final da disponibilidade no `POST /api/appointments`
 - [x] Criacao manual e remarcacao trafegam `date + time` e montam `startAt/endAt` com parse explicito no backend
 - [x] `GET /api/appointments/availability` usando a mesma engine central do WhatsApp
+- [x] Agenda visual por profissional respeitando expediente individual quando configurado
+- [x] Colunas com scroll vertical proprio e board horizontal preservado
+- [x] Novo agendamento abrindo em modal com scroll interno no lugar do formulario inline
+- [x] Novo agendamento abrindo pela coluna de um profissional com esse profissional pre-selecionado e travado no modal
+- [x] Lista de servicos do modal filtrada pelos servicos reais do profissional quando o fluxo parte da coluna dele
+- [x] Create e update de appointments aceitando `allowPastScheduling` apenas como excecao explicita
+- [x] Modo retroativo do modal revelando `date + time` manual e permitindo submit sem depender de slot escolhido
+- [x] Agenda, contadores e cards de `/agendamentos` ignorando `CANCELED`, `DONE` e `NO_SHOW` como ocupacao ativa
+- [x] Bloqueio por loja e bloqueio por profissional coexistindo na mesma validacao final do slot
 - [x] Modal de horarios disponiveis com selecao guiada de slot
 - [x] Modal de horarios listando todos os slots validos da data escolhida
 - [x] Respostas de slots e appointments incluem `date`, `startTime` e `endTime` para reduzir dependencia de parse local ambiguo
@@ -202,8 +226,8 @@ O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) poss
 - [x] `loading.tsx` em `/horarios-de-atendimento` com skeleton visual da semana e da listagem de bloqueios
 - [x] `/horarios-de-atendimento` usando skeleton interno no carregamento inicial dos controllers
 - [x] Skeletons de `/agendamentos` e `/horarios-de-atendimento` com texto curto de carregamento embutido
-- [x] `/usuarios`, `/equipe` e `/eventos` com skeleton interno no primeiro carregamento client-side
-- [x] `loading.tsx` complementar criado para `/usuarios`, `/equipe` e `/eventos`
+- [x] `/usuarios` e `/equipe` com skeleton interno no primeiro carregamento client-side
+- [x] `loading.tsx` complementar criado para `/usuarios` e `/equipe`
 - [x] Componente reutilizavel de skeleton para paginas de listagem administrativas
 - [x] Sidebar com grupo `Home` apontando para `/dashboard`
 - [x] Item `Clientes` corrigido para `/clientes` sem desvio para dashboard
@@ -401,6 +425,12 @@ O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) poss
 - O create manual falhava para datas futuras porque a tela limpava o slot escolhido quando `selectedDate` ficava diferente da data buscada no modal; agora a selecao sincroniza a data da tela e o backend recebe `date + time`.
 - A listagem operacional por data deixou de depender apenas de filtro client-side em `new Date(iso)` e passou a usar `GET /api/appointments?date=...` com intervalo diario seguro no timezone configurado.
 - O card visual de bloqueios ativos do dia saiu da UI de `/agendamentos`, mas os bloqueios continuam sendo carregados para o dialog e a indisponibilidade continua sendo validada pela engine do backend.
+- Foi adicionada modelagem minima para expediente por profissional e o banco local recebeu a migration aditiva correspondente via `prisma db execute`.
+- `/horarios-de-atendimento` agora permite alternar entre o expediente da loja e o expediente de um profissional especifico sem trocar a base de rotas.
+- O `POST /api/appointments` e o `GET /api/appointments/availability` continuam sendo a validacao final de elegibilidade do profissional para o servico, mesmo com o filtro aplicado no modal.
+- A trava de passado continua centralizada no backend; a unica excecao nova e o campo explicito `allowPastScheduling` enviado pelo modal quando o usuario marca o registro retroativo.
+- O refinamento do modal retroativo manteve o layout geral e moveu o CTA de salvar para fora da area rolavel, evitando corte visual em alturas menores.
+- O cancelamento ja persistia `CANCELED`; a correcao desta etapa ficou em filtrar apenas statuses ativos na agenda e revalidar a lista do dia apos salvar/cancelar.
 
 ---
 
@@ -409,6 +439,13 @@ O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) poss
 - [x] `yarn eslint app/api/webhooks/whatsapp/route.ts src/lib/appointments/availability.ts src/lib/bot/flow.ts src/lib/bot/types.ts prisma/seed.ts`
 - [x] `yarn eslint app/api/appointments/route.ts app/api/appointments/[id]/route.ts app/api/appointments/availability/route.ts src/lib/validators/appointment.ts app/(app)/agendamentos/page.tsx app/(app)/agendamentos/components/professional-schedule-board.tsx app/(app)/agendamentos/components/professional-schedule-column.tsx app/(app)/agendamentos/components/appointment-card.tsx`
 - [x] `yarn tsc --noEmit --pretty false --incremental false --ignoreDeprecations 5.0`
+- [x] `yarn prisma generate`
+- [x] `yarn prisma db execute --file prisma/migrations/20260401143000_add_professional_schedule_and_blocks/migration.sql`
+- [x] `yarn eslint app/(app)/agendamentos/page.tsx app/(app)/agendamentos/components/professional-schedule-board.tsx app/(app)/agendamentos/components/professional-schedule-column.tsx app/(app)/horarios-de-atendimento/page.tsx app/(app)/horarios-de-atendimento/controllers/useWeekScheduleFormController.ts app/api/team/route.ts app/api/schedule/weekly/route.ts app/api/schedule/blocked/route.ts app/api/schedule/blocked/[id]/route.ts src/lib/appointments/availability.ts src/lib/validators/schedule.ts`
+- [x] `yarn eslint app/(app)/agendamentos/page.tsx`
+- [x] `yarn eslint app/(app)/agendamentos/page.tsx app/api/appointments/route.ts app/api/appointments/[id]/route.ts src/lib/validators/appointment.ts`
+- [x] `yarn eslint app/(app)/agendamentos/page.tsx`
+- [x] `yarn eslint app/api/appointments/route.ts app/(app)/agendamentos/page.tsx`
 - [x] Smoke test local do flow com:
   - [x] `oi`
   - [x] `1`
@@ -425,6 +462,140 @@ Observacao:
 - O `tsc` continua falhando por erros antigos fora do escopo em `.next/dev/types/validator.ts`, `app/(app)/contas-a-pagar/novo/page.tsx`, `app/(app)/usuarios/controllers/index.tsx`, `src/components/ui/app-sidebar.tsx`, `src/lib/auth-options.ts` e `src/scripts/seed.ts`, mas nao apontou erro novo nos arquivos ajustados do fluxo de agendamentos.
 - `yarn tsc --noEmit --ignoreDeprecations 5.0` continua falhando por erros antigos fora do escopo desta entrega (`.next/dev/types`, `usuarios/controllers`, `auth-options`, `seed`, etc.), mas nao apontou erros novos nos arquivos desta feature.
 
+## 5.1 Ajuste atual - confirmacao de bloqueio com appointments conflitantes
+
+- `POST /api/schedule/blocked` agora detecta appointments ativos no intervalo antes de criar o bloqueio, respeitando `storeId` da sessao, escopo global da loja e escopo por profissional.
+- Quando ha conflito e o payload ainda nao traz decisao, a API responde com `409`, `code = APPOINTMENT_CONFLICT_REQUIRES_CONFIRMATION`, contagem e resumo dos appointments afetados para a UI pedir confirmacao explicita.
+- O payload de criacao passou a aceitar `conflictAction` com `KEEP_EXISTING_APPOINTMENTS` ou `CANCEL_CONFLICTING_APPOINTMENTS`.
+- Com `KEEP_EXISTING_APPOINTMENTS`, o bloqueio e criado sem cancelar appointments existentes; com `CANCEL_CONFLICTING_APPOINTMENTS`, o bloqueio e criado e os appointments conflitantes sao cancelados em lote com o status real `CANCELED`.
+- O modal de bloqueio de `/agendamentos` foi mantido e ganhou apenas um `AlertDialog` de confirmacao para o caso de conflito, sem redesenho da tela.
+- O modal de bloqueio de `/agendamentos` teve o container ajustado para deixar o rodape fixo fora da area rolavel, evitando corte dos CTAs em alturas menores.
+- O modal de bloqueio de `/horarios-de-atendimento` recebeu o mesmo fluxo seguro de confirmacao e passou a expor explicitamente o escopo do bloqueio para preservar criacao/edicao por loja ou por profissional.
+
+Arquivos alterados neste ajuste:
+
+- `app/api/schedule/blocked/route.ts`
+- `src/lib/validators/schedule.ts`
+- `app/(app)/agendamentos/page.tsx`
+- `app/(app)/horarios-de-atendimento/page.tsx`
+- `app/(app)/horarios-de-atendimento/controllers/useBlockedScheduleFormController.ts`
+- `app/(app)/horarios-de-atendimento/controllers/useBlockedScheduleListController.ts`
+- `app/(app)/horarios-de-atendimento/types.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+Validacao executada neste ajuste:
+
+- [x] `yarn eslint app/api/schedule/blocked/route.ts src/lib/validators/schedule.ts app/(app)/agendamentos/page.tsx app/(app)/horarios-de-atendimento/page.tsx app/(app)/horarios-de-atendimento/controllers/useBlockedScheduleFormController.ts app/(app)/horarios-de-atendimento/controllers/useBlockedScheduleListController.ts app/(app)/horarios-de-atendimento/types.ts`
+- [x] `yarn tsc --noEmit --pretty false --incremental false --ignoreDeprecations 5.0` continua falhando por erros antigos fora do escopo em `.next/dev/types/validator.ts`, `.next/types/validator.ts`, `app/(app)/contas-a-pagar/novo/page.tsx`, `app/(app)/usuarios/controllers/index.tsx`, `src/components/ui/app-sidebar.tsx`, `src/lib/auth-options.ts` e `src/scripts/seed.ts`, sem novo erro apontado nos arquivos deste ajuste
+
+Proximo passo sugerido:
+
+- Cobrir o `POST /api/schedule/blocked` com teste de integracao para os cenarios sem conflito, com `KEEP_EXISTING_APPOINTMENTS` e com `CANCEL_CONFLICTING_APPOINTMENTS`.
+
+## 5.2 Ajuste atual - agenda publica por link da loja
+
+- A rota publica `/agenda/[slug]` foi criada para agendamento online sem login, resolvendo a loja ativa pelo `slug`.
+- A pagina publica mostra dados reais da loja, servicos ativos e profissionais com servicos ativos vinculados.
+- Foram criadas APIs publicas para:
+  - carregar dados da agenda publica da loja por `slug`
+  - consultar horarios reais disponiveis por `serviceId`, `staffMembershipId` e data
+  - concluir o agendamento final via `POST` sem receber `storeId` no payload
+- A disponibilidade publica reaproveita a mesma engine central de `src/lib/appointments/availability.ts`, considerando expediente, bloqueios, duracao do servico, conflitos com appointments, profissional e timezone.
+- A criacao final do agendamento agora usa o helper compartilhado `src/lib/appointments/create.ts`, reaproveitado tambem pelo `POST /api/appointments` do painel.
+- O `POST` final da agenda publica revalida o slot antes de persistir e retorna erro legivel se o horario tiver sido ocupado entre a listagem e a confirmacao.
+- O `Appointment` publico e persistido com `source: "WEB"` e metadata de origem do link publico.
+
+Arquivos alterados neste ajuste:
+
+- `src/lib/validators/appointment.ts`
+- `src/lib/appointments/create.ts`
+- `src/lib/public-booking.ts`
+- `app/api/appointments/route.ts`
+- `app/api/public/agenda/[slug]/route.ts`
+- `app/api/public/agenda/[slug]/availability/route.ts`
+- `app/api/public/agenda/[slug]/appointments/route.ts`
+- `app/agenda/[slug]/page.tsx`
+- `app/agenda/[slug]/public-booking-page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+Validacao executada neste ajuste:
+
+- [x] `yarn eslint src/lib/validators/appointment.ts src/lib/appointments/create.ts src/lib/public-booking.ts app/api/appointments/route.ts app/api/public/agenda/[slug]/route.ts app/api/public/agenda/[slug]/availability/route.ts app/api/public/agenda/[slug]/appointments/route.ts app/agenda/[slug]/page.tsx app/agenda/[slug]/public-booking-page.tsx`
+- [x] `yarn tsc --noEmit --pretty false --incremental false --ignoreDeprecations 5.0` continua falhando por erros antigos fora do escopo em `.next/dev/types/validator.ts`, `.next/types/validator.ts`, `app/(app)/contas-a-pagar/novo/page.tsx`, `app/(app)/usuarios/controllers/index.tsx`, `src/components/ui/app-sidebar.tsx`, `src/lib/auth-options.ts` e `src/scripts/seed.ts`, sem novo erro apontado nos arquivos desta feature
+
+Proximo passo sugerido:
+
+- Cobrir a agenda publica com teste de integracao para `GET` de disponibilidade e `POST` final em slot valido e slot ja ocupado.
+
+## 5.3 Ajuste atual - compatibilidade Next 16 em handler dinamico de admin
+
+- `app/api/admin/[id]/route.ts` foi alinhado ao contrato de `Route Handler` esperado pelo Next 16, trocando `context.params` sincrono por `params: Promise<{ id: string }>` com `await params`.
+- Foi feita varredura nos `route.ts` dinamicos em `app/api` para localizar assinaturas antigas semelhantes; o unico caso confirmado no fonte atual era `app/api/admin/[id]/route.ts`.
+- Foi feita varredura preventiva por `page.tsx` em pastas de `controllers`, `helpers` e `hooks`; nao ha `page.tsx` fonte ativo nesses diretórios neste momento.
+- O erro antigo de `.next/.../equipe/controllers/page` nao corresponde mais a um arquivo fonte real e deixou de bloquear o build apos a nova compilacao.
+- Depois da correcao do handler dinamico, `yarn build` passou a falhar no proximo erro raiz real em `app/(app)/contas-a-pagar/novo/page.tsx:33`, fora do escopo desta correção.
+
+Arquivos alterados neste ajuste:
+
+- `app/api/admin/[id]/route.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+Validacao executada neste ajuste:
+
+- [x] `yarn eslint app/api/admin/[id]/route.ts`
+- [x] `yarn build` agora avanca alem do erro de `app/api/admin/[id]/route.ts` e falha no proximo erro raiz em `app/(app)/contas-a-pagar/novo/page.tsx:33`
+
+Proximo passo sugerido:
+
+- Corrigir o payload tipado em `app/(app)/contas-a-pagar/novo/page.tsx`, onde `type: "EXPENSE"` nao existe em `FinanceExpenseCreatePayload`.
+
+## 5.4 Ajuste atual - saneamento em cadeia do build ate `yarn build` concluir
+
+- O erro tipado de `app/(app)/contas-a-pagar/novo/page.tsx` foi corrigido removendo `type: "EXPENSE"` do payload de `createEntry`, porque `FinanceExpenseCreatePayload` real ja injeta esse tipo no controller.
+- No mesmo arquivo, o campo `dueDate` passou a normalizar `null` para `""` antes de chegar ao `<Input type="date" />`, evitando quebra de build por `value` invalido.
+- `app/(app)/usuarios/controllers/index.tsx` foi alinhado ao schema real de usuarios, trocando o import antigo de `formSchema` por `userFormCreateSchema` e ajustando `contacts` para `NonNullable<...>[number]`.
+- `src/components/ui/app-sidebar.tsx` recebeu tipagem explicita para os itens da navegacao, preservando o uso de `isActive` sem erro de inferencia.
+- `src/lib/auth-options.ts` parou de propagar `globalRole: null` no retorno de `authorize`, alinhando o tipo local ao `User` declarado em `types/next-auth.d.ts`.
+- `src/scripts/seed.ts` foi atualizado para criar `User` com `password` hashado, compatibilizando o script com o model Prisma atual.
+- `tsconfig.json` voltou a usar `ignoreDeprecations: "5.0"`, valor suportado pelo TypeScript 5.9 do projeto; antes disso o `next build` ja falhava por configuracao invalida.
+- `app/(auth)/login/page.tsx` passou a encapsular a leitura de `useSearchParams()` em `Suspense`, eliminando o erro de prerender do App Router em `/login`.
+- Depois dessa cadeia de correcao, `yarn build` conclui com sucesso na branch atual.
+
+Arquivos alterados neste ajuste:
+
+- `app/(app)/contas-a-pagar/novo/page.tsx`
+- `app/(app)/usuarios/controllers/index.tsx`
+- `src/components/ui/app-sidebar.tsx`
+- `src/lib/auth-options.ts`
+- `src/scripts/seed.ts`
+- `app/(auth)/login/page.tsx`
+- `tsconfig.json`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+Validacao executada neste ajuste:
+
+- [x] `yarn eslint app/(app)/contas-a-pagar/novo/page.tsx`
+- [x] `yarn eslint app/(app)/usuarios/controllers/index.tsx`
+- [x] `yarn eslint src/components/ui/app-sidebar.tsx`
+- [x] `yarn eslint src/lib/auth-options.ts`
+- [x] `yarn eslint src/scripts/seed.ts`
+- [x] `yarn eslint app/(auth)/login/page.tsx`
+- [x] `yarn build`
+
+Observacoes remanescentes:
+
+- O build ainda emite warnings nao bloqueantes sobre `baseline-browser-mapping` desatualizado.
+- O build ainda emite warning de root inferido por haver `package-lock.json` no diretÃ³rio pai e `yarn.lock` no projeto.
+- O build ainda emite warning deprecando `middleware` em favor de `proxy`.
+
+Proximo passo sugerido:
+
+- Tratar os warnings nao bloqueantes do build, com prioridade para a migracao de `middleware` para `proxy` e para a configuracao explicita de `turbopack.root`.
+
 ---
 
 ## 6. Arquivos principais desta etapa
@@ -433,11 +604,22 @@ Observacao:
 - `app/api/appointments/route.ts`
 - `app/api/appointments/[id]/route.ts`
 - `app/api/appointments/availability/route.ts`
+- `app/api/appointments/route.ts`
+- `app/api/appointments/[id]/route.ts`
+- `app/api/schedule/weekly/route.ts`
+- `app/api/schedule/blocked/route.ts`
+- `app/api/schedule/blocked/[id]/route.ts`
+- `app/api/team/route.ts`
 - `src/lib/validators/appointment.ts`
+- `src/lib/validators/schedule.ts`
 - `app/(app)/agendamentos/page.tsx`
 - `app/(app)/agendamentos/components/professional-schedule-board.tsx`
 - `app/(app)/agendamentos/components/professional-schedule-column.tsx`
 - `app/(app)/agendamentos/components/appointment-card.tsx`
+- `app/(app)/horarios-de-atendimento/page.tsx`
+- `app/(app)/horarios-de-atendimento/controllers/useWeekScheduleFormController.ts`
+- `prisma/schema.prisma`
+- `prisma/migrations/20260401143000_add_professional_schedule_and_blocks/migration.sql`
 - `src/lib/appointments/availability.ts`
 - `src/lib/bot/flow.ts`
 - `src/lib/bot/types.ts`
@@ -453,8 +635,8 @@ Observacao:
 2. Disponibilizar dados reais de atendimento no menu de informacoes quando o produto tiver esses campos.
 3. Coletar nome do cliente no fluxo WhatsApp antes da confirmacao final.
 4. Evoluir disponibilidade por profissional para agendas individuais quando o produto suportar agenda propria por staff.
-5. Cobrir create manual, remarcacao e listagem por data com testes automatizados de integracao.
-6. Limpar type errors e warnings antigos fora do escopo da feature.
+5. Cobrir create manual, remarcacao, listagem por data, bloqueio com conflito de appointments e agenda publica com testes automatizados de integracao.
+6. Limpar type errors e warnings antigos fora do escopo da feature, com prioridade para os erros que ainda travam `yarn build`.
 
 ---
 
@@ -462,6 +644,10 @@ Observacao:
 
 | Data | Mudanca |
 |------|---------|
+| 02/04/2026 | Build: cadeia de correcoes em `contas-a-pagar/novo`, `usuarios/controllers`, `app-sidebar`, `auth-options`, `src/scripts/seed.ts`, `tsconfig.json` e `/login` fez o `yarn build` voltar a concluir com sucesso |
+| 02/04/2026 | Build: `app/api/admin/[id]/route.ts` foi ajustado para o contrato de handler dinamico do Next 16 e o proximo erro raiz do build passou a ser `app/(app)/contas-a-pagar/novo/page.tsx:33` |
+| 02/04/2026 | Agenda publica: rota `/agenda/[slug]` com dados reais da loja, servicos ativos, profissionais elegiveis, slots reais e criacao final de `Appointment` com `source = WEB` |
+| 02/04/2026 | Agenda: criacao de bloqueio agora detecta appointments conflitantes, exige confirmacao explicita para manter ou cancelar atendimentos e persiste a decisao no backend |
 | 01/04/2026 | Agenda: create manual passou a aceitar datas futuras com `date + time`, listagem por data foi movida para `GET /api/appointments?date=...` e a UI deixou de depender de parse local ambiguo |
 | 09/03/2026 | WhatsApp: sugestao ativa de horarios com escolha por numero em `CHOOSING_TIME` e seed minima real para teste fim a fim |
 | 09/03/2026 | WhatsApp: entrada conversacional com boas-vindas, menu inicial hibrido e atalhos diretos em `IDLE` |

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma"
+import { AppointmentStatus } from "../../../generated/prisma/client"
 import {
   badRequest,
   created,
@@ -12,7 +13,10 @@ import {
   AppointmentCreateSchema,
   AppointmentListQuerySchema,
 } from "@/lib/validators/appointment"
-import { checkAvailabilityForSlot } from "@/lib/appointments/availability"
+import {
+  AppointmentCreationError,
+  createAppointmentForStore,
+} from "@/lib/appointments/create"
 import {
   addDaysToDateKey,
   combineDateKeyAndTime,
@@ -91,12 +95,18 @@ export async function GET(req: Request) {
     const timeZone = getBotTimezone()
     const where: {
       storeId: string
+      status: {
+        in: AppointmentStatus[]
+      }
       startAt?: {
         gte: Date
         lte: Date
       }
     } = {
       storeId: guard.storeId,
+      status: {
+        in: [AppointmentStatus.SCHEDULED, AppointmentStatus.CONFIRMED],
+      },
     }
 
     if (parsedQuery.data.date) {
@@ -166,112 +176,29 @@ export async function POST(req: Request) {
     const input = parsed.data
     const timeZone = getBotTimezone()
 
-    const service = await prisma.service.findFirst({
-      where: {
-        id: input.serviceId,
-        storeId: guard.storeId,
-        active: true,
-      },
-      select: {
-        id: true,
-        name: true,
-        durationMin: true,
-      },
-    })
-
-    if (!service) {
-      return badRequest("Servico invalido para a loja atual.")
-    }
-
-    if (input.staffMembershipId) {
-      const eligibleStaff = await prisma.membership.findFirst({
-        where: {
-          id: input.staffMembershipId,
-          storeId: guard.storeId,
-          types: { some: { type: "PROFISSIONAL" } },
-          services: { some: { serviceId: input.serviceId } },
-        },
-        select: {
-          id: true,
-        },
-      })
-
-      if (!eligibleStaff) {
-        return badRequest("O profissional selecionado nao executa esse servico nesta loja.")
-      }
-    }
-
-    const requestedStartAt = combineDateKeyAndTime(input.date, input.time, timeZone)
-    if (Number.isNaN(requestedStartAt.getTime())) {
-      return badRequest("Data/hora invalida.")
-    }
-
-    if (requestedStartAt.getTime() < Date.now()) {
-      return badRequest("Nao e possivel agendar no passado.")
-    }
-
     const createdByUser = await prisma.user.findUnique({
       where: { id: guard.userId },
       select: { name: true },
     })
 
-    const availability = await checkAvailabilityForSlot({
+    const appointment = await createAppointmentForStore({
       db: prisma,
       storeId: guard.storeId,
-      requestedStartAt,
-      durationMin: service.durationMin,
-      timeZone,
-      staffMembershipId: input.staffMembershipId,
-      suggestionsLimit: 5,
-    })
-
-    if (!availability.available) {
-      return badRequest(availability.message)
-    }
-
-    const appointment = await prisma.appointment.create({
-      data: {
-        storeId: guard.storeId,
-        status: "SCHEDULED",
-        serviceId: service.id,
-        staffMembershipId: input.staffMembershipId,
-        customerName: input.customerName,
-        customerPhone: input.customerPhone ?? undefined,
-        customerEmail: input.customerEmail ?? undefined,
-        startAt: availability.startAt,
-        endAt: availability.endAt,
-        notes: input.notes ?? undefined,
-        source: "ADMIN",
-        metadata: {
-          createdBy: "panel",
-          createdByUserId: guard.userId,
-          createdByUserName: createdByUser?.name ?? null,
-          createdByRole: guard.role,
-        },
-      },
-      include: {
-        service: {
-          select: {
-            id: true,
-            name: true,
-            durationMin: true,
-          },
-        },
-        membership: {
-          select: {
-            id: true,
-            user: {
-              select: {
-                name: true,
-              },
-            },
-          },
-        },
+      input,
+      source: "ADMIN",
+      metadata: {
+        createdBy: "panel",
+        createdByUserId: guard.userId,
+        createdByUserName: createdByUser?.name ?? null,
+        createdByRole: guard.role,
       },
     })
 
     return created(serializeAppointment(appointment, timeZone))
   } catch (e) {
+    if (e instanceof AppointmentCreationError) {
+      return badRequest(e.message)
+    }
     console.error("[POST /api/appointments]", e)
     return serverError()
   }

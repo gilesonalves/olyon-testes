@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import Controllers from "../controllers/page"
+import Controllers from "../controllers"
 import { ServicesCheckboxGroup } from "../components/services-checkbox-group"
 import { toast } from "sonner"
 

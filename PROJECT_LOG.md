@@ -1,3 +1,317 @@
+## 02 de abril de 2026 - Saneamento em cadeia do build ate `yarn build` concluir
+
+### Objetivo
+
+Continuar a limpeza do build a partir do erro confirmado em `app/(app)/contas-a-pagar/novo/page.tsx`, corrigindo em cadeia os proximos bloqueios reais enquanto as mudancas fossem pequenas, seguras e sem alterar regra de negocio.
+
+### Arquivos alterados
+
+- `app/(app)/contas-a-pagar/novo/page.tsx`
+- `app/(app)/usuarios/controllers/index.tsx`
+- `src/components/ui/app-sidebar.tsx`
+- `src/lib/auth-options.ts`
+- `src/scripts/seed.ts`
+- `app/(auth)/login/page.tsx`
+- `tsconfig.json`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. `contas-a-pagar/novo` alinhado ao payload real
+
+- O `createEntry` local usa `FinanceExpenseCreatePayload`, que nao aceita `type`.
+- O payload da pagina deixou de enviar `type: "EXPENSE"`, preservando a semantica existente no controller, que ja injeta o tipo ao chamar `/api/finance/entries`.
+- O campo `dueDate` tambem passou a normalizar `null` para `""` no `<Input type="date" />`, evitando quebra de tipagem em build.
+
+#### 2. Controller legado de usuarios ajustado ao schema atual
+
+- `app/(app)/usuarios/controllers/index.tsx` ainda importava `formSchema`, mas o modulo atual exporta `userFormCreateSchema` e `userFormEditSchema`.
+- O controller foi alinhado para usar `userFormCreateSchema as formSchema`.
+- O alias de `Contact` foi corrigido para `NonNullable<FormValues["contacts"]>[number]`, evitando erro quando `contacts` e opcional no `z.input`.
+
+#### 3. Tipagem local da sidebar normalizada
+
+- `src/components/ui/app-sidebar.tsx` usava `item.isActive`, mas o objeto `data.navMain` nao declarava esse campo no tipo inferido.
+- Foi adicionada tipagem explicita dos itens/grupos da navegacao com `isActive?: boolean`, sem mudar o comportamento visual.
+
+#### 4. Compatibilidade de `auth-options` com os tipos do NextAuth
+
+- `src/lib/auth-options.ts` declarava `globalRole?: string | null` no tipo local `AuthUser`.
+- O modulo `types/next-auth.d.ts` declara `globalRole?: string`.
+- A correcao removeu `null` do tipo local e normalizou o retorno de `authorize` com `user.globalRole ?? undefined`.
+
+#### 5. Script de seed alinhado ao model Prisma atual
+
+- `src/scripts/seed.ts` tentava criar `User` sem `password`, o que nao compila mais com o schema atual.
+- O script agora gera `password` hashada com `bcryptjs`, no mesmo padrao ja usado em `prisma/seed.ts`.
+
+#### 6. Configuracao TypeScript corrigida
+
+- `tsconfig.json` estava com `ignoreDeprecations: "6.0"`.
+- No TypeScript 5.9 usado no projeto, esse valor e invalido e passou a quebrar o `next build`.
+- O arquivo voltou para `ignoreDeprecations: "5.0"`.
+
+#### 7. `/login` ajustado para o App Router no prerender
+
+- `app/(auth)/login/page.tsx` usava `useSearchParams()` diretamente no componente da pagina.
+- No Next 16, isso exigiu `Suspense` durante o prerender.
+- A leitura do `error` da query string foi isolada em um componente `LoginErrorMessage`, renderizado dentro de `<Suspense fallback={null}>`.
+
+### Validacao executada
+
+- `yarn eslint app/(app)/contas-a-pagar/novo/page.tsx`
+- `yarn eslint app/(app)/usuarios/controllers/index.tsx`
+- `yarn eslint src/components/ui/app-sidebar.tsx`
+- `yarn eslint src/lib/auth-options.ts`
+- `yarn eslint src/scripts/seed.ts`
+- `yarn eslint app/(auth)/login/page.tsx`
+- `yarn build`
+
+### Resultado
+
+- O `yarn build` voltou a concluir com sucesso.
+- Permanecem apenas warnings nao bloqueantes:
+  - `baseline-browser-mapping` desatualizado
+  - root inferido pelo Next/Turbopack por coexistencia de `package-lock.json` no pai e `yarn.lock` no projeto
+  - deprecacao do arquivo `middleware` em favor de `proxy`
+
+### Proximo passo sugerido
+
+- Tratar os warnings de build, com prioridade para migrar `middleware` para `proxy` e fixar `turbopack.root`.
+
+## 02 de abril de 2026 - Remocao segura da tela Tipos de eventos
+
+### Objetivo
+
+Remover a tela redundante `Tipos de eventos` do sistema sem alterar o layout geral, preservando `Servicos` como fonte unica para combinacoes como `corte + barba`.
+
+### Diagnostico
+
+- A pagina existia em `app/(app)/eventos/page.tsx`, com rota filha morta em `app/(app)/eventos/novo/page.tsx`.
+- O item aparecia na sidebar em `src/components/ui/app-sidebar.tsx` apontando para `/eventos`.
+- Havia API propria em `app/api/events/route.ts` e `app/api/events/[id]/route.ts`, consumindo `EventCreateSchema` e `EventUpdateSchema` do modulo `app/(app)/eventos/schemas`.
+- Nao foi encontrada dependencia ativa em `agendamentos`, `servicos`, WhatsApp, seed ou regras de disponibilidade; os usos de `services.some({ serviceId })` no backend pertencem a vinculo de profissional com servico, nao a `EventService`.
+- O schema Prisma ainda possui `Event` e `EventService`, mas eles ficaram preservados nesta etapa para evitar migracao destrutiva e manter a persistencia atual fora do escopo.
+
+### Arquivos alterados
+
+- `src/components/ui/app-sidebar.tsx`
+- `middleware.ts`
+- `README.md`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### Arquivos removidos
+
+- `app/(app)/eventos/page.tsx`
+- `app/(app)/eventos/loading.tsx`
+- `app/(app)/eventos/novo/page.tsx`
+- `app/(app)/eventos/controllers/index.tsx`
+- `app/(app)/eventos/controllers/README.md`
+- `app/(app)/eventos/components/servicos.tsx`
+- `app/(app)/eventos/components/README.md`
+- `app/(app)/eventos/schemas/index.ts`
+- `app/(app)/eventos/schemas/event.ts`
+- `app/(app)/eventos/schemas/README.md`
+- `app/api/events/route.ts`
+- `app/api/events/[id]/route.ts`
+
+### O que foi implementado
+
+- A rota `/eventos` e sua rota filha `novo` foram removidas do App Router.
+- O item `Tipos de eventos` saiu da sidebar sem redesenhar o restante do menu.
+- As rotas `GET/POST/PUT/DELETE` de `/api/events` foram removidas junto com schemas, controller e componente exclusivos do modulo.
+- O `middleware` deixou de tratar `/eventos` como rota protegida do app.
+- `Servicos` foi mantido intacto como cadastro principal para combinacoes operacionais.
+
+### Validacao executada
+
+- `yarn eslint middleware.ts src/components/ui/app-sidebar.tsx`
+- `yarn build` falhou por um erro preexistente em `app/(app)/equipe/controllers/page`, sem relacao com a remocao de `/eventos`
+
+### Proximo passo sugerido
+
+- Avaliar em outra tarefa se o dominio Prisma `Event`/`EventService` ainda deve existir no banco ou se merece uma migracao dedicada de limpeza com estrategia explicita para dados ja persistidos.
+
+## 01 de abril de 2026 - Cancelamento liberando slot corretamente em /agendamentos
+
+### Objetivo
+
+Fazer o cancelamento em `/agendamentos` deixar de ocupar horario na grade, no contador da coluna e na agenda do dia.
+
+### Arquivos alterados
+
+- `app/api/appointments/route.ts`
+- `app/(app)/agendamentos/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+- `GET /api/appointments` passou a retornar apenas appointments ativos para a agenda operacional (`SCHEDULED` e `CONFIRMED`).
+- A tela `/agendamentos` passou a filtrar localmente apenas statuses ativos antes de montar colunas, contadores e cards.
+- O fluxo de `PUT /api/appointments/[id]` ja persistia `status: "CANCELED"`; a UI agora remove imediatamente esse appointment da agenda local e faz refetch do dia atual apos salvar ou cancelar.
+- A engine central de disponibilidade nao precisou mudar, porque ja ignorava cancelados e so considerava `SCHEDULED` e `CONFIRMED` como conflito.
+
+### Validacao executada
+
+- `yarn eslint app/api/appointments/route.ts app/(app)/agendamentos/page.tsx`
+
+### Proximo passo sugerido
+
+- Cobrir com teste automatizado o fluxo de cancelamento seguido de novo encaixe no mesmo horario para evitar regressao entre agenda e disponibilidade.
+
+## 01 de abril de 2026 - Refino do modal retroativo em /agendamentos
+
+### Objetivo
+
+Completar o fluxo de registro retroativo em `/agendamentos`, exibindo campos manuais de data/hora quando a excecao estiver marcada e evitando corte do CTA de salvar no modal.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+- O checkbox `Registrar atendimento ja realizado` agora revela campos explicitos de `Data` e `Hora` no proprio modal.
+- Quando a excecao esta ativa, o create deixa de depender do slot selecionado e passa a usar os campos manuais enviados no payload.
+- O rodape com `Salvar agendamento` saiu da area rolavel do formulario e ficou fixo no final do modal, evitando corte visual do CTA.
+- O restante do layout do modal e da tela foi preservado.
+
+### Validacao executada
+
+- `yarn eslint app/(app)/agendamentos/page.tsx`
+
+### Proximo passo sugerido
+
+- Validar no navegador os cenarios de retroativo com e sem slot selecionado, incluindo datas passadas com profissional travado por coluna.
+
+## 01 de abril de 2026 - Registro retroativo controlado no modal de /agendamentos
+
+### Objetivo
+
+Permitir lancamento retroativo de atendimento em `/agendamentos` sem remover a protecao padrao contra agendamento no passado.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `app/api/appointments/route.ts`
+- `app/api/appointments/[id]/route.ts`
+- `src/lib/validators/appointment.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+- O modal de novo agendamento ganhou a opcao explicita `Registrar atendimento ja realizado`, desmarcada por padrao.
+- O frontend passou a enviar `allowPastScheduling` no payload do create quando a excecao e ativada.
+- O schema Zod de appointments passou a aceitar `allowPastScheduling`.
+- `POST /api/appointments` continua bloqueando horario no passado por padrao, mas passa a aceitar quando `allowPastScheduling` estiver ativo.
+- `PUT /api/appointments/[id]` recebeu o mesmo tratamento para remarcacoes explicitas, preservando compatibilidade futura do endpoint.
+- As validacoes reais de cliente, servico, profissional, elegibilidade do profissional e multi-tenant foram mantidas.
+- Nao foi necessario alterar a engine central de disponibilidade, porque a trava de passado estava nas rotas de appointments, nao em `checkAvailabilityForSlot`.
+
+### Validacao executada
+
+- `yarn eslint app/(app)/agendamentos/page.tsx app/api/appointments/route.ts app/api/appointments/[id]/route.ts src/lib/validators/appointment.ts`
+
+### Proximo passo sugerido
+
+- Cobrir create e remarcacao com testes automatizados para garantir os dois cenarios: bloqueio padrao de passado e excecao controlada com `allowPastScheduling`.
+
+## 01 de abril de 2026 - Modal de novo agendamento com profissional pre-selecionado pela coluna
+
+### Objetivo
+
+Fazer o modal de novo agendamento em `/agendamentos` respeitar automaticamente o contexto da coluna clicada, mantendo o layout atual e a validacao real do backend.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+- Ao clicar em um slot de uma coluna de profissional, o modal agora abre com esse profissional ja selecionado.
+- Nesse fluxo, o campo `Profissional` permanece visivel, mas fica bloqueado para edicao.
+- A lista de servicos do modal passa a exibir somente os servicos ativos vinculados ao profissional da coluna clicada.
+- O filtro usa a relacao real ja carregada de `MembershipService` via `/api/team`, sem criar regra paralela fake no frontend.
+- As validacoes de backend foram preservadas em `POST /api/appointments` e `GET /api/appointments/availability`, que continuam recusando combinacoes invalidas de profissional + servico.
+
+### Validacao executada
+
+- `yarn eslint app/(app)/agendamentos/page.tsx`
+
+## 01 de abril de 2026 - Agenda por profissional, modal de novo agendamento e bloqueio por profissional
+
+### Objetivo
+
+Evoluir `/agendamentos` sem alterar o layout geral da tela, passando a respeitar expediente por profissional, bloqueio por profissional, modal de novo agendamento e scroll vertical interno por coluna.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/components/professional-schedule-board.tsx`
+- `app/(app)/agendamentos/components/professional-schedule-column.tsx`
+- `app/(app)/agendamentos/page.tsx`
+- `app/(app)/horarios-de-atendimento/controllers/useWeekScheduleFormController.ts`
+- `app/(app)/horarios-de-atendimento/page.tsx`
+- `app/api/schedule/blocked/[id]/route.ts`
+- `app/api/schedule/blocked/route.ts`
+- `app/api/schedule/weekly/route.ts`
+- `app/api/team/route.ts`
+- `prisma/schema.prisma`
+- `prisma/migrations/20260401143000_add_professional_schedule_and_blocks/migration.sql`
+- `src/lib/appointments/availability.ts`
+- `src/lib/validators/schedule.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Agenda com expediente efetivo por profissional
+
+- Foi criada modelagem minima para horario semanal por profissional (`MembershipWeekScheduleDay` e `MembershipWeekScheduleInterval`).
+- A agenda de `/agendamentos` passou a usar o expediente do profissional quando existir, com fallback para o horario geral da loja quando nao houver configuracao individual.
+- O board e as colunas mantiveram o visual atual, mas cada profissional agora pode ter range proprio de inicio/fim.
+
+#### 2. Bloqueio por loja e por profissional
+
+- `BlockedSchedule` passou a aceitar `membershipId` opcional.
+- O backend continua aceitando bloqueio da loja inteira e agora tambem aceita bloqueio restrito a um profissional.
+- A engine central de disponibilidade passou a considerar simultaneamente bloqueios globais e bloqueios do profissional.
+
+#### 3. Novo agendamento em modal
+
+- O formulario inline do topo saiu da tela e foi substituido por um `Dialog`.
+- O clique em horario livre continua sendo o gatilho do fluxo, agora abrindo modal centralizado com scroll interno.
+- O modal chega pre-preenchido com profissional, data e horario do slot clicado.
+
+#### 4. Scroll vertical por coluna e leitura da grade
+
+- Cada coluna passou a ter altura fixa baseada na viewport e scroll vertical proprio.
+- O board horizontal foi preservado e continua rolando apenas dentro do container da agenda.
+- O texto do horario nas celulas foi centralizado apenas na horizontal.
+- Slots bloqueados agora ficam visualmente indisponiveis na coluna sem remover a revalidacao final do backend.
+
+#### 5. Configuracao do expediente individual
+
+- `/horarios-de-atendimento` ganhou um seletor simples para editar o expediente da loja inteira ou de um profissional especifico usando a mesma rota base.
+- As rotas de horario semanal foram mantidas compativeis com o fluxo atual da loja.
+
+### Validacao executada
+
+- `yarn prisma generate`
+- `yarn prisma db execute --file prisma/migrations/20260401143000_add_professional_schedule_and_blocks/migration.sql`
+- `yarn eslint app/(app)/agendamentos/page.tsx app/(app)/agendamentos/components/professional-schedule-board.tsx app/(app)/agendamentos/components/professional-schedule-column.tsx app/(app)/horarios-de-atendimento/page.tsx app/(app)/horarios-de-atendimento/controllers/useWeekScheduleFormController.ts app/api/team/route.ts app/api/schedule/weekly/route.ts app/api/schedule/blocked/route.ts app/api/schedule/blocked/[id]/route.ts src/lib/appointments/availability.ts src/lib/validators/schedule.ts`
+
+### Proximo passo sugerido
+
+- Cobrir a engine de disponibilidade com testes automatizados focados em expediente individual, bloqueio global, bloqueio por profissional e ranges diferentes por coluna.
+
 ## 01 de abril de 2026 - Remocao do card visual de bloqueios ativos em /agendamentos
 
 ### Objetivo
@@ -3196,4 +3510,247 @@ Abandonar a grade semanal como visualizacao principal do desktop e voltar para u
 ### Resultado
 
 O desktop de `/agendamentos` volta a ter uma base visual mais adequada para a operacao do dia, com cards maiores, melhor aproveitamento do espaco e leitura mais natural para uso real.
+
+## 02 de abril de 2026 - Confirmacao obrigatoria ao criar bloqueio com appointments conflitantes
+
+### Objetivo
+
+Melhorar o fluxo de criacao de bloqueios para que o sistema nao salve bloqueio silenciosamente sobre horarios com appointments ativos e permita uma decisao explicita entre manter ou cancelar os atendimentos conflitantes.
+
+### Arquivos alterados
+
+- `app/api/schedule/blocked/route.ts`
+- `src/lib/validators/schedule.ts`
+- `app/(app)/agendamentos/page.tsx`
+- `app/(app)/horarios-de-atendimento/page.tsx`
+- `app/(app)/horarios-de-atendimento/controllers/useBlockedScheduleFormController.ts`
+- `app/(app)/horarios-de-atendimento/controllers/useBlockedScheduleListController.ts`
+- `app/(app)/horarios-de-atendimento/types.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Deteccao real de conflito no backend antes de criar o bloqueio
+
+- `POST /api/schedule/blocked` passou a montar a janela real do bloqueio com `date`, `startTime`, `endTime` e timezone da agenda.
+- A consulta agora busca appointments ativos (`SCHEDULED` e `CONFIRMED`) que interceptam a janela pedida.
+- O escopo do conflito respeita o bloqueio real:
+  - bloqueio da loja inteira: considera appointments ativos da loja
+  - bloqueio por profissional: considera apenas appointments ativos daquele profissional
+- Appointments ja cancelados ou com status finais continuam fora do conflito.
+
+#### 2. Contrato de confirmacao explicita
+
+- O schema Zod de criacao de bloqueio passou a aceitar `conflictAction`.
+- Quando ha appointments conflitantes e o payload ainda nao traz `conflictAction`, a API responde com `409` estruturado, `code = APPOINTMENT_CONFLICT_REQUIRES_CONFIRMATION`, quantidade e resumo dos appointments afetados.
+- Isso evita erro generico e impede cancelamento silencioso.
+
+#### 3. Persistencia da decisao no backend
+
+- `KEEP_EXISTING_APPOINTMENTS`:
+  - cria o bloqueio
+  - nao altera appointments existentes
+  - impede apenas novos encaixes no periodo
+- `CANCEL_CONFLICTING_APPOINTMENTS`:
+  - cria o bloqueio
+  - cancela em lote os appointments conflitantes usando o status real `CANCELED`
+  - libera a agenda para o bloqueio assumir o intervalo
+
+#### 4. Fluxo seguro na UI sem redesenhar os modais
+
+- O modal existente de bloqueio em `/agendamentos` foi preservado.
+- Quando a API retorna conflito, a tela abre um `AlertDialog` curto com as duas escolhas obrigatorias:
+  - manter atendimentos
+  - cancelar atendimentos
+- O modal de `/horarios-de-atendimento` recebeu o mesmo fluxo de confirmacao, tambem sem redesenho geral.
+
+#### 5. Preservacao de escopo por loja e por profissional
+
+- `/horarios-de-atendimento` passou a expor no proprio modal o alvo do bloqueio (`Loja inteira` ou profissional).
+- A listagem de bloqueios nessa tela agora mostra o escopo do item.
+- Os indicadores de bloqueio usados no expediente semanal passaram a considerar apenas o escopo relevante selecionado, evitando que bloqueio de um profissional polua a leitura da loja inteira ou de outro profissional.
+
+### Validacao executada
+
+- `yarn eslint app/api/schedule/blocked/route.ts src/lib/validators/schedule.ts app/(app)/agendamentos/page.tsx app/(app)/horarios-de-atendimento/page.tsx app/(app)/horarios-de-atendimento/controllers/useBlockedScheduleFormController.ts app/(app)/horarios-de-atendimento/controllers/useBlockedScheduleListController.ts app/(app)/horarios-de-atendimento/types.ts`
+- `yarn tsc --noEmit --pretty false --incremental false --ignoreDeprecations 5.0` ainda falha por erros legados fora do escopo (`.next/dev/types/validator.ts`, `.next/types/validator.ts`, `contas-a-pagar/novo`, `usuarios/controllers`, `app-sidebar`, `auth-options`, `src/scripts/seed.ts`), sem apontar erro novo nos arquivos deste ajuste
+
+### Fora do escopo (mantido)
+
+- Sem redesenho da tela de `/agendamentos`
+- Sem mudanca estrutural do modal de bloqueio fora do necessario
+- Sem alteracao do fluxo atual quando nao ha conflito
+- Sem mudanca no contrato de `storeId` vindo da sessao
+- Sem introduzir status novo para cancelamento
+
+### Resultado
+
+Criar bloqueio sobre horarios com appointments ativos agora exige confirmacao explicita, permite escolher entre manter ou cancelar os atendimentos afetados e persiste a decisao de forma segura no backend, preservando o comportamento atual quando nao existe conflito.
+
+## 02 de abril de 2026 - Ajuste fino do scroll no modal de bloqueio em /agendamentos
+
+### Objetivo
+
+Corrigir o corte dos CTAs no modal de bloqueio da agenda quando o conteudo interno cresce e o scroll passa a disputar espaco com o rodape.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+- O `DialogContent` do modal de bloqueio em `/agendamentos` passou a usar layout em coluna com altura limitada.
+- O formulario foi dividido entre:
+  - area rolavel apenas para o corpo
+  - `DialogFooter` fixo fora do scroll
+- Isso preserva o layout atual e impede que os botoes `Cancelar` e `Salvar bloqueio` fiquem cortados.
+
+### Validacao executada
+
+- `yarn eslint app/(app)/agendamentos/page.tsx`
+
+### Resultado
+
+O modal continua com o mesmo visual, mas agora o scroll ocorre apenas no corpo e o rodape permanece sempre acessivel.
+
+## 02 de abril de 2026 - Agenda publica por link da loja com disponibilidade real
+
+### Objetivo
+
+Criar um fluxo publico de agendamento online por link da loja, resolvendo a loja por `slug`, exibindo disponibilidade real e persistindo `Appointment` no banco sem depender de login.
+
+### Arquivos alterados
+
+- `src/lib/validators/appointment.ts`
+- `src/lib/appointments/create.ts`
+- `src/lib/public-booking.ts`
+- `app/api/appointments/route.ts`
+- `app/api/public/agenda/[slug]/route.ts`
+- `app/api/public/agenda/[slug]/availability/route.ts`
+- `app/api/public/agenda/[slug]/appointments/route.ts`
+- `app/agenda/[slug]/page.tsx`
+- `app/agenda/[slug]/public-booking-page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Resolucao publica da loja por slug
+
+- Foi criado um helper central para agenda publica em `src/lib/public-booking.ts`.
+- A loja publica agora e resolvida por `slug`, filtrando apenas loja ativa.
+- O helper retorna os dados publicos reais da store, servicos ativos, profissionais com servicos ativos, timezone e `todayDate`.
+
+#### 2. APIs publicas da agenda
+
+- `GET /api/public/agenda/[slug]`
+  - retorna os dados publicos reais da loja para a agenda online
+- `GET /api/public/agenda/[slug]/availability`
+  - recebe `serviceId`, `staffMembershipId` e `searchDate`
+  - reutiliza `listAvailableSlotsForDate` da engine real
+  - valida servico ativo, profissional elegivel, bloqueios, expediente, appointments e timezone
+- `POST /api/public/agenda/[slug]/appointments`
+  - recebe os dados do cliente e o slot escolhido
+  - resolve a loja pelo `slug`
+  - revalida o horario no backend antes de persistir
+  - cria `Appointment` com `source: "WEB"`
+
+#### 3. Helper compartilhado para criacao real de Appointment
+
+- A logica de create foi centralizada em `src/lib/appointments/create.ts`.
+- Esse helper reaproveita:
+  - validacao de servico ativo da loja
+  - elegibilidade do profissional para o servico
+  - timezone da agenda
+  - `checkAvailabilityForSlot` como validacao final do horario
+- O `POST /api/appointments` do painel foi ajustado para usar o mesmo helper, evitando fluxo paralelo.
+
+#### 4. Pagina publica `/agenda/[slug]`
+
+- A rota publica foi criada fora do app autenticado, sem depender do middleware de login.
+- A pagina mostra:
+  - nome da loja
+  - telefone / WhatsApp / endereco
+  - observacoes publicas da loja
+  - servicos ativos
+  - profissionais elegiveis
+  - horarios disponiveis reais
+  - formulario do cliente com nome, telefone e e-mail opcional
+- O cliente seleciona servico, profissional, data, horario e confirma o agendamento no mesmo fluxo.
+
+#### 5. Revalidacao final de horario
+
+- Mesmo depois de listar os slots, o `POST` final reexecuta a validacao de disponibilidade antes de gravar.
+- Se o slot tiver sido ocupado no intervalo entre listagem e confirmacao, a API devolve erro legivel e o agendamento nao e criado.
+
+### Validacao executada
+
+- `yarn eslint src/lib/validators/appointment.ts src/lib/appointments/create.ts src/lib/public-booking.ts app/api/appointments/route.ts app/api/public/agenda/[slug]/route.ts app/api/public/agenda/[slug]/availability/route.ts app/api/public/agenda/[slug]/appointments/route.ts app/agenda/[slug]/page.tsx app/agenda/[slug]/public-booking-page.tsx`
+- `yarn tsc --noEmit --pretty false --incremental false --ignoreDeprecations 5.0` ainda falha por erros legados fora do escopo (`.next/dev/types/validator.ts`, `.next/types/validator.ts`, `contas-a-pagar/novo`, `usuarios/controllers`, `app-sidebar`, `auth-options`, `src/scripts/seed.ts`), sem novo erro apontado nos arquivos desta feature
+
+### Fora do escopo (mantido)
+
+- Sem criar fluxo paralelo de disponibilidade
+- Sem receber `storeId` pelo frontend
+- Sem mock de horarios
+- Sem alterar o fluxo WhatsApp existente
+- Sem mexer no middleware do app autenticado
+
+### Resultado
+
+A loja agora pode compartilhar um link publico de agenda com disponibilidade real, selecao de servico e profissional e criacao final de `Appointment` com persistencia via Prisma, reaproveitando a mesma fonte de verdade de disponibilidade ja usada no sistema.
+
+## 02 de abril de 2026 - Correcao preventiva de Route Handler dinamico para Next 16
+
+### Objetivo
+
+Corrigir o handler dinamico de `app/api/admin/[id]/route.ts` para o contrato exigido pelo Next 16 e fazer uma varredura preventiva por outros casos equivalentes que pudessem quebrar o build.
+
+### Arquivos alterados
+
+- `app/api/admin/[id]/route.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Handler dinamico alinhado ao Next 16
+
+- O `PATCH` de `app/api/admin/[id]/route.ts` usava a assinatura antiga:
+  - `({ params }: { params: { id: string } })`
+- O arquivo foi ajustado para o padrao atual:
+  - `context: { params: Promise<{ id: string }> }`
+  - `const { id } = await params`
+- A logica do endpoint foi preservada; so a assinatura e o acesso ao `id` foram atualizados.
+
+#### 2. Varredura preventiva dos handlers dinamicos
+
+- Foi feita busca nos `route.ts` dinamicos em `app/api`.
+- No fonte atual, o unico caso confirmado com assinatura antiga era `app/api/admin/[id]/route.ts`.
+- Os demais handlers dinamicos ja estavam no formato compativel com `params: Promise<...>`.
+
+#### 3. Verificacao preventiva de rotas invalidas em `controllers/`
+
+- Foi feita busca por `page.tsx` em pastas `controllers`, `helpers` e `hooks`.
+- Nao ha `page.tsx` fonte ativo nesses diretorios no estado atual do workspace.
+- O erro anterior de `.next/.../equipe/controllers/page` veio de tipos gerados antigos; depois de rodar `yarn build`, esse ponto deixou de ser o bloqueio atual.
+
+#### 4. Novo proximo erro raiz confirmado
+
+- Depois da correcao do handler de admin, o `yarn build` passou a falhar no proximo arquivo raiz:
+  - `app/(app)/contas-a-pagar/novo/page.tsx:33`
+- Erro atual:
+  - `type: "EXPENSE"` nao existe em `FinanceExpenseCreatePayload`
+
+### Validacao executada
+
+- `yarn eslint app/api/admin/[id]/route.ts`
+- `yarn build`
+
+### Resultado
+
+O erro de compatibilidade do Next 16 em `app/api/admin/[id]/route.ts` foi eliminado. O build agora avanca e revela o proximo problema real do projeto em `app/(app)/contas-a-pagar/novo/page.tsx:33`, o que reduz o risco de corrigir um erro por vez sem visibilidade do gargalo seguinte.
 

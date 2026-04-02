@@ -5,6 +5,15 @@ import HeaderPage from "@/components/headerPage"
 import { Check, Plus, Search, UserRound } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -39,6 +48,7 @@ type TeamItem = {
   membershipId: string
   name: string
   serviceIds: string[]
+  scheduleDays?: WeekScheduleDayItem[]
 }
 
 type AppointmentItem = {
@@ -93,6 +103,7 @@ type AppointmentUpdatePayload = {
   customerEmail?: string | null
   date?: string
   time?: string
+  allowPastScheduling?: boolean
   notes?: string | null
   status?: string
 }
@@ -120,11 +131,46 @@ type BlockedScheduleItem = {
   allDay: boolean
   startTime?: string
   endTime?: string
+  membershipId: string | null
+  membershipName: string | null
+}
+
+type BlockConflictAction =
+  | "KEEP_EXISTING_APPOINTMENTS"
+  | "CANCEL_CONFLICTING_APPOINTMENTS"
+
+type BlockCreatePayload = {
+  dates: string[]
+  membershipId: string | null
+  allDay: boolean
+  startTime?: string
+  endTime?: string
+  conflictAction?: BlockConflictAction
+}
+
+type ConflictingAppointmentSummary = {
+  id: string
+  customerName: string
+  date: string
+  startTime: string
+  endTime: string
+  staffMembershipId: string | null
+  staffName: string | null
+}
+
+type BlockConflictDetails = {
+  requiresConfirmation: boolean
+  conflictActionOptions: BlockConflictAction[]
+  conflictingAppointmentsCount: number
+  conflictingAppointments: ConflictingAppointmentSummary[]
 }
 
 type BlockedScheduleError = {
   ok: false
+  error?: string
   message?: string
+  code?: string
+  details?: BlockConflictDetails
 }
 
 type WeekdayCode = "SUN" | "MON" | "TUE" | "WED" | "THU" | "FRI" | "SAT"
@@ -142,6 +188,21 @@ type WeekScheduleResponse = {
   days: WeekScheduleDayItem[]
 }
 
+type WorkingHoursRange = {
+  startMinutes: number
+  endMinutes: number
+}
+
+type ScheduleDayConfig = {
+  hasExplicitConfig: boolean
+  range: WorkingHoursRange | null
+}
+
+type BlockScope = "STORE" | "PROFESSIONAL"
+const ACTIVE_APPOINTMENT_STATUSES = new Set(["SCHEDULED", "CONFIRMED"])
+const BLOCK_CONFLICT_REQUIRES_CONFIRMATION_CODE =
+  "APPOINTMENT_CONFLICT_REQUIRES_CONFIRMATION"
+
 function parseDateKey(value: string) {
   return new Date(`${value}T12:00:00`)
 }
@@ -155,6 +216,16 @@ function getTodayDateValue() {
   return `${year}-${month}-${day}`
 }
 
+function getCurrentTimeValue() {
+  const now = new Date()
+  const totalMinutes = now.getHours() * 60 + now.getMinutes()
+  const roundedMinutes = Math.floor(totalMinutes / 15) * 15
+  const hours = String(Math.floor(roundedMinutes / 60)).padStart(2, "0")
+  const minutes = String(roundedMinutes % 60).padStart(2, "0")
+
+  return `${hours}:${minutes}`
+}
+
 function getWeekdayCodeFromDateKey(dateKey: string): WeekdayCode {
   return ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"][parseDateKey(dateKey).getDay()] as WeekdayCode
 }
@@ -162,6 +233,42 @@ function getWeekdayCodeFromDateKey(dateKey: string): WeekdayCode {
 function getMinutesFromTimeKey(value: string) {
   const [hours, minutes] = value.split(":").map(Number)
   return hours * 60 + minutes
+}
+
+function getWorkingHoursRangeFromDay(
+  day: WeekScheduleDayItem | null | undefined
+): WorkingHoursRange | null {
+  if (!day?.enabled || day.intervals.length === 0) {
+    return null
+  }
+
+  const starts = day.intervals.map((interval) => getMinutesFromTimeKey(interval.startTime))
+  const ends = day.intervals.map((interval) => getMinutesFromTimeKey(interval.endTime))
+
+  return {
+    startMinutes: Math.min(...starts),
+    endMinutes: Math.max(...ends),
+  }
+}
+
+function getScheduleDayConfig(
+  scheduleDays: WeekScheduleDayItem[] | undefined,
+  dateKey: string
+): ScheduleDayConfig {
+  const weekday = getWeekdayCodeFromDateKey(dateKey)
+  const day = scheduleDays?.find((item) => item.weekday === weekday)
+
+  if (!day) {
+    return {
+      hasExplicitConfig: false,
+      range: null,
+    }
+  }
+
+  return {
+    hasExplicitConfig: true,
+    range: getWorkingHoursRangeFromDay(day),
+  }
 }
 
 function formatTimeRange(startTime: string, endTime: string) {
@@ -182,6 +289,10 @@ function formatBlockedScheduleLabel(item: BlockedScheduleItem) {
   }
 
   return `${item.startTime ?? "--:--"} - ${item.endTime ?? "--:--"}`
+}
+
+function formatConflictingAppointmentLabel(item: ConflictingAppointmentSummary) {
+  return `${formatDateLabel(item.date)} ${item.startTime} - ${item.endTime}`
 }
 
 function sortClientsByName(items: ClientItem[]) {
@@ -1002,6 +1113,8 @@ export default function AgendamentosPage() {
 
   const [saving, setSaving] = useState(false)
   const [showForm, setShowForm] = useState(false)
+  const [staffLockedFromGrid, setStaffLockedFromGrid] = useState(false)
+  const [allowPastScheduling, setAllowPastScheduling] = useState(false)
 
   const [serviceId, setServiceId] = useState("")
   const [staffMembershipId, setStaffMembershipId] = useState("")
@@ -1010,6 +1123,8 @@ export default function AgendamentosPage() {
   const [customerEmail, setCustomerEmail] = useState("")
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
   const [selectedSlot, setSelectedSlot] = useState<AvailabilitySlot | null>(null)
+  const [manualAppointmentDate, setManualAppointmentDate] = useState(getTodayDateValue)
+  const [manualAppointmentTime, setManualAppointmentTime] = useState(getCurrentTimeValue)
   const [notes, setNotes] = useState("")
 
   const [availabilityOpen, setAvailabilityOpen] = useState(false)
@@ -1023,11 +1138,14 @@ export default function AgendamentosPage() {
   const [hiddenProfessionalIds, setHiddenProfessionalIds] = useState<string[]>([])
   const [blockDialogOpen, setBlockDialogOpen] = useState(false)
   const [blockingProfessional, setBlockingProfessional] = useState<ProfessionalColumnItem | null>(null)
+  const [blockScope, setBlockScope] = useState<BlockScope>("STORE")
   const [blockDate, setBlockDate] = useState(getTodayDateValue)
   const [blockAllDay, setBlockAllDay] = useState(false)
   const [blockStartTime, setBlockStartTime] = useState("08:00")
   const [blockEndTime, setBlockEndTime] = useState("09:00")
   const [blockSaveError, setBlockSaveError] = useState<string | null>(null)
+  const [blockConflict, setBlockConflict] = useState<BlockConflictDetails | null>(null)
+  const [pendingBlockPayload, setPendingBlockPayload] = useState<BlockCreatePayload | null>(null)
   const [blockSaving, setBlockSaving] = useState(false)
   const [removingBlockId, setRemovingBlockId] = useState<string | null>(null)
   const [newClientOpen, setNewClientOpen] = useState(false)
@@ -1036,6 +1154,7 @@ export default function AgendamentosPage() {
   const [newClientEmail, setNewClientEmail] = useState("")
   const [newClientSubmitting, setNewClientSubmitting] = useState(false)
   const [newClientError, setNewClientError] = useState<string | null>(null)
+  const skipSlotResetRef = useRef(false)
 
   const sortedTeam = useMemo(
     () => [...team].sort((left, right) => left.name.localeCompare(right.name, "pt-BR")),
@@ -1046,6 +1165,31 @@ export default function AgendamentosPage() {
     if (!serviceId) return []
     return sortedTeam.filter((member) => member.serviceIds.includes(serviceId))
   }, [serviceId, sortedTeam])
+
+  const selectedStaffMember = useMemo(
+    () => sortedTeam.find((member) => member.membershipId === staffMembershipId) ?? null,
+    [sortedTeam, staffMembershipId]
+  )
+
+  const availableServicesForForm = useMemo(() => {
+    const activeServices = services.filter((service) => service.active)
+
+    if (!staffLockedFromGrid || !selectedStaffMember) {
+      return activeServices
+    }
+
+    return activeServices.filter((service) =>
+      selectedStaffMember.serviceIds.includes(service.id)
+    )
+  }, [services, staffLockedFromGrid, selectedStaffMember])
+
+  const professionalOptionsForForm = useMemo(() => {
+    if (staffLockedFromGrid && selectedStaffMember) {
+      return [selectedStaffMember]
+    }
+
+    return eligibleTeam
+  }, [eligibleTeam, selectedStaffMember, staffLockedFromGrid])
 
   const selectedClient = useMemo(
     () => clients.find((client) => client.id === selectedClientId) ?? null,
@@ -1058,17 +1202,7 @@ export default function AgendamentosPage() {
   )
 
   const selectedDayWorkingHoursRange = useMemo(() => {
-    if (!selectedWeekScheduleDay?.enabled || selectedWeekScheduleDay.intervals.length === 0) {
-      return null
-    }
-
-    const starts = selectedWeekScheduleDay.intervals.map((interval) => getMinutesFromTimeKey(interval.startTime))
-    const ends = selectedWeekScheduleDay.intervals.map((interval) => getMinutesFromTimeKey(interval.endTime))
-
-    return {
-      startMinutes: Math.min(...starts),
-      endMinutes: Math.max(...ends),
-    }
+    return getWorkingHoursRangeFromDay(selectedWeekScheduleDay)
   }, [selectedWeekScheduleDay])
 
   const fallbackWorkingHoursRange = useMemo(() => {
@@ -1089,10 +1223,6 @@ export default function AgendamentosPage() {
     }
   }, [weeklySchedule])
 
-  const agendaWorkingHoursRange = selectedDayWorkingHoursRange ?? fallbackWorkingHoursRange
-
-  const selectedDateHasConfiguredWorkingHours = Boolean(selectedDayWorkingHoursRange)
-
   const filteredClients = useMemo(() => {
     const query = customerName.trim().toLowerCase()
     const queryPhone = normalizePhone(customerName)
@@ -1107,12 +1237,16 @@ export default function AgendamentosPage() {
         const matchesPhone = queryPhone ? normalizePhone(client.phone ?? "").includes(queryPhone) : false
         return matchesName || matchesPhone
       })
-      .slice(0, 6)
+      .slice(0, 5)
   }, [clients, customerName])
 
   const filteredAppointments = useMemo(() => {
     return appointments
       .filter((appointment) => {
+        if (!ACTIVE_APPOINTMENT_STATUSES.has(appointment.status)) {
+          return false
+        }
+
         if (selectedProfessionalFilter === "all") {
           return true
         }
@@ -1128,6 +1262,14 @@ export default function AgendamentosPage() {
       .sort((left, right) => left.startTime.localeCompare(right.startTime))
   }, [filteredAppointments, selectedDate])
 
+  const selectedDateStoreBlockedSchedules = useMemo(
+    () =>
+      blockedSchedules.filter(
+        (item) => item.date === selectedDate && item.membershipId === null
+      ),
+    [blockedSchedules, selectedDate]
+  )
+
   const showUnassignedColumn = useMemo(
     () =>
       selectedProfessionalFilter === "all" &&
@@ -1138,27 +1280,73 @@ export default function AgendamentosPage() {
   const visibleStaffColumns = useMemo<ProfessionalColumnItem[]>(() => {
     const baseColumns: ProfessionalColumnItem[] =
       selectedProfessionalFilter === "all"
-        ? sortedTeam.map((member) => ({
-            membershipId: member.membershipId,
-            name: member.name,
-          }))
-        : sortedTeam
-            .filter((member) => member.membershipId === selectedProfessionalFilter)
-            .map((member) => ({
+        ? sortedTeam.map((member) => {
+            const professionalSchedule = getScheduleDayConfig(member.scheduleDays, selectedDate)
+            const effectiveWorkingHoursRange = professionalSchedule.hasExplicitConfig
+              ? professionalSchedule.range
+              : selectedDayWorkingHoursRange
+            const displayWorkingHoursRange = professionalSchedule.hasExplicitConfig
+              ? professionalSchedule.range
+              : (selectedDayWorkingHoursRange ?? fallbackWorkingHoursRange)
+
+            return {
               membershipId: member.membershipId,
               name: member.name,
-            }))
+              workingHoursRange: displayWorkingHoursRange,
+              canCreateAppointments: Boolean(effectiveWorkingHoursRange),
+              blockedSchedules: blockedSchedules.filter(
+                (item) =>
+                  item.date === selectedDate &&
+                  (item.membershipId === null || item.membershipId === member.membershipId)
+              ),
+            }
+          })
+        : sortedTeam
+            .filter((member) => member.membershipId === selectedProfessionalFilter)
+            .map((member) => {
+              const professionalSchedule = getScheduleDayConfig(member.scheduleDays, selectedDate)
+              const effectiveWorkingHoursRange = professionalSchedule.hasExplicitConfig
+                ? professionalSchedule.range
+                : selectedDayWorkingHoursRange
+              const displayWorkingHoursRange = professionalSchedule.hasExplicitConfig
+                ? professionalSchedule.range
+                : (selectedDayWorkingHoursRange ?? fallbackWorkingHoursRange)
+
+              return {
+                membershipId: member.membershipId,
+                name: member.name,
+                workingHoursRange: displayWorkingHoursRange,
+                canCreateAppointments: Boolean(effectiveWorkingHoursRange),
+                blockedSchedules: blockedSchedules.filter(
+                  (item) =>
+                    item.date === selectedDate &&
+                    (item.membershipId === null || item.membershipId === member.membershipId)
+                ),
+              }
+            })
 
     if (showUnassignedColumn) {
       baseColumns.push({
         membershipId: "__unassigned__",
         name: "Sem profissional",
         isUnassigned: true,
+        workingHoursRange: selectedDayWorkingHoursRange ?? fallbackWorkingHoursRange,
+        canCreateAppointments: Boolean(selectedDayWorkingHoursRange),
+        blockedSchedules: selectedDateStoreBlockedSchedules,
       })
     }
 
     return baseColumns
-  }, [selectedProfessionalFilter, showUnassignedColumn, sortedTeam])
+  }, [
+    blockedSchedules,
+    fallbackWorkingHoursRange,
+    selectedDate,
+    selectedDateStoreBlockedSchedules,
+    selectedDayWorkingHoursRange,
+    selectedProfessionalFilter,
+    showUnassignedColumn,
+    sortedTeam,
+  ])
 
   useEffect(() => {
     setHiddenProfessionalIds((current) =>
@@ -1184,11 +1372,31 @@ export default function AgendamentosPage() {
     [hiddenProfessionalIds, visibleStaffColumns]
   )
 
+  const renderedColumnsHaveConfiguredWorkingHours = useMemo(
+    () => renderedStaffColumns.some((professional) => professional.canCreateAppointments),
+    [renderedStaffColumns]
+  )
+
   const showInitialPageSkeleton = appointmentsLoading && appointments.length === 0
 
+  const blockTargetMembershipId = useMemo(() => {
+    if (
+      blockScope === "PROFESSIONAL" &&
+      blockingProfessional &&
+      !blockingProfessional.isUnassigned
+    ) {
+      return blockingProfessional.membershipId
+    }
+
+    return null
+  }, [blockScope, blockingProfessional])
+
   const blockDateBlockedSchedules = useMemo(
-    () => blockedSchedules.filter((item) => item.date === blockDate),
-    [blockDate, blockedSchedules]
+    () =>
+      blockedSchedules.filter(
+        (item) => item.date === blockDate && item.membershipId === blockTargetMembershipId
+      ),
+    [blockDate, blockedSchedules, blockTargetMembershipId]
   )
 
   const loadAppointments = useCallback(async (date: string) => {
@@ -1283,7 +1491,11 @@ export default function AgendamentosPage() {
       const json = (await response.json()) as ApiSuccess<BlockedScheduleItem[]> | BlockedScheduleError
 
       if (!response.ok || !json.ok) {
-        throw new Error(json.ok ? "Erro ao carregar bloqueios." : (json.message ?? "Erro ao carregar bloqueios."))
+        throw new Error(
+          json.ok
+            ? "Erro ao carregar bloqueios."
+            : (json.message ?? json.error ?? "Erro ao carregar bloqueios.")
+        )
       }
 
       setBlockedSchedules(json.data)
@@ -1352,7 +1564,7 @@ export default function AgendamentosPage() {
 
   useEffect(() => {
     if (!serviceId) {
-      if (staffMembershipId) {
+      if (!staffLockedFromGrid && staffMembershipId) {
         setStaffMembershipId("")
       }
       return
@@ -1362,13 +1574,33 @@ export default function AgendamentosPage() {
       staffMembershipId &&
       !eligibleTeam.some((member) => member.membershipId === staffMembershipId)
     ) {
+      if (staffLockedFromGrid) {
+        setServiceId("")
+        return
+      }
+
       setStaffMembershipId("")
     }
-  }, [serviceId, staffMembershipId, eligibleTeam])
+  }, [serviceId, staffMembershipId, eligibleTeam, staffLockedFromGrid])
 
   useEffect(() => {
+    if (skipSlotResetRef.current) {
+      skipSlotResetRef.current = false
+      return
+    }
+
     setSelectedSlot(null)
   }, [serviceId, staffMembershipId])
+
+  useEffect(() => {
+    if (!serviceId) {
+      return
+    }
+
+    if (!availableServicesForForm.some((service) => service.id === serviceId)) {
+      setServiceId("")
+    }
+  }, [availableServicesForForm, serviceId])
 
   useEffect(() => {
     if (!selectedSlot) {
@@ -1385,6 +1617,15 @@ export default function AgendamentosPage() {
       setSlotSearchDate(selectedDate)
     }
   }, [selectedDate, selectedSlot])
+
+  useEffect(() => {
+    if (!selectedSlot || allowPastScheduling) {
+      return
+    }
+
+    setManualAppointmentDate(selectedSlot.date)
+    setManualAppointmentTime(selectedSlot.time)
+  }, [allowPastScheduling, selectedSlot])
 
   const handleAppointmentClick = useCallback(
     (appointmentId: string) => {
@@ -1417,8 +1658,10 @@ export default function AgendamentosPage() {
         throw new Error(json.ok ? "Nao foi possivel salvar o agendamento." : json.error)
       }
 
+      const isActiveAppointment = ACTIVE_APPOINTMENT_STATUSES.has(json.data.status)
+
       setAppointments((current) => {
-        if (json.data.date !== selectedDate) {
+        if (json.data.date !== selectedDate || !isActiveAppointment) {
           return current.filter((appointment) => appointment.id !== appointmentId)
         }
 
@@ -1430,9 +1673,11 @@ export default function AgendamentosPage() {
 
       if (json.data.date !== selectedDate) {
         setSelectedDate(json.data.date)
+      } else {
+        void loadAppointments(selectedDate)
       }
     },
-    [selectedDate]
+    [loadAppointments, selectedDate]
   )
 
   const handleAppointmentCanceled = useCallback(
@@ -1447,11 +1692,15 @@ export default function AgendamentosPage() {
   function resetForm() {
     setServiceId("")
     setStaffMembershipId("")
+    setStaffLockedFromGrid(false)
+    setAllowPastScheduling(false)
     setCustomerName("")
     setCustomerPhone("")
     setCustomerEmail("")
     setSelectedClientId(null)
     setSelectedSlot(null)
+    setManualAppointmentDate(selectedDate)
+    setManualAppointmentTime(getCurrentTimeValue())
     setNotes("")
     setAvailabilityOpen(false)
     setAvailabilityError(null)
@@ -1459,6 +1708,15 @@ export default function AgendamentosPage() {
     setSlotSearchDate(selectedDate)
     setFormError(null)
     setNewClientError(null)
+    setNewClientOpen(false)
+  }
+
+  function handleFormDialogOpenChange(open: boolean) {
+    setShowForm(open)
+
+    if (!open) {
+      resetForm()
+    }
   }
 
   function handleServiceChange(nextServiceId: string) {
@@ -1502,12 +1760,26 @@ export default function AgendamentosPage() {
 
   const handleGridEmptySlotClick = useCallback(
     async (slot: EmptySlotSelection) => {
+      skipSlotResetRef.current = true
       setShowForm(true)
       setAvailabilityOpen(false)
       setFormError(null)
+      setServiceId("")
+      setCustomerName("")
+      setCustomerPhone("")
+      setCustomerEmail("")
+      setSelectedClientId(null)
+      setNotes("")
+      setAvailabilitySlots([])
+      setAvailabilityError(null)
+      setNewClientError(null)
+      setNewClientOpen(false)
       setSelectedSlot(slot)
+      setManualAppointmentDate(slot.date)
+      setManualAppointmentTime(slot.time)
       setSlotSearchDate(slot.date)
       setSelectedDate(slot.date)
+      setStaffLockedFromGrid(Boolean(slot.staffMembershipId))
       setStaffMembershipId(slot.staffMembershipId ?? "")
 
       await ensureFormDependencies()
@@ -1655,13 +1927,32 @@ export default function AgendamentosPage() {
         throw new Error("Informe o nome do cliente.")
       }
 
-      if (!selectedSlot) {
+      if (!allowPastScheduling && !selectedSlot) {
         throw new Error("Selecione um horario disponivel.")
+      }
+
+      if (allowPastScheduling && !manualAppointmentDate) {
+        throw new Error("Informe a data do atendimento realizado.")
+      }
+
+      if (allowPastScheduling && !manualAppointmentTime) {
+        throw new Error("Informe a hora do atendimento realizado.")
       }
 
       const phoneDigits = normalizePhone(customerPhone)
       if (customerPhone.trim() && (phoneDigits.length < 10 || phoneDigits.length > 11)) {
         throw new Error("Telefone invalido. Informe DDD + numero.")
+      }
+
+      const appointmentDate = allowPastScheduling
+        ? manualAppointmentDate
+        : selectedSlot?.date
+      const appointmentTime = allowPastScheduling
+        ? manualAppointmentTime
+        : selectedSlot?.time
+
+      if (!appointmentDate || !appointmentTime) {
+        throw new Error("Data/hora invalida para o agendamento.")
       }
 
       const payload = {
@@ -1670,8 +1961,9 @@ export default function AgendamentosPage() {
         customerName: customerName.trim(),
         customerPhone: phoneDigits ? phoneDigits : undefined,
         customerEmail: customerEmail.trim() ? customerEmail.trim() : undefined,
-        date: selectedSlot.date,
-        time: selectedSlot.time,
+        date: appointmentDate,
+        time: appointmentTime,
+        allowPastScheduling,
         notes: notes.trim() ? notes.trim() : undefined,
       }
 
@@ -1721,12 +2013,62 @@ export default function AgendamentosPage() {
 
   function handleOpenBlockDialog(professional: ProfessionalColumnItem) {
     setBlockingProfessional(professional)
+    setBlockScope(professional.isUnassigned ? "STORE" : "PROFESSIONAL")
     setBlockDate(selectedDate)
     setBlockAllDay(false)
     setBlockStartTime("08:00")
     setBlockEndTime("09:00")
     setBlockSaveError(null)
+    setBlockConflict(null)
+    setPendingBlockPayload(null)
     setBlockDialogOpen(true)
+  }
+
+  async function submitBlockPayload(payload: BlockCreatePayload) {
+    const response = await fetch("/api/schedule/blocked", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    })
+
+    const json = (await response.json()) as
+      | ApiSuccess<{
+          created: number
+          conflictAction: BlockConflictAction | null
+          conflictingAppointmentsCount: number
+          canceledAppointmentsCount: number
+        }>
+      | BlockedScheduleError
+
+    if (
+      response.status === 409 &&
+      !json.ok &&
+      json.code === BLOCK_CONFLICT_REQUIRES_CONFIRMATION_CODE &&
+      json.details?.requiresConfirmation
+    ) {
+      setPendingBlockPayload(payload)
+      setBlockConflict(json.details)
+      return { requiresConfirmation: true as const }
+    }
+
+    if (!response.ok || !json.ok) {
+      throw new Error(
+        json.ok
+          ? "Nao foi possivel criar o bloqueio."
+          : (json.message ?? json.error ?? "Nao foi possivel criar o bloqueio.")
+      )
+    }
+
+    setBlockConflict(null)
+    setPendingBlockPayload(null)
+    await Promise.all([
+      loadBlockedSchedules(),
+      blockDate === selectedDate ? loadAppointments(selectedDate) : Promise.resolve(),
+    ])
+
+    return { requiresConfirmation: false as const }
   }
 
   async function handleCreateBlock(event: React.FormEvent<HTMLFormElement>) {
@@ -1743,30 +2085,49 @@ export default function AgendamentosPage() {
         throw new Error("O horario final precisa ser maior que o horario inicial.")
       }
 
-      const response = await fetch("/api/schedule/blocked", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          dates: [blockDate],
-          allDay: blockAllDay,
-          startTime: blockAllDay ? undefined : blockStartTime,
-          endTime: blockAllDay ? undefined : blockEndTime,
-        }),
+      const result = await submitBlockPayload({
+        dates: [blockDate],
+        membershipId: blockTargetMembershipId,
+        allDay: blockAllDay,
+        startTime: blockAllDay ? undefined : blockStartTime,
+        endTime: blockAllDay ? undefined : blockEndTime,
       })
 
-      const json = (await response.json()) as
-        | ApiSuccess<{ created: number }>
-        | { ok: false; message?: string }
-
-      if (!response.ok || !json.ok) {
-        throw new Error(json.ok ? "Nao foi possivel criar o bloqueio." : (json.message ?? "Nao foi possivel criar o bloqueio."))
+      if (result.requiresConfirmation) {
+        return
       }
 
       setBlockDialogOpen(false)
       setBlockingProfessional(null)
-      await loadBlockedSchedules()
+    } catch (error) {
+      setBlockSaveError(
+        error instanceof Error ? error.message : "Erro ao salvar bloqueio de horario."
+      )
+    } finally {
+      setBlockSaving(false)
+    }
+  }
+
+  async function handleConfirmBlockConflict(action: BlockConflictAction) {
+    if (!pendingBlockPayload) {
+      return
+    }
+
+    setBlockSaving(true)
+    setBlockSaveError(null)
+
+    try {
+      const result = await submitBlockPayload({
+        ...pendingBlockPayload,
+        conflictAction: action,
+      })
+
+      if (result.requiresConfirmation) {
+        return
+      }
+
+      setBlockDialogOpen(false)
+      setBlockingProfessional(null)
     } catch (error) {
       setBlockSaveError(
         error instanceof Error ? error.message : "Erro ao salvar bloqueio de horario."
@@ -1788,7 +2149,11 @@ export default function AgendamentosPage() {
       const json = (await response.json()) as ApiSuccess<{ id: string }> | BlockedScheduleError
 
       if (!response.ok || !json.ok) {
-        throw new Error(json.ok ? "Nao foi possivel remover o bloqueio." : (json.message ?? "Nao foi possivel remover o bloqueio."))
+        throw new Error(
+          json.ok
+            ? "Nao foi possivel remover o bloqueio."
+            : (json.message ?? json.error ?? "Nao foi possivel remover o bloqueio.")
+        )
       }
 
       setBlockedSchedules((current) => current.filter((item) => item.id !== blockId))
@@ -1908,21 +2273,79 @@ export default function AgendamentosPage() {
             ) : null}
           </section>
 
-        {showForm ? (
-          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-slate-900">Novo agendamento</h3>
-                <p className="text-sm text-slate-500">
-                  A criacao manual continua usando a mesma validacao real do backend.
-                </p>
+        {hiddenStaffColumns.length > 0 ? (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-600">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p>
+                {hiddenStaffColumns.length} {hiddenStaffColumns.length === 1 ? "coluna oculta" : "colunas ocultas"} nesta visao.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {hiddenStaffColumns.map((professional) => (
+                  <Button
+                    key={professional.membershipId}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleRestoreProfessionalColumn(professional.membershipId)}
+                  >
+                    Mostrar {professional.name}
+                  </Button>
+                ))}
               </div>
             </div>
+          </div>
+        ) : null}
 
+        {!renderedColumnsHaveConfiguredWorkingHours && weeklySchedule.length > 0 ? (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-600">
+            Nao ha horario de atendimento configurado para este dia. A grade usa apenas o range ja definido na configuracao semanal para manter a leitura da agenda sem estender ate um horario fixo.
+          </div>
+        ) : null}
+
+        <ProfessionalScheduleBoard
+          selectedDate={selectedDate}
+          appointments={selectedDayAppointments}
+          professionals={renderedStaffColumns}
+          loading={appointmentsLoading}
+          error={appointmentsError}
+          onAppointmentClick={handleAppointmentClick}
+          onEmptySlotClick={(slot) => {
+            void handleGridEmptySlotClick(slot)
+          }}
+          onBlockSchedule={handleOpenBlockDialog}
+          onHideColumn={handleHideProfessionalColumn}
+        />
+
+        {!appointmentsLoading && !appointmentsError && selectedDayAppointments.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 px-4 py-5 text-sm text-slate-600">
+            Nenhum agendamento neste dia. As agendas por profissional continuam abertas para destacar horários livres e facilitar novos encaixes.
+          </div>
+        ) : null}
+      </div>
+      )}
+
+      <Dialog open={showForm} onOpenChange={handleFormDialogOpenChange}>
+        <DialogContent className="flex max-h-[85vh] flex-col overflow-hidden sm:max-w-2xl">
+          <DialogHeader className="shrink-0 pr-8">
+            <DialogTitle>Novo agendamento</DialogTitle>
+            <DialogDescription>
+              {allowPastScheduling
+                ? `Preencha os dados para registrar o atendimento realizado em ${formatDateTimeLabel(manualAppointmentDate, manualAppointmentTime)}${staffMembershipId ? ` com ${sortedTeam.find((member) => member.membershipId === staffMembershipId)?.name ?? "o profissional selecionado"}` : ""}.`
+                : selectedSlot
+                ? `Preencha os dados para ${formatDateTimeLabel(selectedSlot.date, selectedSlot.time)}${staffMembershipId ? ` com ${sortedTeam.find((member) => member.membershipId === staffMembershipId)?.name ?? "o profissional selecionado"}` : ""}.`
+                : "A criacao manual continua usando a mesma validacao real do backend."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto pr-1">
             {servicesLoading && !servicesLoaded ? (
               <AppointmentFormSkeleton />
             ) : (
-              <form onSubmit={handleCreateAppointment} className="grid gap-4">
+              <form
+                id="create-appointment-form"
+                onSubmit={handleCreateAppointment}
+                className="grid gap-4 pb-1"
+              >
                 <div className="grid gap-4 lg:grid-cols-2">
                   <div className="grid gap-2">
                     <label className="text-sm font-medium text-slate-700">Servico</label>
@@ -1933,16 +2356,18 @@ export default function AgendamentosPage() {
                       required
                     >
                       <option value="">Selecione</option>
-                      {services
-                        .filter((service) => service.active)
-                        .map((service) => (
-                          <option key={service.id} value={service.id}>
-                            {service.name} ({service.durationMin} min)
-                          </option>
-                        ))}
+                      {availableServicesForForm.map((service) => (
+                        <option key={service.id} value={service.id}>
+                          {service.name} ({service.durationMin} min)
+                        </option>
+                      ))}
                     </select>
                     {servicesError ? (
                       <p className="text-xs text-red-700">{servicesError}</p>
+                    ) : staffLockedFromGrid && availableServicesForForm.length === 0 ? (
+                      <p className="text-xs text-amber-700">
+                        Este profissional nao possui servicos ativos configurados.
+                      </p>
                     ) : null}
                   </div>
 
@@ -1952,15 +2377,16 @@ export default function AgendamentosPage() {
                       value={staffMembershipId}
                       onChange={(e) => handleStaffChange(e.target.value)}
                       className="rounded-xl border border-slate-300 px-3 py-2.5"
-                      disabled={!serviceId || (teamLoading && sortedTeam.length === 0)}
+                      disabled={staffLockedFromGrid || !serviceId || (teamLoading && sortedTeam.length === 0)}
                     >
-                      <option value="">Sem preferencia</option>
-                      {eligibleTeam.map((member) => (
+                      {!staffLockedFromGrid ? <option value="">Sem preferencia</option> : null}
+                      {professionalOptionsForForm.map((member) => (
                         <option key={member.membershipId} value={member.membershipId}>
                           {member.name}
                         </option>
                       ))}
                     </select>
+                    
                   </div>
                 </div>
 
@@ -2017,73 +2443,80 @@ export default function AgendamentosPage() {
                   />
                 </div>
 
+                <label className="flex items-start gap-3 rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={allowPastScheduling}
+                    onChange={(event) => setAllowPastScheduling(event.target.checked)}
+                    className="mt-0.5 size-4 rounded border-slate-300"
+                  />
+                  <span>
+                    <span className="block font-medium text-slate-900">
+                      Registrar atendimento ja realizado
+                    </span>
+                    
+                  </span>
+                </label>
+
+                {allowPastScheduling ? (
+                  <div className="grid gap-4 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
+                    <div>
+                      <p className="text-sm font-medium text-slate-900">
+                        Data e hora do atendimento realizado
+                      </p>
+                     
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="grid gap-2">
+                        <label className="text-sm font-medium text-slate-700">Data</label>
+                        <input
+                          type="date"
+                          value={manualAppointmentDate}
+                          onChange={(event) => setManualAppointmentDate(event.target.value)}
+                          className="rounded-xl border border-slate-300 px-3 py-2.5"
+                          required={allowPastScheduling}
+                        />
+                      </div>
+
+                      <div className="grid gap-2">
+                        <label className="text-sm font-medium text-slate-700">Hora</label>
+                        <input
+                          type="time"
+                          value={manualAppointmentTime}
+                          onChange={(event) => setManualAppointmentTime(event.target.value)}
+                          className="rounded-xl border border-slate-300 px-3 py-2.5"
+                          step={900}
+                          required={allowPastScheduling}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
                 {formError ? (
                   <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                     {formError}
                   </div>
                 ) : null}
-
-                <div className="flex justify-end">
-                  <Button type="submit" variant="primary" disabled={saving}>
-                    {saving ? "Salvando..." : "Salvar agendamento"}
-                  </Button>
-                </div>
               </form>
             )}
-          </section>
-        ) : null}
-
-        {hiddenStaffColumns.length > 0 ? (
-          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-600">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p>
-                {hiddenStaffColumns.length} {hiddenStaffColumns.length === 1 ? "coluna oculta" : "colunas ocultas"} nesta visao.
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {hiddenStaffColumns.map((professional) => (
-                  <Button
-                    key={professional.membershipId}
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleRestoreProfessionalColumn(professional.membershipId)}
-                  >
-                    Mostrar {professional.name}
-                  </Button>
-                ))}
-              </div>
-            </div>
           </div>
-        ) : null}
 
-        {!selectedDateHasConfiguredWorkingHours && weeklySchedule.length > 0 ? (
-          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-600">
-            Nao ha horario de atendimento configurado para este dia. A grade usa apenas o range ja definido na configuracao semanal para manter a leitura da agenda sem estender ate um horario fixo.
-          </div>
-        ) : null}
-
-        <ProfessionalScheduleBoard
-          selectedDate={selectedDate}
-          appointments={selectedDayAppointments}
-          professionals={renderedStaffColumns}
-          workingHoursRange={agendaWorkingHoursRange}
-          loading={appointmentsLoading}
-          error={appointmentsError}
-          onAppointmentClick={handleAppointmentClick}
-          onEmptySlotClick={(slot) => {
-            void handleGridEmptySlotClick(slot)
-          }}
-          onBlockSchedule={handleOpenBlockDialog}
-          onHideColumn={handleHideProfessionalColumn}
-        />
-
-        {!appointmentsLoading && !appointmentsError && selectedDayAppointments.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 px-4 py-5 text-sm text-slate-600">
-            Nenhum agendamento neste dia. As agendas por profissional continuam abertas para destacar horários livres e facilitar novos encaixes.
-          </div>
-        ) : null}
-      </div>
-      )}
+          {servicesLoading && !servicesLoaded ? null : (
+            <DialogFooter className="shrink-0 border-t border-slate-200 pt-4 sm:justify-end">
+              <Button
+                form="create-appointment-form"
+                type="submit"
+                variant="primary"
+                disabled={saving}
+              >
+                {saving ? "Salvando..." : "Salvar agendamento"}
+              </Button>
+            </DialogFooter>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <AppointmentDetailsDialog
         appointment={selectedAppointment}
@@ -2102,108 +2535,134 @@ export default function AgendamentosPage() {
           setBlockDialogOpen(open)
           if (!open) {
             setBlockSaveError(null)
+            setBlockConflict(null)
+            setPendingBlockPayload(null)
             setBlockingProfessional(null)
           }
         }}
       >
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[85vh] flex-col overflow-hidden sm:max-w-lg">
+          <DialogHeader className="shrink-0">
             <DialogTitle>Bloquear e desbloquear horarios</DialogTitle>
             <DialogDescription>
-              Configure um bloqueio para {blockingProfessional?.name ?? "a agenda"} em {parseDateKey(blockDate).toLocaleDateString("pt-BR")}. O bloqueio usa a regra atual disponivel na agenda, sem alterar o backend de appointments.
+              Configure um bloqueio para {blockScope === "PROFESSIONAL" && blockingProfessional && !blockingProfessional.isUnassigned ? blockingProfessional.name : "a loja inteira"} em {parseDateKey(blockDate).toLocaleDateString("pt-BR")}. A disponibilidade continua validando bloqueios da loja e do profissional no backend.
             </DialogDescription>
           </DialogHeader>
 
-          <form className="grid gap-4" onSubmit={handleCreateBlock}>
-            {blockDateBlockedSchedules.length > 0 ? (
-              <div className="grid gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4">
-                <div>
-                  <p className="text-sm font-medium text-slate-900">Bloqueios ativos na data</p>
-                  <p className="text-xs text-slate-500">Remova um bloqueio existente para liberar novos agendamentos nesse periodo.</p>
-                </div>
-
-                {blockDateBlockedSchedules.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5"
+          <form className="flex min-h-0 flex-1 flex-col" onSubmit={handleCreateBlock}>
+            <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto pr-1">
+              {blockingProfessional && !blockingProfessional.isUnassigned ? (
+                <div className="grid gap-2">
+                  <label className="text-sm font-medium text-slate-700">Aplicar bloqueio em</label>
+                  <select
+                    value={blockScope}
+                    onChange={(event) => setBlockScope(event.target.value as BlockScope)}
+                    className="h-11 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
                   >
-                    <div>
-                      <p className="text-sm font-medium text-slate-900">{formatBlockedScheduleLabel(item)}</p>
-                      <p className="text-xs text-slate-500">
-                        {item.allDay ? "Dia inteiro bloqueado" : "Faixa bloqueada"}
-                      </p>
-                    </div>
+                    <option value="PROFESSIONAL">{blockingProfessional.name}</option>
+                    <option value="STORE">Loja inteira</option>
+                  </select>
+                </div>
+              ) : null}
 
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={removingBlockId === item.id}
-                      onClick={() => void handleRemoveBlock(item.id)}
-                    >
-                      {removingBlockId === item.id ? "Removendo..." : "Desbloquear"}
-                    </Button>
+              {blockDateBlockedSchedules.length > 0 ? (
+                <div className="grid gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4">
+                  <div>
+                    <p className="text-sm font-medium text-slate-900">Bloqueios ativos na data</p>
+                    <p className="text-xs text-slate-500">Remova um bloqueio existente para liberar novos agendamentos nesse periodo.</p>
                   </div>
-                ))}
-              </div>
-            ) : null}
 
-            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-sm text-slate-600">
-              Crie um novo bloqueio para impedir encaixes nesse periodo ou remova um bloqueio ativo para liberar a agenda novamente.
+                  {blockDateBlockedSchedules.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-slate-900">{formatBlockedScheduleLabel(item)}</p>
+                        <p className="text-xs text-slate-500">
+                          {item.allDay ? "Dia inteiro bloqueado" : "Faixa bloqueada"}
+                        </p>
+                      </div>
+
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={removingBlockId === item.id}
+                        onClick={() => void handleRemoveBlock(item.id)}
+                      >
+                        {removingBlockId === item.id ? "Removendo..." : "Desbloquear"}
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-sm text-slate-600">
+                Crie um novo bloqueio para impedir encaixes nesse periodo ou remova um bloqueio ativo para liberar a agenda novamente.
+              </div>
+
+              <div className="grid gap-2">
+                <label className="text-sm font-medium text-slate-700">Data</label>
+                <input
+                  type="date"
+                  value={blockDate}
+                  onChange={(event) => setBlockDate(event.target.value)}
+                  className="h-11 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+                />
+              </div>
+
+              <label className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={blockAllDay}
+                  onChange={(event) => setBlockAllDay(event.target.checked)}
+                  className="size-4 rounded border-slate-300"
+                />
+                Bloquear o dia inteiro
+              </label>
+
+              {!blockAllDay ? (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="grid gap-2">
+                    <label className="text-sm font-medium text-slate-700">Inicio</label>
+                    <input
+                      type="time"
+                      value={blockStartTime}
+                      onChange={(event) => setBlockStartTime(event.target.value)}
+                      className="h-11 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+                    />
+                  </div>
+
+                  <div className="grid gap-2">
+                    <label className="text-sm font-medium text-slate-700">Fim</label>
+                    <input
+                      type="time"
+                      value={blockEndTime}
+                      onChange={(event) => setBlockEndTime(event.target.value)}
+                      className="h-11 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+                    />
+                  </div>
+                </div>
+              ) : null}
+
+              {blockSaveError ? (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {blockSaveError}
+                </div>
+              ) : null}
             </div>
 
-            <div className="grid gap-2">
-              <label className="text-sm font-medium text-slate-700">Data</label>
-              <input
-                type="date"
-                value={blockDate}
-                onChange={(event) => setBlockDate(event.target.value)}
-                className="h-11 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
-              />
-            </div>
-
-            <label className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700">
-              <input
-                type="checkbox"
-                checked={blockAllDay}
-                onChange={(event) => setBlockAllDay(event.target.checked)}
-                className="size-4 rounded border-slate-300"
-              />
-              Bloquear o dia inteiro
-            </label>
-
-            {!blockAllDay ? (
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="grid gap-2">
-                  <label className="text-sm font-medium text-slate-700">Inicio</label>
-                  <input
-                    type="time"
-                    value={blockStartTime}
-                    onChange={(event) => setBlockStartTime(event.target.value)}
-                    className="h-11 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
-                  />
-                </div>
-
-                <div className="grid gap-2">
-                  <label className="text-sm font-medium text-slate-700">Fim</label>
-                  <input
-                    type="time"
-                    value={blockEndTime}
-                    onChange={(event) => setBlockEndTime(event.target.value)}
-                    className="h-11 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
-                  />
-                </div>
-              </div>
-            ) : null}
-
-            {blockSaveError ? (
-              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                {blockSaveError}
-              </div>
-            ) : null}
-
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setBlockDialogOpen(false)}>
+            <DialogFooter className="mt-4 shrink-0 border-t border-slate-200 pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setBlockConflict(null)
+                  setPendingBlockPayload(null)
+                  setBlockDialogOpen(false)
+                }}
+              >
                 Cancelar
               </Button>
               <Button type="submit" variant="primary" disabled={blockSaving}>
@@ -2213,6 +2672,65 @@ export default function AgendamentosPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={Boolean(blockConflict)}
+        onOpenChange={(open) => {
+          if (!open && !blockSaving) {
+            setBlockConflict(null)
+            setPendingBlockPayload(null)
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Existem agendamentos neste periodo</AlertDialogTitle>
+            <AlertDialogDescription>
+              {blockConflict
+                ? `Existem ${blockConflict.conflictingAppointmentsCount} agendamentos ativos neste periodo. Deseja manter esses atendimentos e bloquear apenas novos horarios, ou cancelar os atendimentos conflitantes?`
+                : "Confirme como o bloqueio deve tratar os atendimentos existentes."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          {blockConflict?.conflictingAppointments.length ? (
+            <div className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              {blockConflict.conflictingAppointments.slice(0, 5).map((appointment) => (
+                <div key={appointment.id} className="text-sm text-slate-700">
+                  <p className="font-medium text-slate-900">{appointment.customerName}</p>
+                  <p>
+                    {formatConflictingAppointmentLabel(appointment)}
+                    {appointment.staffName ? ` / ${appointment.staffName}` : ""}
+                  </p>
+                </div>
+              ))}
+              {blockConflict.conflictingAppointmentsCount > 5 ? (
+                <p className="text-xs text-slate-500">
+                  E mais {blockConflict.conflictingAppointmentsCount - 5} agendamentos.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={blockSaving}>Voltar</AlertDialogCancel>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={blockSaving}
+              onClick={() => void handleConfirmBlockConflict("KEEP_EXISTING_APPOINTMENTS")}
+            >
+              Manter atendimentos
+            </Button>
+            <Button
+              type="button"
+              disabled={blockSaving}
+              onClick={() => void handleConfirmBlockConflict("CANCEL_CONFLICTING_APPOINTMENTS")}
+            >
+              {blockSaving ? "Salvando..." : "Cancelar atendimentos"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={availabilityOpen} onOpenChange={setAvailabilityOpen}>
         <DialogContent className="sm:max-w-xl">

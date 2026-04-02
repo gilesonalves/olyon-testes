@@ -45,53 +45,65 @@ const DEFAULT_VALUES: WeekFormValues = {
 
 function toForm(values: ApiWeekDay[]): WeekFormValues {
   return {
-    days: values.map((d) => ({
-      weekday: d.weekday,
-      enabled: d.enabled,
-      horarios: d.intervals.map((i) => ({
-        horaInicial: i.startTime,
-        horaFinal: i.endTime,
+    days: values.map((day) => ({
+      weekday: day.weekday,
+      enabled: day.enabled,
+      horarios: day.intervals.map((interval) => ({
+        horaInicial: interval.startTime,
+        horaFinal: interval.endTime,
       })),
     })),
   }
 }
 
-function toApi(values: WeekFormValues): { days: ApiWeekDay[] } {
+function toApi(values: WeekFormValues, membershipId: string | null) {
   return {
-    days: values.days.map((d) => ({
-      weekday: d.weekday,
-      enabled: d.enabled,
-      intervals: d.horarios.map((h) => ({
-        startTime: h.horaInicial,
-        endTime: h.horaFinal,
+    membershipId,
+    days: values.days.map((day) => ({
+      weekday: day.weekday,
+      enabled: day.enabled,
+      intervals: day.horarios.map((horario) => ({
+        startTime: horario.horaInicial,
+        endTime: horario.horaFinal,
       })),
     })),
   }
 }
 
-async function fetchWeekly() {
-  const res = await fetch("/api/schedule/weekly", { method: "GET" })
+async function fetchWeekly(membershipId: string | null) {
+  const query = new URLSearchParams()
+  if (membershipId) {
+    query.set("membershipId", membershipId)
+  }
+
+  const suffix = query.size > 0 ? `?${query.toString()}` : ""
+  const res = await fetch(`/api/schedule/weekly${suffix}`, { method: "GET" })
   const json = await res.json()
-  if (!res.ok || !json?.ok) throw new Error(json?.message ?? "Falha ao carregar horários semanais")
+
+  if (!res.ok || !json?.ok) {
+    throw new Error(json?.message ?? "Falha ao carregar horarios semanais")
+  }
+
   return json.data.days as ApiWeekDay[]
 }
 
-async function saveWeekly(payload: { days: ApiWeekDay[] }) {
+async function saveWeekly(payload: { membershipId: string | null; days: ApiWeekDay[] }) {
   const res = await fetch("/api/schedule/weekly", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   })
   const json = await res.json()
-  if (!res.ok || !json?.ok) throw new Error(json?.message ?? "Falha ao salvar horários semanais")
+
+  if (!res.ok || !json?.ok) {
+    throw new Error(json?.message ?? "Falha ao salvar horarios semanais")
+  }
 }
 
-export function useWeekScheduleFormController() {
+export function useWeekScheduleFormController(selectedMembershipId: string | null = null) {
   const [loading, setLoading] = useState(false)
   const [initialLoading, setInitialLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  // Como cookie é httpOnly, usamos store/current para saber se existe loja selecionada.
   const [storeId, setStoreId] = useState<string | null>(null)
   const [storeReady, setStoreReady] = useState(false)
 
@@ -123,15 +135,18 @@ export function useWeekScheduleFormController() {
 
         if (!currentStoreId) return
 
-        const days = await fetchWeekly()
+        const days = await fetchWeekly(selectedMembershipId)
         if (!alive) return
+
         form.reset(toForm(days))
       } catch (e: unknown) {
         if (!alive) return
+
         setError((e as Error)?.message ?? "Erro ao carregar")
         setStoreReady(false)
       } finally {
         if (!alive) return
+
         setInitialLoading(false)
       }
     }
@@ -141,7 +156,7 @@ export function useWeekScheduleFormController() {
     return () => {
       alive = false
     }
-  }, [form])
+  }, [form, selectedMembershipId])
 
   async function onSubmit(data: WeekFormValues) {
     if (!storeReady) {
@@ -151,9 +166,10 @@ export function useWeekScheduleFormController() {
 
     setLoading(true)
     setError(null)
+
     try {
-      await saveWeekly(toApi(data))
-      toast.success("Horários semanais salvos!")
+      await saveWeekly(toApi(data, selectedMembershipId))
+      toast.success("Horarios semanais salvos!")
     } catch (e: unknown) {
       const msg = (e as Error)?.message ?? "Erro ao salvar"
       setError(msg)
@@ -164,9 +180,8 @@ export function useWeekScheduleFormController() {
   }
 
   return {
-    storeId, // agora vem de /api/store/current (não do cookie)
+    storeId,
     storeReady,
-
     form,
     onSubmit,
     loading,

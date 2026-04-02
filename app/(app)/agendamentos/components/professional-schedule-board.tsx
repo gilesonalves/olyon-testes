@@ -36,10 +36,6 @@ type ProfessionalScheduleBoardProps = {
   selectedDate: string
   appointments: BoardAppointment[]
   professionals: ProfessionalColumnItem[]
-  workingHoursRange?: {
-    startMinutes: number
-    endMinutes: number
-  } | null
   loading?: boolean
   error?: string | null
   onAppointmentClick: (appointmentId: string) => void
@@ -48,8 +44,6 @@ type ProfessionalScheduleBoardProps = {
   onHideColumn: (professional: ProfessionalColumnItem) => void
 }
 
-const DEFAULT_DAY_START_MINUTES = 8 * 60
-const DEFAULT_DAY_END_MINUTES = 20 * 60
 const VISUAL_INTERVAL_MINUTES = 15
 const GRID_ROW_HEIGHT = 44
 const UNASSIGNED_STAFF_ID = "__unassigned__"
@@ -67,18 +61,56 @@ function ceilToInterval(value: number, interval: number) {
   return Math.ceil(value / interval) * interval
 }
 
+function resolveColumnRange(
+  appointments: BoardAppointment[],
+  workingHoursRange: ProfessionalColumnItem["workingHoursRange"]
+) {
+  const starts = appointments.map((appointment) => getMinutesFromTime(appointment.startTime))
+  const ends = appointments.map((appointment) => getMinutesFromTime(appointment.endTime))
+
+  if (!workingHoursRange && starts.length === 0 && ends.length === 0) {
+    return null
+  }
+
+  if (!workingHoursRange) {
+    const earliest = Math.min(...starts)
+    const latest = Math.max(...ends)
+
+    return {
+      dayStartMinutes: Math.max(0, floorToInterval(earliest, VISUAL_INTERVAL_MINUTES) - VISUAL_INTERVAL_MINUTES),
+      dayEndMinutes: ceilToInterval(latest, VISUAL_INTERVAL_MINUTES) + VISUAL_INTERVAL_MINUTES,
+    }
+  }
+
+  const earliest = starts.length > 0 ? Math.min(...starts) : workingHoursRange.startMinutes
+  const latest = ends.length > 0 ? Math.max(...ends) : workingHoursRange.endMinutes
+
+  return {
+    dayStartMinutes: Math.max(
+      0,
+      Math.min(
+        workingHoursRange.startMinutes,
+        floorToInterval(earliest, VISUAL_INTERVAL_MINUTES) - VISUAL_INTERVAL_MINUTES
+      )
+    ),
+    dayEndMinutes: Math.max(
+      workingHoursRange.endMinutes,
+      ceilToInterval(latest, VISUAL_INTERVAL_MINUTES) + VISUAL_INTERVAL_MINUTES
+    ),
+  }
+}
+
 function ProfessionalColumnSkeleton() {
   return (
-    <div className="w-62 shrink-0 overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-sm shadow-slate-200/60">
+    <div className="flex h-[min(72vh,860px)] w-62 shrink-0 flex-col overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-sm shadow-slate-200/60">
       <div className="border-b border-slate-200 bg-slate-50/90 px-4 py-4">
         <div className="h-4 w-24 rounded bg-slate-200" />
         <div className="mt-2 h-3 w-16 rounded bg-slate-200" />
-        <div className="mt-3 h-9 w-full rounded-xl bg-slate-300" />
       </div>
-      <div>
+      <div className="min-h-0 flex-1 overflow-hidden">
         {Array.from({ length: 18 }, (_, index) => (
-          <div key={index} className="relative h-7 border-b border-slate-200 bg-white px-4 py-1">
-            {index % 3 === 0 ? <div className="h-3 w-10 rounded bg-slate-200" /> : null}
+          <div key={index} className="relative h-11 border-b border-slate-200 bg-white px-4 py-1">
+            <div className="mx-auto h-3 w-10 rounded bg-slate-200" />
           </div>
         ))}
       </div>
@@ -90,7 +122,6 @@ export default function ProfessionalScheduleBoard({
   selectedDate,
   appointments,
   professionals,
-  workingHoursRange = null,
   loading = false,
   error = null,
   onAppointmentClick,
@@ -106,28 +137,10 @@ export default function ProfessionalScheduleBoard({
     [professionals]
   )
 
-  const { groupedAppointments, dayStartMinutes, dayEndMinutes } = useMemo(() => {
-    const configuredDayStart = workingHoursRange?.startMinutes ?? DEFAULT_DAY_START_MINUTES
-    const configuredDayEnd = workingHoursRange?.endMinutes ?? DEFAULT_DAY_END_MINUTES
-    const starts = appointments.map((appointment) => getMinutesFromTime(appointment.startTime))
-    const ends = appointments.map((appointment) => getMinutesFromTime(appointment.endTime))
-
-    const earliest = starts.length > 0 ? Math.min(...starts) : configuredDayStart
-    const latest = ends.length > 0 ? Math.max(...ends) : configuredDayEnd
-
-    const dayStart = Math.max(
-      0,
-      Math.min(
-        configuredDayStart,
-        floorToInterval(earliest, VISUAL_INTERVAL_MINUTES) - VISUAL_INTERVAL_MINUTES
-      )
-    )
-    const dayEnd = Math.max(
-      configuredDayEnd,
-      ceilToInterval(latest, VISUAL_INTERVAL_MINUTES) + VISUAL_INTERVAL_MINUTES
-    )
-
+  const { groupedAppointments, columnRanges } = useMemo(() => {
     const grouped = new Map<string, BoardAppointment[]>()
+    const ranges = new Map<string, { dayStartMinutes: number; dayEndMinutes: number } | null>()
+
     for (const professional of visibleProfessionals) {
       grouped.set(professional.membershipId, [])
     }
@@ -141,22 +154,26 @@ export default function ProfessionalScheduleBoard({
       }
     }
 
-    for (const items of grouped.values()) {
+    for (const professional of visibleProfessionals) {
+      const items = grouped.get(professional.membershipId) ?? []
       items.sort((left, right) => left.startTime.localeCompare(right.startTime))
+      ranges.set(
+        professional.membershipId,
+        resolveColumnRange(items, professional.workingHoursRange ?? null)
+      )
     }
 
     return {
       groupedAppointments: grouped,
-      dayStartMinutes: dayStart,
-      dayEndMinutes: dayEnd,
+      columnRanges: ranges,
     }
-  }, [appointments, visibleProfessionals, workingHoursRange])
+  }, [appointments, visibleProfessionals])
 
   if (loading) {
     return (
       <section className="w-full min-w-0 max-w-full overflow-hidden rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] p-4 shadow-sm sm:p-5">
         <div className="w-full max-w-full overflow-x-auto overscroll-x-contain pb-1">
-          <div className="flex min-w-max gap-4">
+          <div className="flex min-w-max items-start gap-4">
             {Array.from({ length: Math.max(visibleProfessionals.length, 3) }, (_, index) => (
               <ProfessionalColumnSkeleton key={index} />
             ))}
@@ -186,22 +203,26 @@ export default function ProfessionalScheduleBoard({
     <section className="w-full min-w-0 max-w-full overflow-hidden rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] p-4 shadow-sm sm:p-5">
       <div className="w-full max-w-full overflow-x-auto overscroll-x-contain pb-1">
         <div className="flex min-w-max items-start gap-4">
-          {visibleProfessionals.map((professional) => (
-            <ProfessionalScheduleColumn
-              key={professional.membershipId}
-              selectedDate={selectedDate}
-              professional={professional}
-              appointments={groupedAppointments.get(professional.membershipId) ?? []}
-              dayStartMinutes={dayStartMinutes}
-              dayEndMinutes={dayEndMinutes}
-              visualIntervalMinutes={VISUAL_INTERVAL_MINUTES}
-              gridRowHeight={GRID_ROW_HEIGHT}
-              onAppointmentClick={onAppointmentClick}
-              onEmptySlotClick={onEmptySlotClick}
-              onBlockSchedule={onBlockSchedule}
-              onHideColumn={onHideColumn}
-            />
-          ))}
+          {visibleProfessionals.map((professional) => {
+            const columnRange = columnRanges.get(professional.membershipId)
+
+            return (
+              <ProfessionalScheduleColumn
+                key={professional.membershipId}
+                selectedDate={selectedDate}
+                professional={professional}
+                appointments={groupedAppointments.get(professional.membershipId) ?? []}
+                dayStartMinutes={columnRange?.dayStartMinutes ?? 0}
+                dayEndMinutes={columnRange?.dayEndMinutes ?? 0}
+                visualIntervalMinutes={VISUAL_INTERVAL_MINUTES}
+                gridRowHeight={GRID_ROW_HEIGHT}
+                onAppointmentClick={onAppointmentClick}
+                onEmptySlotClick={onEmptySlotClick}
+                onBlockSchedule={onBlockSchedule}
+                onHideColumn={onHideColumn}
+              />
+            )
+          })}
         </div>
       </div>
     </section>
