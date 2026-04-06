@@ -54,7 +54,7 @@ Abra `http://localhost:3000` no navegador.
 **Paginas (App Router)**
 
 - (auth): /login, /cadastro, /recuperar-senha
-- (app): /dashboard, /usuarios, /servicos, /eventos, /agendamentos,
+- (app): /dashboard, /usuarios, /servicos, /agendamentos,
   /horarios-de-atendimento, /entradas-saidas, /contas-a-pagar,
   /controle-pagamentos, /equipe
 - admin: /admin/dashboard
@@ -152,7 +152,7 @@ Abra `http://localhost:3000` no navegador.
 
 ## Bloco 6 — UI das paginas alvo
 
-- /servicos, /eventos, /equipe existem e estao em UI com mock/toast
+- /servicos e /equipe existem em UI; a rota /eventos foi removida por redundancia funcional
 
 ## Estrutura
 

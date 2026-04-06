@@ -5,6 +5,7 @@ import HeaderPage from "@/components/headerPage"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
+import ListPageSkeleton from "@/components/loading/list-page-skeleton"
 
 type TeamRow = {
   membershipId: string
@@ -35,6 +36,7 @@ export default function Equipe() {
 
   const visibleItems = useMemo(() => items.slice(0, visibleCount), [items, visibleCount])
   const hasMoreItems = visibleItems.length < items.length
+  const showInitialSkeleton = loading && items.length === 0
 
   async function load() {
     try {
@@ -92,10 +94,11 @@ export default function Equipe() {
         </div>
       </HeaderPage>
 
+      {showInitialSkeleton ? (
+        <ListPageSkeleton message="Carregando equipe..." />
+      ) : (
       <div className="bg-white px-6 py-7">
-        {loading ? (
-          <div>Carregando...</div>
-        ) : items.length === 0 ? (
+        {items.length === 0 ? (
           <div>Nenhum profissional cadastrado na equipe.</div>
         ) : (
           <>
@@ -153,6 +156,7 @@ export default function Equipe() {
           </>
         )}
       </div>
+      )}
     </>
   )
 }

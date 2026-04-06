@@ -1,3 +1,1626 @@
+## 02 de abril de 2026 - Saneamento em cadeia do build ate `yarn build` concluir
+
+### Objetivo
+
+Continuar a limpeza do build a partir do erro confirmado em `app/(app)/contas-a-pagar/novo/page.tsx`, corrigindo em cadeia os proximos bloqueios reais enquanto as mudancas fossem pequenas, seguras e sem alterar regra de negocio.
+
+### Arquivos alterados
+
+- `app/(app)/contas-a-pagar/novo/page.tsx`
+- `app/(app)/usuarios/controllers/index.tsx`
+- `src/components/ui/app-sidebar.tsx`
+- `src/lib/auth-options.ts`
+- `src/scripts/seed.ts`
+- `app/(auth)/login/page.tsx`
+- `tsconfig.json`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. `contas-a-pagar/novo` alinhado ao payload real
+
+- O `createEntry` local usa `FinanceExpenseCreatePayload`, que nao aceita `type`.
+- O payload da pagina deixou de enviar `type: "EXPENSE"`, preservando a semantica existente no controller, que ja injeta o tipo ao chamar `/api/finance/entries`.
+- O campo `dueDate` tambem passou a normalizar `null` para `""` no `<Input type="date" />`, evitando quebra de tipagem em build.
+
+#### 2. Controller legado de usuarios ajustado ao schema atual
+
+- `app/(app)/usuarios/controllers/index.tsx` ainda importava `formSchema`, mas o modulo atual exporta `userFormCreateSchema` e `userFormEditSchema`.
+- O controller foi alinhado para usar `userFormCreateSchema as formSchema`.
+- O alias de `Contact` foi corrigido para `NonNullable<FormValues["contacts"]>[number]`, evitando erro quando `contacts` e opcional no `z.input`.
+
+#### 3. Tipagem local da sidebar normalizada
+
+- `src/components/ui/app-sidebar.tsx` usava `item.isActive`, mas o objeto `data.navMain` nao declarava esse campo no tipo inferido.
+- Foi adicionada tipagem explicita dos itens/grupos da navegacao com `isActive?: boolean`, sem mudar o comportamento visual.
+
+#### 4. Compatibilidade de `auth-options` com os tipos do NextAuth
+
+- `src/lib/auth-options.ts` declarava `globalRole?: string | null` no tipo local `AuthUser`.
+- O modulo `types/next-auth.d.ts` declara `globalRole?: string`.
+- A correcao removeu `null` do tipo local e normalizou o retorno de `authorize` com `user.globalRole ?? undefined`.
+
+#### 5. Script de seed alinhado ao model Prisma atual
+
+- `src/scripts/seed.ts` tentava criar `User` sem `password`, o que nao compila mais com o schema atual.
+- O script agora gera `password` hashada com `bcryptjs`, no mesmo padrao ja usado em `prisma/seed.ts`.
+
+#### 6. Configuracao TypeScript corrigida
+
+- `tsconfig.json` estava com `ignoreDeprecations: "6.0"`.
+- No TypeScript 5.9 usado no projeto, esse valor e invalido e passou a quebrar o `next build`.
+- O arquivo voltou para `ignoreDeprecations: "5.0"`.
+
+#### 7. `/login` ajustado para o App Router no prerender
+
+- `app/(auth)/login/page.tsx` usava `useSearchParams()` diretamente no componente da pagina.
+- No Next 16, isso exigiu `Suspense` durante o prerender.
+- A leitura do `error` da query string foi isolada em um componente `LoginErrorMessage`, renderizado dentro de `<Suspense fallback={null}>`.
+
+### Validacao executada
+
+- `yarn eslint app/(app)/contas-a-pagar/novo/page.tsx`
+- `yarn eslint app/(app)/usuarios/controllers/index.tsx`
+- `yarn eslint src/components/ui/app-sidebar.tsx`
+- `yarn eslint src/lib/auth-options.ts`
+- `yarn eslint src/scripts/seed.ts`
+- `yarn eslint app/(auth)/login/page.tsx`
+- `yarn build`
+
+### Resultado
+
+- O `yarn build` voltou a concluir com sucesso.
+- Permanecem apenas warnings nao bloqueantes:
+  - `baseline-browser-mapping` desatualizado
+  - root inferido pelo Next/Turbopack por coexistencia de `package-lock.json` no pai e `yarn.lock` no projeto
+  - deprecacao do arquivo `middleware` em favor de `proxy`
+
+### Proximo passo sugerido
+
+- Tratar os warnings de build, com prioridade para migrar `middleware` para `proxy` e fixar `turbopack.root`.
+
+## 02 de abril de 2026 - Remocao segura da tela Tipos de eventos
+
+### Objetivo
+
+Remover a tela redundante `Tipos de eventos` do sistema sem alterar o layout geral, preservando `Servicos` como fonte unica para combinacoes como `corte + barba`.
+
+### Diagnostico
+
+- A pagina existia em `app/(app)/eventos/page.tsx`, com rota filha morta em `app/(app)/eventos/novo/page.tsx`.
+- O item aparecia na sidebar em `src/components/ui/app-sidebar.tsx` apontando para `/eventos`.
+- Havia API propria em `app/api/events/route.ts` e `app/api/events/[id]/route.ts`, consumindo `EventCreateSchema` e `EventUpdateSchema` do modulo `app/(app)/eventos/schemas`.
+- Nao foi encontrada dependencia ativa em `agendamentos`, `servicos`, WhatsApp, seed ou regras de disponibilidade; os usos de `services.some({ serviceId })` no backend pertencem a vinculo de profissional com servico, nao a `EventService`.
+- O schema Prisma ainda possui `Event` e `EventService`, mas eles ficaram preservados nesta etapa para evitar migracao destrutiva e manter a persistencia atual fora do escopo.
+
+### Arquivos alterados
+
+- `src/components/ui/app-sidebar.tsx`
+- `middleware.ts`
+- `README.md`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### Arquivos removidos
+
+- `app/(app)/eventos/page.tsx`
+- `app/(app)/eventos/loading.tsx`
+- `app/(app)/eventos/novo/page.tsx`
+- `app/(app)/eventos/controllers/index.tsx`
+- `app/(app)/eventos/controllers/README.md`
+- `app/(app)/eventos/components/servicos.tsx`
+- `app/(app)/eventos/components/README.md`
+- `app/(app)/eventos/schemas/index.ts`
+- `app/(app)/eventos/schemas/event.ts`
+- `app/(app)/eventos/schemas/README.md`
+- `app/api/events/route.ts`
+- `app/api/events/[id]/route.ts`
+
+### O que foi implementado
+
+- A rota `/eventos` e sua rota filha `novo` foram removidas do App Router.
+- O item `Tipos de eventos` saiu da sidebar sem redesenhar o restante do menu.
+- As rotas `GET/POST/PUT/DELETE` de `/api/events` foram removidas junto com schemas, controller e componente exclusivos do modulo.
+- O `middleware` deixou de tratar `/eventos` como rota protegida do app.
+- `Servicos` foi mantido intacto como cadastro principal para combinacoes operacionais.
+
+### Validacao executada
+
+- `yarn eslint middleware.ts src/components/ui/app-sidebar.tsx`
+- `yarn build` falhou por um erro preexistente em `app/(app)/equipe/controllers/page`, sem relacao com a remocao de `/eventos`
+
+### Proximo passo sugerido
+
+- Avaliar em outra tarefa se o dominio Prisma `Event`/`EventService` ainda deve existir no banco ou se merece uma migracao dedicada de limpeza com estrategia explicita para dados ja persistidos.
+
+## 01 de abril de 2026 - Cancelamento liberando slot corretamente em /agendamentos
+
+### Objetivo
+
+Fazer o cancelamento em `/agendamentos` deixar de ocupar horario na grade, no contador da coluna e na agenda do dia.
+
+### Arquivos alterados
+
+- `app/api/appointments/route.ts`
+- `app/(app)/agendamentos/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+- `GET /api/appointments` passou a retornar apenas appointments ativos para a agenda operacional (`SCHEDULED` e `CONFIRMED`).
+- A tela `/agendamentos` passou a filtrar localmente apenas statuses ativos antes de montar colunas, contadores e cards.
+- O fluxo de `PUT /api/appointments/[id]` ja persistia `status: "CANCELED"`; a UI agora remove imediatamente esse appointment da agenda local e faz refetch do dia atual apos salvar ou cancelar.
+- A engine central de disponibilidade nao precisou mudar, porque ja ignorava cancelados e so considerava `SCHEDULED` e `CONFIRMED` como conflito.
+
+### Validacao executada
+
+- `yarn eslint app/api/appointments/route.ts app/(app)/agendamentos/page.tsx`
+
+### Proximo passo sugerido
+
+- Cobrir com teste automatizado o fluxo de cancelamento seguido de novo encaixe no mesmo horario para evitar regressao entre agenda e disponibilidade.
+
+## 01 de abril de 2026 - Refino do modal retroativo em /agendamentos
+
+### Objetivo
+
+Completar o fluxo de registro retroativo em `/agendamentos`, exibindo campos manuais de data/hora quando a excecao estiver marcada e evitando corte do CTA de salvar no modal.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+- O checkbox `Registrar atendimento ja realizado` agora revela campos explicitos de `Data` e `Hora` no proprio modal.
+- Quando a excecao esta ativa, o create deixa de depender do slot selecionado e passa a usar os campos manuais enviados no payload.
+- O rodape com `Salvar agendamento` saiu da area rolavel do formulario e ficou fixo no final do modal, evitando corte visual do CTA.
+- O restante do layout do modal e da tela foi preservado.
+
+### Validacao executada
+
+- `yarn eslint app/(app)/agendamentos/page.tsx`
+
+### Proximo passo sugerido
+
+- Validar no navegador os cenarios de retroativo com e sem slot selecionado, incluindo datas passadas com profissional travado por coluna.
+
+## 01 de abril de 2026 - Registro retroativo controlado no modal de /agendamentos
+
+### Objetivo
+
+Permitir lancamento retroativo de atendimento em `/agendamentos` sem remover a protecao padrao contra agendamento no passado.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `app/api/appointments/route.ts`
+- `app/api/appointments/[id]/route.ts`
+- `src/lib/validators/appointment.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+- O modal de novo agendamento ganhou a opcao explicita `Registrar atendimento ja realizado`, desmarcada por padrao.
+- O frontend passou a enviar `allowPastScheduling` no payload do create quando a excecao e ativada.
+- O schema Zod de appointments passou a aceitar `allowPastScheduling`.
+- `POST /api/appointments` continua bloqueando horario no passado por padrao, mas passa a aceitar quando `allowPastScheduling` estiver ativo.
+- `PUT /api/appointments/[id]` recebeu o mesmo tratamento para remarcacoes explicitas, preservando compatibilidade futura do endpoint.
+- As validacoes reais de cliente, servico, profissional, elegibilidade do profissional e multi-tenant foram mantidas.
+- Nao foi necessario alterar a engine central de disponibilidade, porque a trava de passado estava nas rotas de appointments, nao em `checkAvailabilityForSlot`.
+
+### Validacao executada
+
+- `yarn eslint app/(app)/agendamentos/page.tsx app/api/appointments/route.ts app/api/appointments/[id]/route.ts src/lib/validators/appointment.ts`
+
+### Proximo passo sugerido
+
+- Cobrir create e remarcacao com testes automatizados para garantir os dois cenarios: bloqueio padrao de passado e excecao controlada com `allowPastScheduling`.
+
+## 01 de abril de 2026 - Modal de novo agendamento com profissional pre-selecionado pela coluna
+
+### Objetivo
+
+Fazer o modal de novo agendamento em `/agendamentos` respeitar automaticamente o contexto da coluna clicada, mantendo o layout atual e a validacao real do backend.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+- Ao clicar em um slot de uma coluna de profissional, o modal agora abre com esse profissional ja selecionado.
+- Nesse fluxo, o campo `Profissional` permanece visivel, mas fica bloqueado para edicao.
+- A lista de servicos do modal passa a exibir somente os servicos ativos vinculados ao profissional da coluna clicada.
+- O filtro usa a relacao real ja carregada de `MembershipService` via `/api/team`, sem criar regra paralela fake no frontend.
+- As validacoes de backend foram preservadas em `POST /api/appointments` e `GET /api/appointments/availability`, que continuam recusando combinacoes invalidas de profissional + servico.
+
+### Validacao executada
+
+- `yarn eslint app/(app)/agendamentos/page.tsx`
+
+## 01 de abril de 2026 - Agenda por profissional, modal de novo agendamento e bloqueio por profissional
+
+### Objetivo
+
+Evoluir `/agendamentos` sem alterar o layout geral da tela, passando a respeitar expediente por profissional, bloqueio por profissional, modal de novo agendamento e scroll vertical interno por coluna.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/components/professional-schedule-board.tsx`
+- `app/(app)/agendamentos/components/professional-schedule-column.tsx`
+- `app/(app)/agendamentos/page.tsx`
+- `app/(app)/horarios-de-atendimento/controllers/useWeekScheduleFormController.ts`
+- `app/(app)/horarios-de-atendimento/page.tsx`
+- `app/api/schedule/blocked/[id]/route.ts`
+- `app/api/schedule/blocked/route.ts`
+- `app/api/schedule/weekly/route.ts`
+- `app/api/team/route.ts`
+- `prisma/schema.prisma`
+- `prisma/migrations/20260401143000_add_professional_schedule_and_blocks/migration.sql`
+- `src/lib/appointments/availability.ts`
+- `src/lib/validators/schedule.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Agenda com expediente efetivo por profissional
+
+- Foi criada modelagem minima para horario semanal por profissional (`MembershipWeekScheduleDay` e `MembershipWeekScheduleInterval`).
+- A agenda de `/agendamentos` passou a usar o expediente do profissional quando existir, com fallback para o horario geral da loja quando nao houver configuracao individual.
+- O board e as colunas mantiveram o visual atual, mas cada profissional agora pode ter range proprio de inicio/fim.
+
+#### 2. Bloqueio por loja e por profissional
+
+- `BlockedSchedule` passou a aceitar `membershipId` opcional.
+- O backend continua aceitando bloqueio da loja inteira e agora tambem aceita bloqueio restrito a um profissional.
+- A engine central de disponibilidade passou a considerar simultaneamente bloqueios globais e bloqueios do profissional.
+
+#### 3. Novo agendamento em modal
+
+- O formulario inline do topo saiu da tela e foi substituido por um `Dialog`.
+- O clique em horario livre continua sendo o gatilho do fluxo, agora abrindo modal centralizado com scroll interno.
+- O modal chega pre-preenchido com profissional, data e horario do slot clicado.
+
+#### 4. Scroll vertical por coluna e leitura da grade
+
+- Cada coluna passou a ter altura fixa baseada na viewport e scroll vertical proprio.
+- O board horizontal foi preservado e continua rolando apenas dentro do container da agenda.
+- O texto do horario nas celulas foi centralizado apenas na horizontal.
+- Slots bloqueados agora ficam visualmente indisponiveis na coluna sem remover a revalidacao final do backend.
+
+#### 5. Configuracao do expediente individual
+
+- `/horarios-de-atendimento` ganhou um seletor simples para editar o expediente da loja inteira ou de um profissional especifico usando a mesma rota base.
+- As rotas de horario semanal foram mantidas compativeis com o fluxo atual da loja.
+
+### Validacao executada
+
+- `yarn prisma generate`
+- `yarn prisma db execute --file prisma/migrations/20260401143000_add_professional_schedule_and_blocks/migration.sql`
+- `yarn eslint app/(app)/agendamentos/page.tsx app/(app)/agendamentos/components/professional-schedule-board.tsx app/(app)/agendamentos/components/professional-schedule-column.tsx app/(app)/horarios-de-atendimento/page.tsx app/(app)/horarios-de-atendimento/controllers/useWeekScheduleFormController.ts app/api/team/route.ts app/api/schedule/weekly/route.ts app/api/schedule/blocked/route.ts app/api/schedule/blocked/[id]/route.ts src/lib/appointments/availability.ts src/lib/validators/schedule.ts`
+
+### Proximo passo sugerido
+
+- Cobrir a engine de disponibilidade com testes automatizados focados em expediente individual, bloqueio global, bloqueio por profissional e ranges diferentes por coluna.
+
+## 01 de abril de 2026 - Remocao do card visual de bloqueios ativos em /agendamentos
+
+### Objetivo
+
+Remover da tela de `/agendamentos` o card visual de bloqueios ativos do dia, preservando a logica de bloqueios da agenda e a indisponibilidade no backend.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+- Foi removido o bloco visual que exibia:
+  - `Bloqueios ativos em ...`
+  - texto auxiliar de indisponibilidade
+  - botao `Gerenciar bloqueios`
+  - acoes `Desbloquear` nesse card
+- O dialog de bloqueios, acessado por outros pontos da tela, foi preservado.
+- A carga de bloqueios no frontend foi mantida para sustentar o dialog existente.
+- Nenhuma regra de negocio de bloqueio foi alterada; a disponibilidade continua respeitando os horarios bloqueados no backend.
+
+### Validacao executada
+
+- `yarn eslint app/(app)/agendamentos/page.tsx`
+
+## 01 de abril de 2026 - Scroll horizontal isolado no container da agenda
+
+### Objetivo
+
+Evitar que o horizontal scroll de varias colunas de profissionais vaze para a pagina inteira de `/agendamentos`, mantendo a rolagem apenas dentro do bloco das agendas.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `app/(app)/agendamentos/components/professional-schedule-board.tsx`
+- `src/components/sidebarLayout.tsx`
+- `src/components/ui/sidebar.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+- O wrapper principal da tela passou a bloquear overflow horizontal da pagina.
+- O `ProfessionalScheduleBoard` passou a declarar largura limitada ao container (`w-full`, `min-w-0`, `max-w-full`).
+- A rolagem horizontal foi mantida apenas no container interno das colunas, com `overflow-x-auto`.
+- O shell autenticado tambem passou a usar `min-w-0` e `overflow-x-hidden`, evitando que a largura da agenda force scroll no viewport e arraste junto a faixa de filtros e CTA.
+
+### Validacao executada
+
+- `yarn eslint app/(app)/agendamentos/page.tsx app/(app)/agendamentos/components/professional-schedule-board.tsx src/components/sidebarLayout.tsx src/components/ui/sidebar.tsx`
+
+## 01 de abril de 2026 - Simplificacao do formulario de novo agendamento
+
+### Objetivo
+
+Remover os campos visiveis de telefone e e-mail do formulario principal de novo agendamento, mantendo essas informacoes apenas no modal de cadastro rapido de cliente.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+- Os campos `Telefone` e `E-mail` foram removidos da tela principal de novo agendamento.
+- O modal de novo cliente foi mantido como unico ponto visual para informar telefone e e-mail durante o cadastro rapido.
+- A logica existente de selecao de cliente e o restante do fluxo de agendamento foram preservados.
+
+### Validacao executada
+
+- `yarn eslint app/(app)/agendamentos/page.tsx`
+
+## 01 de abril de 2026 - Correcao do create manual futuro e listagem por data em /agendamentos
+
+### Objetivo
+
+Corrigir o fluxo de criacao manual para permitir agendamento em datas futuras, manter a mesma engine de disponibilidade como fonte de verdade e garantir consulta confiavel dos agendamentos por data.
+
+### Arquivos alterados
+
+- `app/api/appointments/route.ts`
+- `app/api/appointments/[id]/route.ts`
+- `app/api/appointments/availability/route.ts`
+- `src/lib/validators/appointment.ts`
+- `app/(app)/agendamentos/page.tsx`
+- `app/(app)/agendamentos/components/professional-schedule-board.tsx`
+- `app/(app)/agendamentos/components/professional-schedule-column.tsx`
+- `app/(app)/agendamentos/components/appointment-card.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Fluxo manual com payload seguro
+
+- O create manual deixou de depender de `startAt` ISO no payload e passou a trafegar `date` + `time`.
+- O modal de disponibilidade continua consultando a mesma engine central, mas agora tambem devolve `date`, `time` e `endTime` junto do slot.
+- A tela deixou de limpar o slot escolhido quando a data do modal era diferente da data selecionada na pagina; ao escolher um slot futuro, a tela sincroniza para a mesma data.
+
+#### 2. Montagem explicita de `startAt` e `endAt` no backend
+
+- `POST /api/appointments` e `PUT /api/appointments/[id]` agora montam o datetime com `combineDateKeyAndTime`, usando o timezone configurado da agenda.
+- A validacao passou a bloquear apenas horario no passado quando ha criacao ou remarcacao explicita.
+- A revalidacao final do slot continuou centralizada em `checkAvailabilityForSlot`, sem duplicar regra de disponibilidade no frontend.
+
+#### 3. Listagem por data no backend
+
+- `GET /api/appointments` agora aceita `?date=YYYY-MM-DD`.
+- A rota monta o intervalo completo do dia no timezone da agenda e consulta o Prisma por `startAt` dentro desse range.
+- A tela `/agendamentos` passou a carregar os agendamentos do dia selecionado diretamente pela API, em vez de depender apenas de filtro client-side com `new Date(iso)`.
+
+#### 4. Exibicao menos dependente do timezone do navegador
+
+- As respostas de appointments agora incluem `date`, `startTime` e `endTime`.
+- As colunas da agenda, os cards e os dialogs passaram a usar esses campos para posicionamento e exibicao do horario do dia.
+- Isso reduz o risco de a UI mostrar o agendamento no dia errado por parse local ambiguo.
+
+### Validacao executada
+
+- `yarn eslint app/api/appointments/route.ts app/api/appointments/[id]/route.ts app/api/appointments/availability/route.ts src/lib/validators/appointment.ts app/(app)/agendamentos/page.tsx app/(app)/agendamentos/components/professional-schedule-board.tsx app/(app)/agendamentos/components/professional-schedule-column.tsx app/(app)/agendamentos/components/appointment-card.tsx`
+- `yarn tsc --noEmit --pretty false --incremental false --ignoreDeprecations 5.0`
+
+### Observacoes
+
+- O `tsc` continua falhando por erros antigos fora do escopo em `.next/dev/types/validator.ts`, `app/(app)/contas-a-pagar/novo/page.tsx`, `app/(app)/usuarios/controllers/index.tsx`, `src/components/ui/app-sidebar.tsx`, `src/lib/auth-options.ts` e `src/scripts/seed.ts`.
+- A checagem de TypeScript nao apontou erro novo nos arquivos ajustados do fluxo de agendamentos.
+
+### Proximo passo sugerido
+
+- Cobrir `POST /api/appointments`, `PUT /api/appointments/[id]` e `GET /api/appointments?date=...` com testes automatizados de integracao focados em timezone e datas futuras.
+
+## 31 de marco de 2026 - Busca de clientes e desbloqueio explicito no formulario de /agendamentos
+
+### Objetivo
+
+Refinar o formulario de novo agendamento para integrar clientes existentes com boa UX, melhorar o alinhamento dos campos de contato e tornar o fluxo de bloqueio/desbloqueio da agenda claramente reversivel.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Bloco de novo agendamento mais estavel
+
+- O texto auxiliar do campo `Profissional` foi reduzido para mensagens curtas e discretas.
+- Os campos `Cliente`, `Telefone` e `E-mail` foram reorganizados para manter alinhamento melhor em larguras intermediarias e pequenas.
+
+#### 2. Busca e selecao de clientes existentes
+
+- O campo `Cliente` passou a buscar clientes reais da loja por nome ou telefone.
+- Ao selecionar um cliente existente, o formulario preenche telefone e e-mail automaticamente.
+- Quando o cliente nao e encontrado, o usuario pode abrir um cadastro rapido sem sair do agendamento.
+
+#### 3. Cadastro rapido de cliente no proprio fluxo
+
+- Foi adicionado um dialog para criar cliente diretamente da tela de agendamentos.
+- Apos salvar, o novo cliente volta selecionado no formulario atual.
+- Telefone e e-mail continuam editaveis mesmo apos a selecao do cliente.
+
+#### 4. Bloqueio e desbloqueio visiveis
+
+- A pagina passou a listar os bloqueios ativos da data selecionada.
+- Cada bloqueio mostra uma acao explicita de `Desbloquear`.
+- O dialog de bloqueio agora deixa claro quando o usuario esta criando um novo bloqueio e quando esta removendo um bloqueio existente.
+
+### Observacoes
+
+- A logica de appointments, detalhe, criacao, edicao, loading, erro e filtros foi preservada.
+- O backend existente de clientes e bloqueios foi reaproveitado sem criar endpoints novos.
+
+## 31 de marco de 2026 - Cards reintegrados a grid da coluna em /agendamentos
+
+### Objetivo
+
+Remover a sensacao de overlay sobre a tabela e fazer os agendamentos voltarem a ser itens diretos da propria grid da coluna.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/components/appointment-card.tsx`
+- `app/(app)/agendamentos/components/professional-schedule-column.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Fim da camada absoluta dos cards
+
+- Os agendamentos deixaram de ser renderizados em uma grid absoluta por cima da coluna.
+- Os cards voltaram a ser filhos diretos da mesma grid usada pela malha de horarios.
+- O alinhamento por `rowStart` e `rowSpan` foi mantido.
+
+#### 2. Aparencia mais integrada a tabela
+
+- O card teve sombra e margens suavizadas para parecer parte da estrutura da agenda.
+- A malha continua visivel como base da coluna, sem transformar o agendamento em elemento flutuante.
+
+## 31 de marco de 2026 - Cards sempre visiveis e menu funcional no topo da coluna em /agendamentos
+
+### Objetivo
+
+Corrigir a leitura dos agendamentos dentro da coluna por profissional, mantendo os cards sempre visiveis acima da malha de horarios e substituindo o topo da coluna por um unico menu funcional.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `app/(app)/agendamentos/components/appointment-card.tsx`
+- `app/(app)/agendamentos/components/appointments-page-skeleton.tsx`
+- `app/(app)/agendamentos/components/professional-column-menu.tsx`
+- `app/(app)/agendamentos/components/professional-schedule-board.tsx`
+- `app/(app)/agendamentos/components/professional-schedule-column.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Cards acima da malha, sem depender de hover
+
+- A coluna passou a usar uma camada de fundo para a malha de horarios e uma camada superior exclusiva para os cards.
+- Os agendamentos continuam alinhados pela grid de 15 minutos, mas agora ficam sempre visiveis, legiveis e clicaveis.
+- O hover virou apenas detalhe visual; o conteudo principal do card continua aparente sem interacao.
+
+#### 2. Header simplificado com menu unico
+
+- O botao grande `Bloquear` foi removido.
+- Os tres pontinhos soltos foram substituidos por um menu discreto no topo da coluna.
+- Esse menu concentra as acoes de `Bloquear horario` e `Ocultar coluna`.
+
+#### 3. Fluxo funcional para esconder e reexibir colunas
+
+- Colunas podem ser ocultadas diretamente pelo menu do profissional.
+- Quando isso acontece, a pagina exibe controles de restauracao para mostrar a coluna novamente.
+- A estrutura geral por profissional, filtros e interacoes existentes foi mantida.
+
+#### 4. Acao de bloqueio conectada ao fluxo atual
+
+- O menu abre um dialog para salvar bloqueio de horario usando a rota ja existente de bloqueios.
+- Nao foi criado backend novo nem alterada a regra de negocio de appointments.
+
+### Observacoes
+
+- Foram preservados o clique no card, o fluxo de novo agendamento, detalhes, loading, erro e empty state.
+- O ajuste foi concentrado em camada visual, UX do header e acoes locais da coluna.
+
+## 31 de marco de 2026 - Cards encaixados na malha da agenda por profissional
+
+### Objetivo
+
+Fazer os agendamentos parecerem parte da propria estrutura da coluna, trocando o overlay absoluto por uma renderizacao baseada em grid com linhas de 15 minutos.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/components/appointment-card.tsx`
+- `app/(app)/agendamentos/components/professional-schedule-board.tsx`
+- `app/(app)/agendamentos/components/professional-schedule-column.tsx`
+- `app/(app)/agendamentos/components/appointments-page-skeleton.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Coluna baseada em grade real
+
+- Cada agenda por profissional passou a ser renderizada como uma grid vertical.
+- Cada linha da grid representa 15 minutos da regua visual.
+- Os horarios continuam visiveis dentro da propria coluna, agora como parte da malha estrutural.
+
+#### 2. Agendamentos encaixados na coluna
+
+- Os cards deixaram de usar `top` e `height` absolutos.
+- Cada agendamento agora calcula `rowStart` e `rowSpan` com base no horario de inicio e fim.
+- Um agendamento de `08:30` ate `09:15` ocupa exatamente as linhas correspondentes dentro da coluna.
+
+#### 3. Aparencia menos flutuante
+
+- Os blocos agora ocupam a propria malha da agenda, em vez de parecerem sobrepostos sobre ela.
+- O skeleton foi ajustado para acompanhar a leitura em linhas regulares da nova estrutura.
+
+### Observacoes
+
+- A arquitetura por profissional foi mantida.
+- A logica existente de detalhes, criacao, edicao, loading, erro e empty state foi preservada.
+
+## 31 de marco de 2026 - Regua visual de 15 minutos com posicionamento real na agenda por profissional
+
+### Objetivo
+
+Reduzir a poluicao visual da timeline por profissional, trocando a leitura da coluna para marcacoes principais de 15 em 15 minutos sem perder o posicionamento real dos agendamentos por minuto.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/components/appointment-card.tsx`
+- `app/(app)/agendamentos/components/professional-schedule-board.tsx`
+- `app/(app)/agendamentos/components/professional-schedule-column.tsx`
+- `app/(app)/agendamentos/components/appointments-page-skeleton.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Separacao entre regua visual e calculo real
+
+- A coluna deixou de usar intervalos de 5 minutos como base visual principal.
+- A timeline passou a mostrar apenas marcacoes principais de 15 em 15 minutos.
+- O posicionamento dos cards continua sendo calculado por minuto real a partir de `startAt` e `endAt`.
+
+#### 2. Cards proporcionais ao horario real
+
+- A posicao vertical do card agora usa os minutos corridos desde o inicio do expediente.
+- A altura do card agora acompanha a duracao real do agendamento em minutos.
+- Isso permite que um bloco iniciado em `08:30` com 45 minutos termine visualmente em `09:15` sem depender do tamanho do slot visual.
+
+#### 3. Leitura mais limpa da coluna
+
+- A agenda continuou organizada em uma coluna por profissional.
+- As linhas de leitura ficaram mais espacadas e legiveis, sem a sensacao de grade excessivamente granular.
+- O loading foi ajustado para refletir a nova densidade visual da timeline.
+
+### Observacoes
+
+- A logica existente de appointments, detalhes, criacao, edicao, erro, empty state e loading foi mantida.
+- O ajuste foi restrito ao modelo visual da coluna e ao calculo de altura/posicao dos cards.
+
+## 31 de marco de 2026 - Correcao estrutural da agenda para colunas independentes por profissional
+
+### Objetivo
+
+Corrigir a implementacao da agenda diaria para abandonar a grade compartilhada e passar a renderizar uma mini agenda propria para cada profissional, lado a lado.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `app/(app)/agendamentos/components/appointment-card.tsx`
+- `app/(app)/agendamentos/components/professional-schedule-column.tsx`
+- `app/(app)/agendamentos/components/professional-schedule-board.tsx`
+- `app/(app)/agendamentos/components/appointments-page-skeleton.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Fim da malha global compartilhada
+
+- A renderizacao deixou de usar uma unica regua/grade para todos os profissionais.
+- A tela agora monta varias agendas independentes lado a lado dentro de um container com scroll horizontal.
+- Cada profissional passou a ter sua propria coluna com timeline interna.
+
+#### 2. Nova composicao em board, coluna e card
+
+- Foi criado um board horizontal para mapear e renderizar as agendas de cada profissional.
+- Cada coluna agora tem header proprio com nome, acao visual no topo e botao `Bloquear`.
+- Cada card de agendamento fica posicionado apenas dentro da agenda do profissional correspondente.
+
+#### 3. Timeline dentro da propria coluna
+
+- Os horarios agora aparecem dentro de cada coluna, seguindo intervalos regulares da timeline interna.
+- O clique em area vazia continua iniciando o fluxo existente de novo agendamento com data, horario e profissional contextualizados.
+- O clique em bloco continua abrindo o detalhe existente do agendamento.
+
+#### 4. Loading alinhado com a nova arquitetura
+
+- O skeleton de `/agendamentos` foi ajustado para abrir como conjunto de colunas-agenda independentes.
+- A leitura inicial da tela agora bate com a estrutura final da experiencia operacional.
+
+### Observacoes
+
+- A logica de carregamento, filtros, detalhes, criacao, edicao e cancelamento foi preservada.
+- A mudanca foi concentrada na arquitetura visual e na forma de renderizar a agenda por profissional.
+
+## 31 de marco de 2026 - Refinamento visual dos blocos da agenda diaria por profissional
+
+### Objetivo
+
+Aproximar os cards da grade diaria do comportamento visual de uma agenda operacional classica, com mais informacoes visiveis dentro do bloco e maior ocupacao da faixa horaria.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/components/full-calendar-view.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+- Os blocos da grade diaria ganharam altura minima maior para atravessar melhor os intervalos de horario quando necessario.
+- O card agora exibe mais informacoes dentro da propria coluna, com hierarquia visual mais forte para horario, cliente, servico e status.
+- A apresentacao ficou mais proxima de agendas operacionais de clinica/salao, onde o agendamento ocupa visualmente a faixa do horario e empurra a leitura do proximo slot para baixo.
+
+## 31 de marco de 2026 - Agenda diaria operacional por profissional em /agendamentos
+
+### Objetivo
+
+Substituir a experiencia de calendario/resumo por uma grade diaria mais operacional, com leitura imediata da ocupacao de cada profissional no dia selecionado.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `app/(app)/agendamentos/components/full-calendar-view.tsx`
+- `app/(app)/agendamentos/components/appointments-page-skeleton.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Nova visualizacao principal da agenda
+
+- A tela `/agendamentos` deixou de usar o calendario mensal como experiencia principal.
+- A visualizacao central agora mostra 1 dia por vez, com uma coluna por profissional e eixo de horarios na lateral esquerda.
+- O layout aceita scroll horizontal para varios profissionais e preserva leitura rapida de ocupacao por coluna.
+
+#### 2. Cards posicionados por horario real
+
+- Os agendamentos passaram a ser renderizados como blocos posicionados por `startAt` e `endAt`.
+- Cada card mostra horario, cliente, servico e status, mantendo o visual do projeto com variacoes discretas por status.
+- O clique no card continua abrindo o dialog de detalhes/edicao/cancelamento ja existente.
+
+#### 3. Clique em horario vazio reaproveitando o fluxo atual
+
+- Cada faixa vazia da grade pode iniciar um novo agendamento diretamente da coluna clicada.
+- O formulario existente e reutilizado, chegando pre-preenchido com data, horario e profissional quando essa informacao existe na coluna.
+- O backend e os contratos nao foram alterados; o `POST` continua revalidando a disponibilidade real com base no servico escolhido.
+
+#### 4. Loading e empty state alinhados com a nova UX
+
+- O skeleton da pagina foi refeito para parecer a nova grade diaria operacional.
+- Quando nao existem agendamentos no dia, a grade continua visivel para destacar horarios livres, com mensagem complementar de agenda vazia.
+- O tratamento de erro e o carregamento real da tela foram preservados.
+
+### Observacoes
+
+- A logica de dados, detalhes, edicao, cancelamento, listagem real e disponibilidade foi reaproveitada.
+- A mudanca foi concentrada na camada de visualizacao e na forma de iniciar o fluxo de novo agendamento a partir da grade.
+
+## 31 de marco de 2026 - CRUD real de /clientes com Prisma, API e formularios dedicados
+
+### Objetivo
+
+Transformar `/clientes` em um modulo real do sistema, reaproveitando o padrao visual e estrutural de `/usuarios` sem misturar o dominio operacional de cliente com o dominio de autenticacao.
+
+### Arquivos alterados
+
+- `prisma/schema.prisma`
+- `src/lib/validators/client.ts`
+- `app/api/clients/route.ts`
+- `app/api/clients/[id]/route.ts`
+- `app/(app)/clientes/page.tsx`
+- `app/(app)/clientes/loading.tsx`
+- `app/(app)/clientes/components/ClientForm.tsx`
+- `app/(app)/clientes/schemas/index.ts`
+- `app/(app)/clientes/novo/page.tsx`
+- `app/(app)/clientes/[id]/page.tsx`
+- `generated/prisma/*`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Dominio proprio de clientes no Prisma
+
+- Foi adicionado o model `Client` com escopo obrigatorio por `storeId`.
+- O model inclui nome, email, CPF, telefones, genero, data de nascimento, observacoes e status ativo.
+- Tambem foram adicionados indices por loja para suportar listagem e validacoes operacionais.
+
+#### 2. API real em `/api/clients`
+
+- Foi criado `GET /api/clients` com permissao minima `STAFF` para listar clientes da loja ativa.
+- Foram criados `POST`, `PUT` e `DELETE` com permissao minima `ADMIN` para criacao, atualizacao e remocao.
+- O backend protege `storeId` via sessao e valida payloads com Zod, incluindo CPF e tratamento de duplicidade por email/CPF na mesma loja.
+
+#### 3. UI de listagem e formularios no padrao da area de Usuarios
+
+- `/clientes` deixou de ser stub e passou a listar dados reais da API com loading interno, empty state e paginacao simples via `Carregar mais`.
+- Foram criadas as rotas `/clientes/novo` e `/clientes/[id]` com um `ClientForm` reutilizavel.
+- O formulario cobre criacao e edicao com mascara de CPF/telefone, selecao de genero, observacoes e chave de cliente ativo.
+
+#### 4. Geracao local do Prisma Client
+
+- O Prisma Client foi regenerado localmente para refletir o novo model `Client`.
+- Isso deixa o codigo tipado e pronto para uso assim que a migracao puder ser aplicada no banco.
+
+### Observacoes
+
+- A execucao de `prisma migrate dev` ficou bloqueada por drift ja existente entre o banco de desenvolvimento e o historico local de migrations.
+- O Prisma apontou migrations aplicadas no banco e ausentes no diretorio local, entao a aplicacao da nova migration depende de resolver esse drift antes ou de autorizar um reset do schema de desenvolvimento.
+
+## 31 de marco de 2026 - Nova rota /clientes e ajuste da sidebar
+
+### Objetivo
+
+Corrigir a navegacao lateral para separar claramente Home e Clientes, criando a rota `/clientes` com uma base visual consistente sem inventar backend novo nesta etapa.
+
+### Arquivos alterados
+
+- `app/(app)/clientes/page.tsx`
+- `src/components/ui/app-sidebar.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Ajuste da navegacao lateral
+
+- Foi adicionado um grupo `Home` no topo da sidebar apontando para `/dashboard`.
+- O item `Clientes` deixou de apontar para dashboard e passou a usar a rota correta `/clientes`.
+- A estrutura de grupos do menu foi preservada, sem refatoracao desnecessaria da sidebar.
+
+#### 2. Criacao da rota /clientes
+
+- Foi criada a pagina `app/(app)/clientes/page.tsx`.
+- A tela segue o mesmo idioma visual das listagens administrativas ja existentes no projeto.
+- A pagina abre sem erro e ja se comporta como uma tela real do sistema, mesmo sem integracao completa de dados.
+
+#### 3. Base visual inspirada em /usuarios
+
+- A nova tela usa cabecalho com acao principal, cards introdutorios e area de listagem com empty state.
+- A implementacao evita acoplar cliente a usuario onde essa regra ainda nao existe.
+- A estrutura ficou preparada para evolucao futura com busca, listagem e acoes reais quando a fonte de dados for definida.
+
+### Observacoes
+
+- Nenhum backend novo foi criado nesta etapa.
+- O foco foi rota, navegacao e consistencia visual inicial.
+
+## 31 de marco de 2026 - Padronizacao de loading nas paginas principais
+
+### Objetivo
+
+Unificar o comportamento de carregamento das paginas principais do app para usar sempre skeleton + texto curto, evitando tela em branco e eliminando fallback solto apenas com "Carregando...".
+
+### Arquivos alterados
+
+- `src/components/loading/list-page-skeleton.tsx`
+- `app/(app)/agendamentos/components/appointments-page-skeleton.tsx`
+- `app/(app)/horarios-de-atendimento/components/schedule-page-skeleton.tsx`
+- `app/(app)/usuarios/page.tsx`
+- `app/(app)/usuarios/loading.tsx`
+- `app/(app)/equipe/page.tsx`
+- `app/(app)/equipe/loading.tsx`
+- `app/(app)/eventos/page.tsx`
+- `app/(app)/eventos/loading.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Skeleton reutilizavel para telas de listagem
+
+- Foi criado um componente compartilhado para listagens administrativas com header placeholder, linhas de cards e area de acao.
+- Esse componente passou a ser reutilizado nas telas de usuarios, equipe e eventos.
+- O objetivo foi manter proporcao, espacamento e identidade visual consistentes entre paginas do painel.
+
+#### 2. Loading interno padronizado em usuarios, equipe e eventos
+
+- As paginas client-side agora usam skeleton interno no primeiro carregamento real, com a regra `loading && items.length === 0`.
+- Isso elimina o fallback simples de texto solto e evita abertura com aparencia vazia.
+- O conteudo real continua substituindo o skeleton naturalmente quando os dados chegam.
+
+#### 3. loading.tsx complementar nas rotas que faltavam
+
+- Foram adicionados `loading.tsx` para `/usuarios`, `/equipe` e `/eventos`.
+- Esses fallbacks complementam o App Router, mas nao substituem o loading interno das paginas client-side.
+- A navegacao entre rotas ficou visualmente mais consistente desde o primeiro frame.
+
+#### 4. Ajuste dos skeletons ja existentes
+
+- Os skeletons de `/agendamentos` e `/horarios-de-atendimento` passaram a exibir texto curto de carregamento.
+- O padrao visual agora segue a mesma direcao nas cinco telas prioritarias.
+- Nenhuma regra de negocio, endpoint ou fluxo operacional foi alterado.
+
+### Observacoes
+
+- O foco desta etapa foi exclusivamente a padronizacao visual de loading.
+- A implementacao reaproveita os estados de loading existentes nas paginas.
+
+## 31 de marco de 2026 - Loading visual em /agendamentos e /horarios-de-atendimento
+
+### Objetivo
+
+Evitar que as telas de agendamentos e gerenciador de horarios aparecam em branco enquanto os dados iniciais ainda estao carregando no App Router e nos controllers client-side.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/components/appointments-page-skeleton.tsx`
+- `app/(app)/agendamentos/loading.tsx`
+- `app/(app)/horarios-de-atendimento/components/schedule-page-skeleton.tsx`
+- `app/(app)/horarios-de-atendimento/loading.tsx`
+- `app/(app)/horarios-de-atendimento/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Skeleton de rota para /agendamentos
+
+- Foi criado um `loading.tsx` proprio para a rota de agendamentos.
+- O fallback replica a estrutura principal da tela, com cabecalho de filtros e area do calendario mensal.
+- Isso evita o frame inicial vazio antes da hidratacao do client component.
+
+#### 2. Skeleton de rota para /horarios-de-atendimento
+
+- Foi criado um `loading.tsx` para o gerenciador de horarios.
+- O fallback cobre tanto a semana operacional quanto a secao de bloqueios.
+- A tela passa a manter contexto visual mesmo antes do primeiro fetch ser concluido.
+
+#### 3. Skeleton interno no carregamento real dos controllers
+
+- Alem do fallback de rota, `/horarios-de-atendimento` agora mostra skeleton interno enquanto os controllers ainda nao carregaram os dados iniciais.
+- A lista de bloqueios tambem ganhou skeleton proprio quando ainda nao existem itens renderizados.
+- O resultado e uma transicao mais estavel, sem areas grandes vazias durante o carregamento.
+
+### Observacoes
+
+- A mudanca foi focada apenas em experiencia visual de loading.
+- Nenhuma regra de negocio, endpoint ou fluxo de persistencia foi alterado.
+
+## 31 de marco de 2026 - Ajuste do modal de edicao e dos breakpoints intermediarios em /agendamentos
+
+### Objetivo
+
+Corrigir o modal de edicao em telas pequenas e evitar que a grade mensal de 7 colunas continue comprimindo a leitura em larguras intermediarias como por volta de 1160px.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `app/(app)/agendamentos/components/full-calendar-view.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Modal de edicao mais estavel no mobile
+
+- O dialog de detalhes/edicao passou a respeitar melhor a largura util da viewport.
+- O rodape do modal agora empilha os botoes em telas pequenas para evitar quebra horizontal.
+- As acoes continuam lado a lado apenas quando existe espaco suficiente.
+
+#### 2. Calendario mensal com breakpoint mais conservador
+
+- A grade mensal de 7 colunas deixou de aparecer ja em larguras menores.
+- Ate telas intermediarias, a agenda permanece em cards responsivos mais legiveis.
+- A grade completa do calendario mensal fica restrita a telas maiores, onde ha espaco real para leitura.
+
+### Observacoes
+
+- O ajuste preserva toda a logica existente de sheet do dia, dialog de edicao e filtros.
+- O foco desta etapa foi somente responsividade e legibilidade.
+
+## 31 de marco de 2026 - Refino extra do mobile em /agendamentos para telas muito estreitas
+
+### Objetivo
+
+Melhorar a leitura do calendario mensal em telas menores que cerca de 420px e adicionar um atalho rapido para exibir somente os dias com agendamento.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `app/(app)/agendamentos/components/full-calendar-view.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Uma coluna em telas muito estreitas
+
+- O calendario mobile passou a usar uma unica coluna abaixo de 420px.
+- A partir desse ponto, a leitura deixa de competir com dois cards por linha.
+- Em larguras um pouco maiores, o layout continua em 2 colunas no mobile.
+
+#### 2. CTA para mostrar so dias com agendamento
+
+- Foi adicionado um CTA mobile para alternar entre todos os dias do mes e apenas os dias com agendamento.
+- Quando o filtro esta ativo, o calendario mostra somente os dias relevantes para a operacao.
+- Se nao houver resultados, a interface mostra um empty state especifico para o filtro atual.
+
+### Observacoes
+
+- O comportamento desktop segue inalterado.
+- O refinamento foi focado apenas na experiencia mobile da navegacao mensal.
+
+## 31 de marco de 2026 - Refino mobile do calendario mensal em /agendamentos
+
+### Objetivo
+
+Corrigir a leitura ruim do calendario mensal em telas pequenas, evitando a grade espremida de 7 colunas sem mexer na experiencia desktop que ja estava adequada.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/components/full-calendar-view.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Calendario mobile proprio
+
+- Em telas pequenas, o calendario mensal deixou de usar a mesma grade de 7 colunas do desktop.
+- O mobile agora renderiza os dias do mes atual em cards de 2 colunas, com leitura mais confortavel.
+- O clique no dia continua abrindo o mesmo sheet lateral com os agendamentos ordenados.
+
+#### 2. Hierarquia mais legivel no celular
+
+- Cada card mobile destaca dia da semana, numero do dia, badge de quantidade e resumo curto dos horarios.
+- O dia atual e o dia selecionado continuam com destaque visual proprio.
+- Os indicadores por status foram preservados tambem na versao mobile.
+
+### Observacoes
+
+- O desktop foi mantido sem alteracoes de comportamento.
+- O ajuste foi focado apenas na responsividade da experiencia mensal.
+
+## 31 de marco de 2026 - Refatoracao de /agendamentos para calendario mensal limpo
+
+### Objetivo
+
+Trocar a visualizacao poluida da agenda por uma experiencia mensal mais limpa, onde cada dia resume a existencia de agendamentos e o detalhe completo fica sob demanda em um painel lateral.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `app/(app)/agendamentos/components/full-calendar-view.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Calendario mensal como experiencia principal
+
+- A grade principal de `/agendamentos` deixou de exibir blocos horarios cheios na tela inicial.
+- O componente de calendario foi refeito como uma grade mensal limpa, com foco em navegacao e leitura rapida.
+- Cada dia agora destaca numero, contador de agendamentos e um resumo curto dos primeiros horarios.
+
+#### 2. Destaques visuais e navegacao por mes
+
+- O calendario passou a destacar hoje, dia selecionado e dias fora do mes atual.
+- A navegacao entre meses ficou concentrada no proprio calendario.
+- O filtro de profissional continua sendo aplicado sobre a mesma fonte real da pagina.
+
+#### 3. Detalhe do dia sob demanda em sheet lateral
+
+- O clique em qualquer dia abre um sheet lateral com os agendamentos daquele dia.
+- A lista vem em ordem cronologica e mostra horario, cliente, servico, profissional e status.
+- Dias sem agendamento tambem abrem o painel com empty state consistente.
+
+#### 4. Fluxos existentes preservados
+
+- O formulario de novo agendamento foi mantido, assim como a consulta real de disponibilidade.
+- O dialog de detalhes/edicao/remarcacao do appointment continua funcionando sobre os mesmos endpoints existentes.
+- Nao houve mudanca em persistencia, regras de disponibilidade ou APIs da agenda.
+
+### Observacoes
+
+- A refatoracao focou em layout, navegacao e legibilidade.
+- O laboratorio `/agendamentos-lab` foi mantido apenas como apoio e nao faz parte da entrega final desta etapa.
+
+## 30 de marco de 2026 - Refino estrutural do modal de agendamento
+
+### Objetivo
+
+Corrigir o modal de agendamento que estava estourando a viewport, reorganizar a experiencia em abas e trocar os fluxos de remarcacao e exclusao por alternativas mais seguras para operacao real.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Modal com altura controlada e scroll interno
+
+- O dialog passou a usar altura maxima relativa a viewport.
+- Header, corpo e rodape ficaram estruturalmente separados.
+- O conteudo interno agora rola sem jogar o modal para fora da tela.
+
+#### 2. Abas para detalhes e edicao
+
+- O conteudo foi dividido em `Detalhes` e `Editar e remarcar`.
+- Isso reduz a densidade inicial e deixa a leitura mais objetiva.
+- As acoes principais ficaram no rodape, sem alongar desnecessariamente o corpo do modal.
+
+#### 3. Remarcacao por horarios disponiveis
+
+- O campo livre de `datetime-local` foi removido do modal.
+- A remarcacao agora consulta `GET /api/appointments/availability` e permite escolher apenas slots validados.
+- O save continua usando `PUT /api/appointments/[id]`, preservando a revalidacao final no backend.
+
+#### 4. Cancelamento logico no lugar de exclusao fisica
+
+- A acao principal deixou de remover o appointment da base.
+- O modal agora envia `status = CANCELED` via `PUT`.
+- O item permanece visivel na agenda e no historico operacional com status de cancelado.
+
+### Observacoes
+
+- O backend continua sendo a fonte de verdade para disponibilidade e validacao.
+- A rota `DELETE` existente nao e mais utilizada pelo fluxo principal da agenda.
+
+## 30 de marco de 2026 - Modal de agendamento com edicao, remarcacao e exclusao
+
+### Objetivo
+
+Transformar o modal de detalhes do agendamento em um ponto de acao real, permitindo editar dados, remarcar para outra data/hora e excluir o agendamento diretamente da agenda.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `app/api/appointments/[id]/route.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Modal com modo de edicao
+
+- O modal deixou de ser apenas leitura.
+- Agora ele permite editar cliente, telefone, e-mail, servico, profissional e observacoes.
+- A remarcacao acontece no mesmo fluxo por meio do campo de data/hora.
+
+#### 2. Salvamento real
+
+- O salvamento usa `PUT /api/appointments/[id]`.
+- A lista local da agenda e o agendamento selecionado sao atualizados logo apos o retorno da API.
+- A verificacao de disponibilidade continua centralizada no backend durante a remarcacao.
+
+#### 3. Exclusao real
+
+- Foi adicionada rota `DELETE /api/appointments/[id]`.
+- O modal ganhou fluxo de confirmacao antes da exclusao.
+- Depois da exclusao, o item e removido da agenda local e o modal e fechado.
+
+### Observacoes
+
+- O backend continua validando escopo por loja e permissao administrativa.
+- A remarcacao segue respeitando a regra de disponibilidade existente.
+
+## 30 de marco de 2026 - Ajuste do wrapper desktop da agenda em /agendamentos
+
+### Objetivo
+
+Remover o padding do wrapper desktop que criava uma faixa branca em volta do calendario, mas sem perder a leitura do radius visivel na agenda.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Remocao do padding do wrapper desktop
+
+- O bloco desktop que envolve o `FullCalendarView` deixou de usar `p-4`.
+- Isso elimina a falsa borda gerada pelo espacamento interno entre wrapper e calendario.
+
+#### 2. Radius preservado no desktop
+
+- O container externo da agenda deixa de competir visualmente com o card do calendario no desktop.
+- O radius que passa a prevalecer e o do proprio componente do calendario.
+
+### Observacoes
+
+- O ajuste foi restrito ao desktop.
+- No mobile, a estrutura da secao continua a mesma.
+
+## 30 de marco de 2026 - Remocao da borda externa duplicada em /agendamentos
+
+### Objetivo
+
+Eliminar a dupla borda visivel na agenda desktop de `/agendamentos`, mantendo apenas a moldura da grade do FullCalendar.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Remocao da moldura externa
+
+- O container externo da agenda deixou de aplicar borda propria.
+- A grade do FullCalendar segue com seu contorno interno como unica borda visivel.
+- Isso reduz ruído visual e evita a sensacao de tabela com duas caixas sobrepostas.
+
+### Observacoes
+
+- Ajuste apenas visual.
+- Nenhuma regra de negocio ou interacao foi alterada.
+
+## 30 de marco de 2026 - Limpeza da area acima da grade e refinamento de contraste em /agendamentos
+
+### Objetivo
+
+Remover o bloco textual acima da grade do calendario para deixar a tela mais limpa e melhorar o contraste dos agendamentos, destacando melhor o texto com um fundo ainda mais suave.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `app/(app)/agendamentos/components/full-calendar-view.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Remocao do bloco explicativo acima da grade
+
+- A area com titulo e texto explicativo acima da tabela dos dias foi removida.
+- A tela agora entrega mais rapido o que interessa: a grade do calendario.
+
+#### 2. Contraste melhor nos eventos
+
+- O fundo dos agendamentos ficou ainda mais claro.
+- O texto principal passou a ter mais peso visual para ganhar leitura mesmo com muitos blocos na agenda.
+- O nome do profissional foi mantido, mas com hierarquia abaixo de cliente e servico.
+
+### Observacoes
+
+- O ajuste foi somente visual e de composicao da interface.
+- Nenhuma regra de negocio ou integracao foi alterada.
+
+## 30 de marco de 2026 - Definicao da view 3 dias como padrao em /agendamentos
+
+### Objetivo
+
+Assumir a visualizacao `3 dias` como modo padrao do desktop em `/agendamentos`, consolidando a decisao de usar uma grade intermediaria mais equilibrada para a operacao.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Padrao explicitado na interface
+
+- A view `3 dias` foi mantida como estado inicial da pagina.
+- O seletor visual passou a priorizar `3 dias` como primeira opcao.
+- Foi adicionado um indicativo visual de que este e o padrao atual do desktop.
+
+#### 2. Decisao consolidada
+
+- A agenda continua oferecendo `Mes`, `Dia` e `Semana` como alternativas.
+- O desktop passa a assumir `3 dias` como ponto de entrada principal para uso operacional.
+- Isso preserva contexto suficiente sem comprimir a leitura como na semana cheia.
+
+### Observacoes
+
+- Nao houve alteracao de backend, regras de negocio ou endpoints.
+- A mudanca formaliza uma escolha de UX para a tela principal de agenda.
+
+## 30 de marco de 2026 - Ajuste de densidade visual e grade de 3 dias em /agendamentos
+
+### Objetivo
+
+Reduzir o peso visual da agenda quando ha muitos agendamentos e disponibilizar uma visualizacao intermediaria de 3 dias no desktop, para comparar poucos dias lado a lado sem a carga visual da semana inteira.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/components/full-calendar-view.tsx`
+- `app/(app)/agendamentos/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Fundo dos eventos suavizado
+
+- Os blocos de agendamento deixaram de usar azul muito saturado como base principal.
+- Os eventos agora usam fundos mais claros e texto escuro nas views de grade horaria.
+- Isso melhora a leitura quando varios agendamentos ficam empilhados na tela.
+
+#### 2. Nova grade de 3 dias
+
+- Foi adicionada a opcao `3 dias` ao seletor de visualizacao desktop.
+- A agenda passa a exibir 3 colunas consecutivas a partir da data de referencia.
+- A navegacao avanca e retorna em blocos de 3 dias, o que atende bem o cenario de mostrar segunda, terca e quarta, depois seguir para os proximos dias.
+
+#### 3. Impacto funcional
+
+- Esta abordagem nao e ruim para uso operacional; ela tende a ser mais equilibrada que a semana inteira quando a agenda fica carregada.
+- O usuario ganha comparacao lateral entre dias sem comprimir demais cada coluna.
+- A view semanal continua disponivel para quando fizer sentido ver mais contexto.
+
+### Observacoes
+
+- O ajuste foi visual e de layout do calendario, sem mudanca de backend ou regra de negocio.
+- A agenda mensal e diaria continuam disponiveis junto da nova opcao `3 dias`.
+
+## 30 de marco de 2026 - Ajuste de legibilidade dos eventos em /agendamentos
+
+### Objetivo
+
+Melhorar a legibilidade das informacoes do agendamento no FullCalendar de `/agendamentos`, exibindo tambem o profissional responsavel e removendo a borda duplicada ao redor da grade.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/components/full-calendar-view.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Tipografia maior nos eventos
+
+- O horario e o nome do cliente passaram a usar fonte maior nas views de grade horaria.
+- Servico e profissional tambem foram ampliados para leitura mais confortavel.
+- Os eventos do mes receberam aumento leve de fonte para continuar legiveis sem poluir a celula.
+
+#### 2. Profissional visivel no bloco do agendamento
+
+- Os eventos agora mostram o nome do profissional responsavel quando houver espaco suficiente.
+- Na view mensal, o profissional tambem passou a aparecer de forma compacta.
+
+#### 3. Remocao da borda duplicada
+
+- A borda externa do container do calendario foi removida.
+- A grade principal passou a manter apenas o contorno necessario da propria tabela do FullCalendar.
+
+### Observacoes
+
+- O ajuste foi visual e nao mudou regras de negocio, API ou interacoes existentes.
+- A intencao foi aproximar a agenda de uma leitura operacional mais limpa, sem excesso de molduras.
+
+## 30 de marco de 2026 - Refino da visao mensal do FullCalendar em /agendamentos
+
+### Objetivo
+
+Melhorar a view mensal de `/agendamentos` para ficar mais proxima do modelo classico do print, reduzindo densidade, estabilizando a altura das celulas e limpando o visual da grade.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/components/full-calendar-view.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Celulas mensais mais estaveis
+
+- A view mensal passou a usar semanas fixas para manter a grade mais previsivel.
+- Cada celula ganhou altura fixa e alinhamento mais consistente do numero do dia.
+- O resultado reduz a sensacao de grade variavel entre meses.
+
+#### 2. Menos densidade por dia
+
+- O mes agora limita melhor a quantidade de eventos visiveis por celula.
+- Os textos dos eventos ficaram menores e mais discretos.
+- O link de excesso de eventos foi mantido como sumario curto.
+
+#### 3. Visual mais neutro
+
+- O cabecalho do mes ficou mais limpo e leve.
+- O fundo das celulas foi neutralizado para parecer mais calendario classico.
+- O destaque do dia atual foi mantido, mas com intensidade menor.
+
+### Observacoes
+
+- O ajuste foi focado na view mensal desktop.
+- Nenhuma regra de negocio, API ou dialogo do fluxo atual foi alterado.
+
+## 30 de marco de 2026 - Correcao do sync do FullCalendar e adicao da visao mensal em /agendamentos
+
+### Objetivo
+
+Remover o erro de sincronizacao do FullCalendar na tela `/agendamentos` e habilitar uma visualizacao mensal classica, no formato de calendario por dias semelhante ao print de referencia.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/components/full-calendar-view.tsx`
+- `app/(app)/agendamentos/page.tsx`
+- `package.json`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Correcao do erro de sincronizacao
+
+- A navegacao do FullCalendar deixou de depender de `gotoDate` e `changeView` imperativos dentro de efeito React.
+- O calendario agora e remontado de forma controlada a partir de `view` e `selectedDate`.
+- Isso elimina o erro de `flushSync` disparado durante a renderizacao da pagina.
+
+#### 2. Visualizacao mensal classica
+
+- Foi adicionada a view `Mes` ao seletor de visualizacao da pagina.
+- O componente passou a suportar `dayGridMonth` com layout classico por celula.
+- Os dias agora aparecem como quadrados de calendario, e os agendamentos ficam dentro de cada dia quando existirem.
+
+#### 3. Navegacao e textos ajustados
+
+- A toolbar agora trata corretamente navegacao por mes, semana e dia.
+- Headline, contadores e textos de apoio foram ajustados para refletir o modo atual.
+- O visual mensal foi aproximado do estilo simples e classico do print de referencia.
+
+### Observacoes
+
+- A view mensal foi adicionada sem alterar backend, regras de negocio ou dialogos da tela.
+- O mobile continua com a estrutura simplificada atual; a visualizacao mensal foi adicionada ao desktop.
+
+## 30 de marco de 2026 - Ajuste do FullCalendar para visual classico em /agendamentos
+
+### Objetivo
+
+Deixar os eventos do FullCalendar em `/agendamentos` mais proximos do modelo classico mostrado no print de referencia, reduzindo ornamentacao visual e aproximando o calendario da aparencia nativa esperada.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/components/full-calendar-view.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Evento com aparencia mais nativa
+
+- Os eventos deixaram de usar o card rico com badge e barra lateral.
+- O bloco agora ficou mais reto, compacto e com preenchimento azul predominante.
+- O conteudo interno foi reduzido para horario, cliente e servico quando houver altura suficiente.
+
+#### 2. Grade mais proxima do exemplo classico
+
+- As bordas e espacamentos dos eventos foram reduzidos.
+- O acabamento visual ficou mais simples e menos “cardizado”.
+- O resultado aproxima a leitura do estilo padrao que normalmente se espera em calendarios web.
+
+### Observacoes
+
+- Este ajuste mudou a estetica da visualizacao, nao a regra de negocio.
+- Nao foi adicionada view mensal nesta etapa; o foco foi aproximar o estilo visual do print dentro das views atuais da agenda.
+
+## 30 de marco de 2026 - Refino dos cards do FullCalendar em /agendamentos
+
+### Objetivo
+
+Corrigir o aspecto quebrado dos eventos na grade do FullCalendar em `/agendamentos`, deixando os agendamentos com leitura mais proxima de um calendario operacional real sem alterar backend, integracao de dados ou fluxos da pagina.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/components/full-calendar-view.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Conteudo do evento simplificado por densidade
+
+- Os cards do calendario agora se adaptam a duracoes curtas, medias e longas.
+- Eventos mais curtos mostram apenas o essencial para evitar quebra visual.
+- Eventos maiores mantem cliente, servico e profissional sem empurrar o texto para fora da area util.
+
+#### 2. Visual mais proximo de agenda real
+
+- Os chips excessivos foram reduzidos em peso visual.
+- Cada evento passou a usar uma barra lateral de destaque por status.
+- O bloco ganhou hierarquia mais clara entre horario, cliente, servico e status.
+
+#### 3. Ajuste de altura minima e acabamento
+
+- A altura minima dos eventos foi elevada para melhorar respiracao do conteudo.
+- O container do evento agora segura melhor overflow, cursor e padding internos.
+- O resultado reduz a sensacao de evento quebrado ou “esticado vazio” na grade.
+
+### Observacoes
+
+- Nao houve alteracao de API, Prisma, disponibilidade ou dialogos reais.
+- A rota-lab `/agendamentos-lab` foi mantida intacta; o ajuste foi focado apenas na tela oficial.
+
+## 30 de marco de 2026 - Laboratorio isolado /agendamentos-lab com FullCalendar Standard
+
+### Objetivo
+
+Criar uma rota separada para validar o layout e a renderizacao do FullCalendar dentro do projeto Olyon sem acoplar a POC diretamente ao fluxo real de `/agendamentos`.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos-lab/page.tsx`
+- `app/(app)/agendamentos-lab/components/calendar-lab.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Rota-lab separada da tela oficial
+
+- Foi criada a rota `/agendamentos-lab` dentro do app autenticado.
+- A pagina usa `HeaderPage`, mas nao depende da tela oficial de `/agendamentos`.
+- O objetivo e permitir teste visual do FullCalendar em ambiente controlado antes de nova integracao.
+
+#### 2. FullCalendar com dados mockados
+
+- A grade usa apenas FullCalendar Standard com `timeGridDay` e `timeGridWeek`.
+- Os eventos sao mockados localmente e distribuidos pela semana da data selecionada.
+- Nao houve integracao com `/api/appointments`, disponibilidade, modal de horarios ou backend.
+
+#### 3. Comparacao entre modo simples e modo leve
+
+- A toolbar da POC permite alternar entre renderizacao nativa do FullCalendar e uma customizacao leve de evento.
+- Isso ajuda a avaliar se o visual puro da biblioteca ja e suficiente ou se vale uma camada minima de apresentacao.
+- O clique no evento atualiza um pequeno painel-resumo local e registra o evento no console para validar interacao.
+
+#### 4. Foco exclusivo em layout desktop
+
+- A grade do FullCalendar fica ativa apenas em `lg` para cima.
+- Em telas pequenas, a rota exibe apenas um aviso de que a avaliacao foi pensada para desktop.
+- A pagina oficial `/agendamentos` nao foi retrabalhada nesta entrega.
+
+### Observacoes
+
+- Esta rota-lab nao substitui nenhum fluxo real do projeto.
+- A intencao e avaliar largura, altura, leitura da grade e aparencia dos eventos antes de decidir por integracao oficial.
+
+## 30 de marco de 2026 - Migracao desktop de /agendamentos para FullCalendar Standard
+
+### Objetivo
+
+Substituir a POC desktop anterior por uma integracao com FullCalendar Standard, validando `timeGridDay` e `timeGridWeek` com os appointments reais do projeto, sem usar recursos premium e sem quebrar filtros, criacao manual, modal de horarios, dialog de detalhes e o mobile ja aprovado.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `app/(app)/agendamentos/components/full-calendar-view.tsx`
+- `app/globals.css`
+- `global.d.ts`
+- `package.json`
+- `yarn.lock`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. FullCalendar isolado como camada visual desktop
+
+- A renderizacao desktop do calendario foi isolada em `app/(app)/agendamentos/components/full-calendar-view.tsx`.
+- A pagina principal continua dona da toolbar, filtros, formulario manual, modal de horarios e dialog de detalhes.
+- Essa separacao reduz acoplamento e deixa a POC reversivel ou substituivel no futuro.
+
+#### 2. Uso apenas de recursos gratuitos do FullCalendar
+
+- Foram adicionados apenas `@fullcalendar/react`, `@fullcalendar/core` e `@fullcalendar/timegrid`.
+- Nao foi usado nenhum recurso premium de scheduler, resource timeline, drag and drop ou resize.
+- O clique no evento continua abrindo o dialog proprio do Olyon, sem depender de modal nativo da biblioteca.
+
+#### 3. Integracao com os appointments reais do projeto
+
+- Os appointments reais de `/api/appointments` passaram a ser mapeados para eventos do FullCalendar no desktop.
+- A POC suporta alternancia entre `timeGridDay` e `timeGridWeek`, com a toolbar do Olyon controlando periodo e view.
+- Os eventos preservam `extendedProps` com dados necessarios para abrir o detalhe do agendamento.
+
+#### 4. Mobile preservado
+
+- A lista mobile existente foi mantida sem retrabalho.
+- A troca para FullCalendar acontece apenas em `lg` para cima.
+
+### Observacoes
+
+- A POC nao usa views por recurso/profissional no desktop porque isso entraria no escopo premium do ecossistema FullCalendar.
+- O `global.d.ts` continua apenas com a declaracao generica de `*.css`; a integracao atual nao precisou de workaround especifico adicional.
+
+## 30 de marco de 2026 - POC desktop de /agendamentos com Schedule-X
+
+### Objetivo
+
+Validar uma troca temporaria da camada visual desktop de `/agendamentos` para Schedule-X, usando apenas recursos gratuitos da biblioteca e preservando filtros, criacao manual, modal de horarios, dialog de detalhes e o mobile ja aprovado.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `app/(app)/agendamentos/components/schedule-x-calendar.tsx`
+- `app/globals.css`
+- `global.d.ts`
+- `package.json`
+- `yarn.lock`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Isolamento da POC em componente proprio
+
+- A renderizacao desktop do calendario foi movida para `app/(app)/agendamentos/components/schedule-x-calendar.tsx`.
+- A pagina principal continua dona da toolbar, filtros, formulario manual, modal de horarios e dialog de detalhes.
+- Essa isolacao reduz acoplamento e facilita trocar depois para FullCalendar, se necessario.
+
+#### 2. Uso apenas de recursos gratuitos do Schedule-X
+
+- Foram usados apenas os pacotes livres de `calendar`, `react`, `theme-default`, `events-service` e `calendar-controls`.
+- Nao foi habilitado plugin premium de drag and drop, resize, modal interativo ou scheduling assistant.
+- O clique no evento abre o dialog proprio do Olyon, sem depender de modal nativo premium da biblioteca.
+
+#### 3. Integracao com os appointments reais do projeto
+
+- Os appointments reais de `/api/appointments` passaram a ser mapeados para eventos do Schedule-X no desktop.
+- A POC suporta visualizacao `Dia` e `Semana`, com `Dia` como padrao.
+- A toolbar do Olyon continua controlando data, profissional e navegacao do periodo.
+
+#### 4. Mobile preservado
+
+- A lista mobile existente foi mantida sem retrabalho.
+- A troca para Schedule-X acontece apenas em `lg` para cima.
+
+### Observacoes
+
+- A POC nao usa colunas por profissional no desktop, porque isso entraria em recursos de scheduler/resource view fora do escopo gratuito adotado nesta validacao.
+- O `global.d.ts` recebeu declaracao para a importacao ESM `@schedule-x/react/dist/index`, conforme necessidade de integracao com Next.
 ## 27 de marco de 2026 - Correção do header ausente em páginas autenticadas
 
 ### Objetivo
@@ -1460,3 +3083,674 @@ Corrigir o modal de `/agendamentos` para listar todos os horarios validos da dat
 ### Resultado
 
 O modal passa a representar corretamente a agenda disponivel do dia selecionado, indo ate o ultimo slot realmente valido conforme a duracao do servico e o expediente configurado.
+
+## 30 de marco de 2026 - Fase A da agenda visual diaria em /agendamentos
+
+### Objetivo
+
+Trocar a listagem em cards de `/agendamentos` por uma agenda diaria visual, mais operacional, mantendo intacta toda a regra de negocio existente de criacao manual, disponibilidade e revalidacao final no backend.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Agenda diaria visual
+
+- A listagem anterior em cards foi substituida por uma grade vertical por horario.
+- Os appointments passaram a ser posicionados na timeline conforme `startAt` e `endAt`.
+- O bloco visual respeita melhor a duracao real do agendamento, sem antecipar o fim do intervalo na agenda.
+
+#### 2. Filtros operacionais no topo
+
+- Foi adicionado filtro de data com default em hoje.
+- Foi adicionado filtro de profissional com opcao `Todos` e itens vindos de `GET /api/team`.
+- Appointments sem profissional continuam aparecendo em `Todos` e ficam fora da agenda quando um profissional especifico e filtrado.
+
+#### 3. Percepcao de carregamento e carga inicial
+
+- A agenda ganhou skeleton proprio, separado do estado do formulario.
+- O carregamento de servicos passou a acontecer sob demanda ao abrir `Novo agendamento`.
+- A equipe continua sendo carregada separadamente para sustentar o filtro operacional e o formulario sem travar a agenda.
+
+#### 4. Formulario manual preservado
+
+- A criacao manual continua na mesma pagina.
+- O modal de horarios disponiveis foi mantido.
+- A validacao de profissional elegivel continua no frontend apenas como guia de uso.
+- A confirmacao real de disponibilidade continua centralizada no `POST /api/appointments`.
+
+#### 5. Reaproveitamento da apresentacao existente
+
+- A agenda continua usando:
+  - `getAppointmentStatusLabel`
+  - `getAppointmentSourceLabel`
+  - `formatPhone`
+- Nenhuma regra de disponibilidade foi movida para o frontend.
+
+### Validacao executada
+
+- `yarn eslint app/(app)/agendamentos/page.tsx`
+- Checagem rapida de TypeScript sem apontar erro novo em `app/(app)/agendamentos/page.tsx` dentro do projeto atual
+
+### Fora do escopo (mantido)
+
+- Sem visao semanal
+- Sem drag and drop
+- Sem edicao real
+- Sem cancelamento real
+- Sem agrupamento avancado por profissional em colunas
+- Sem refactor amplo do backend
+
+### Resultado
+
+`/agendamentos` passa a operar como uma agenda diaria visual, com leitura mais rapida da operacao do dia, filtros objetivos e o mesmo backend ja existente como fonte de verdade.
+
+## 30 de marco de 2026 - Fase B da agenda diaria em /agendamentos
+
+### Objetivo
+
+Refinar a experiencia da agenda diaria ja entregue na Fase A, melhorando a leitura dos blocos de agendamento, corrigindo a experiencia em telas pequenas e fortalecendo os estados visuais de loading sem alterar a regra de negocio existente.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Blocos da agenda mais legiveis
+
+- Os appointments da timeline ganharam hierarquia visual mais clara para horario, cliente, servico e profissional.
+- O status passou a aparecer como badge visual, com tratamento coerente por estado.
+- O card agora adapta a densidade do conteudo conforme a altura disponivel do bloco, escondendo informacoes secundarias quando o slot esta muito compacto.
+
+#### 2. Layout mobile especifico
+
+- A timeline diaria foi mantida para desktop.
+- Em telas pequenas, a agenda passa a usar uma lista do dia mais legivel e estavel visualmente.
+- O mobile preserva filtros, CTA de novo agendamento e leitura operacional do dia sem espremimento horizontal da grade.
+
+#### 3. Skeletons reais de UX
+
+- Foi adicionado skeleton para a area superior da pagina no carregamento inicial.
+- A agenda ganhou placeholders proprios para desktop e mobile.
+- O formulario de criacao manual passou a usar skeleton mais contextual quando os servicos ainda estao carregando.
+- O modal de horarios disponiveis passou a usar skeleton de slots em vez de texto seco.
+
+### Validacao executada
+
+- `yarn eslint app/(app)/agendamentos/page.tsx`
+- Checagem rapida de TypeScript sem erro novo apontado em `app/(app)/agendamentos/page.tsx`
+
+### Fora do escopo (mantido)
+
+- Sem visao semanal
+- Sem drag and drop
+- Sem edicao real
+- Sem cancelamento real
+- Sem agrupamento avancado por profissional
+- Sem alteracao da regra de disponibilidade
+- Sem refactor amplo de backend
+
+### Resultado
+
+`/agendamentos` passa a ter uma agenda diaria mais profissional, legivel e responsiva, preservando os filtros, a criacao manual e toda a logica de negocio ja validada nas fases anteriores.
+
+## 30 de marco de 2026 - Refinamento desktop dos appointment cards em /agendamentos
+
+### Objetivo
+
+Melhorar especificamente a leitura da timeline desktop de `/agendamentos`, deixando os blocos dos appointments com cara mais clara de card operacional, sem alterar mobile, regra de negocio ou arquitetura da agenda diaria.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Cards desktop mais contidos
+
+- Os blocks da timeline passaram a ocupar a coluna com mais respiro lateral.
+- O arredondamento e a sombra foram ajustados para aproximar o visual de um card real de agenda, em vez de uma barra horizontal esticada.
+- O acento lateral ganhou mais presenca visual para reforcar leitura rapida por bloco.
+
+#### 2. Hierarquia interna mais forte
+
+- O horario continua no topo como ponto de entrada visual.
+- O nome do cliente ganhou prioridade tipografica.
+- Servico e profissional passaram a aparecer como apoio em niveis secundarios.
+- O status foi reduzido para um badge mais discreto, com menos dominancia visual.
+
+#### 3. Densidade adaptativa no desktop
+
+- Blocos muito curtos exibem apenas o essencial.
+- Blocos intermediarios mantem horario, cliente, servico e status.
+- Blocos altos liberam tambem profissional, origem e telefone quando houver espaco suficiente.
+- O ajuste evita texto espremido e reduz a sensacao de corte visual dentro do card.
+
+### Validacao executada
+
+- `yarn eslint app/(app)/agendamentos/page.tsx`
+
+### Fora do escopo (mantido)
+
+- Sem alteracao do mobile
+- Sem alteracao de filtros
+- Sem alteracao da criacao manual
+- Sem alteracao do modal de horarios
+- Sem alteracao da disponibilidade
+- Sem alteracao de backend
+
+### Resultado
+
+A agenda desktop passa a ter appointments mais legiveis, compactos e operacionais, preservando toda a funcionalidade ja aprovada nas fases anteriores.
+
+## 30 de marco de 2026 - Agenda desktop operacional em /agendamentos
+
+### Objetivo
+
+Transformar os blocos da timeline desktop de `/agendamentos` em itens operacionais reais, com abertura de detalhes, remarcacao e cancelamento, sem quebrar a agenda diaria ja aprovada nem deslocar a regra de negocio para o frontend.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `app/api/appointments/[id]/route.ts`
+- `app/api/appointments/availability/route.ts`
+- `src/lib/validators/appointment.ts`
+- `src/lib/appointments/availability.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Cards desktop clicaveis
+
+- Cada appointment da timeline desktop passou a ser um item clicavel.
+- Hover, cursor e foco visual foram ajustados para deixar claro que o bloco agora e um ponto de acao.
+- O card continua mostrando horario, cliente, servico, profissional e status antes do clique.
+
+#### 2. Dialog de detalhes do appointment
+
+- O clique no bloco agora abre um dialog com os dados completos do agendamento:
+  - cliente
+  - servico
+  - profissional
+  - inicio e fim
+  - duracao
+  - status em PT-BR
+  - origem
+  - telefone
+  - e-mail
+  - observacoes
+- O dialog ganhou feedback visual de erro e sucesso para as acoes operacionais.
+
+#### 3. Edicao / remarcacao real
+
+- O botao `Editar / remarcar` do dialog reaproveita o formulario manual ja existente na propria pagina.
+- O formulario entra em modo de edicao com os dados do appointment preenchidos.
+- O save passa a usar `PUT /api/appointments/[id]`.
+- A UI atualiza a agenda local sem refresh manual e preserva filtros e data selecionada.
+
+#### 4. Cancelamento por status
+
+- O cancelamento foi implementado como `PUT` com `status = CANCELED`.
+- Nao ha exclusao fisica do registro.
+- Depois do sucesso, o appointment e atualizado localmente e o dialog reflete o novo estado.
+
+#### 5. Revalidacao de disponibilidade na remarcacao
+
+- A engine central de disponibilidade foi estendida para ignorar o proprio appointment quando a remarcacao consulta slots ou revalida o novo horario.
+- `GET /api/appointments/availability` agora aceita `excludeAppointmentId`.
+- `PUT /api/appointments/[id]` valida:
+  - loja da sessao
+  - servico da loja
+  - profissional elegivel
+  - novo horario disponivel
+  - `endAt` recalculado pela duracao do servico
+
+### Validacao executada
+
+- `yarn eslint app/(app)/agendamentos/page.tsx app/api/appointments/route.ts app/api/appointments/[id]/route.ts app/api/appointments/availability/route.ts src/lib/validators/appointment.ts src/lib/appointments/availability.ts`
+- Checagem rapida de TypeScript sem erro novo apontado nos arquivos desta entrega
+
+### Fora do escopo (mantido)
+
+- Sem visao semanal
+- Sem drag and drop
+- Sem retrabalho do mobile
+- Sem cancelamento fisico
+- Sem agrupamento avancado por profissional
+- Sem mudanca da regra de disponibilidade
+- Sem refactor amplo de backend
+
+### Resultado
+
+Os blocs da timeline desktop deixam de ser apenas preview visual e passam a funcionar como ponto principal de consulta e acao do agendamento, com detalhe, remarcacao real e cancelamento seguro via backend.
+
+## 30 de marco de 2026 - Migracao da agenda desktop para grade semanal em /agendamentos
+
+### Objetivo
+
+Substituir a estrutura desktop baseada em timeline diaria por uma grade semanal de calendario, mais adequada para leitura, distribuicao visual dos agendamentos e evolucao futura da tela operacional.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Desktop com estrutura semanal
+
+- A timeline desktop anterior foi removida.
+- A pagina agora renderiza uma grade semanal com:
+  - cabecalho por dia
+  - linhas por horario
+  - appointments posicionados na coluna correta do dia e no intervalo correto do horario
+- A semana usa a data selecionada como ancora, sem alterar o fluxo atual de filtros nem a origem dos dados.
+
+#### 2. Toolbar de calendario
+
+- Foram adicionados controles de navegacao por semana:
+  - `Semana anterior`
+  - `Hoje`
+  - `Proxima semana`
+- O topo passou a exibir o titulo da semana atual.
+- O filtro de data foi mantido como data de referencia da semana.
+- O filtro por profissional e o botao `Novo agendamento` foram preservados.
+
+#### 3. Mobile preservado
+
+- A visualizacao mobile aprovada anteriormente foi mantida sem retrabalho estrutural.
+- Apenas o desktop foi migrado para a nova base de calendario semanal.
+
+#### 4. Reaproveitamento da estrutura existente
+
+- A tela continua consumindo `GET /api/appointments`.
+- A filtragem semanal foi mantida no frontend nesta fase.
+- O dialog de detalhes do agendamento continua sendo aberto pelo clique no evento.
+- A criacao manual, o modal de horarios disponiveis e os skeletons do formulario/modal foram preservados.
+
+#### 5. Skeleton adaptado
+
+- O loading desktop foi ajustado para refletir a nova grade semanal, com cabecalho por dias e placeholder do corpo do calendario.
+
+### Validacao executada
+
+- `yarn eslint app/(app)/agendamentos/page.tsx`
+- Checagem rapida de TypeScript sem erro novo apontado em `app/(app)/agendamentos/page.tsx`
+
+### Fora do escopo (mantido)
+
+- Sem drag and drop
+- Sem resize de evento
+- Sem visao mensal
+- Sem mudanca do mobile
+- Sem alteracao da regra de disponibilidade
+- Sem refactor amplo de backend
+
+### Resultado
+
+O desktop de `/agendamentos` passa a ter uma estrutura semanal mais natural para operacao, com base visual de calendario, melhor leitura por dia e horario e mais espaco para evolucoes futuras da agenda.
+
+## 30 de marco de 2026 - Ajuste fino de largura da grade semanal desktop em /agendamentos
+
+### Objetivo
+
+Reduzir a sensacao de grade larga na agenda semanal desktop, diminuindo o scroll horizontal desnecessario e deixando os cards dos agendamentos mais proporcionais ao espaco da coluna, sem alterar a estrutura semanal recem-entregue.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Grade semanal mais compacta
+
+- A largura minima da grade desktop foi reduzida.
+- A coluna de horarios foi levemente estreitada.
+- As colunas dos dias passaram a usar um minimo menor, preservando legibilidade mas reduzindo a chance de scroll horizontal em larguras desktop comuns.
+
+#### 2. Cards com densidade horizontal menor
+
+- O card do appointment passou a usar margem lateral menor dentro da coluna.
+- Chip de horario e badge de status foram reduzidos levemente.
+- Os paddings internos foram ajustados para compactar a leitura sem esmagar o conteudo.
+
+#### 3. Skeleton alinhado com a nova largura
+
+- O skeleton desktop da agenda semanal foi ajustado para refletir a grade mais compacta, evitando discrepancia visual entre loading e estado real.
+
+### Validacao executada
+
+- `yarn eslint app/(app)/agendamentos/page.tsx`
+
+### Fora do escopo (mantido)
+
+- Sem alteracao estrutural da agenda semanal
+- Sem mudanca no mobile
+- Sem mudanca nos endpoints
+- Sem mudanca em disponibilidade
+- Sem mudanca em backend
+
+### Resultado
+
+A agenda semanal desktop fica mais densa e proporcional, com menos espaco horizontal desperdicado e menor chance de scroll desnecessario, preservando a leitura e a estrutura atual da tela.
+
+## 30 de marco de 2026 - Retorno do desktop de /agendamentos para agenda diaria operacional
+
+### Objetivo
+
+Abandonar a grade semanal como visualizacao principal do desktop e voltar para uma agenda diaria mais util para a operacao real, mantendo a base funcional ja pronta, o mobile aprovado e toda a regra de negocio existente.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Desktop voltou para o dia como foco principal
+
+- A grade semanal deixou de ser a visualizacao principal do desktop.
+- O desktop agora usa novamente uma agenda diaria com eixo vertical por horario.
+- A data selecionada voltou a ser a ancora principal da tela.
+
+#### 2. Agenda diaria por profissional
+
+- A nova visualizacao desktop passou a usar colunas por profissional quando isso faz sentido para o dia filtrado.
+- Quando o filtro esta em `Todos`, as colunas refletem os profissionais com agendamento no dia.
+- Agendamentos sem profissional continuam aparecendo em uma coluna propria quando existirem.
+- Quando um profissional especifico e filtrado, a tela reduz para uma coluna operacional daquele profissional.
+
+#### 3. Cards maiores e mais legiveis
+
+- Os appointments ficaram maiores e com mais espaco para horario, cliente, servico e profissional.
+- Telefone e origem continuam aparecendo quando a altura do bloco permite.
+- O clique no card continua abrindo o dialog de detalhes existente.
+
+#### 4. Toolbar diaria
+
+- O desktop passou a usar controles mais coerentes com a agenda do dia:
+  - `Dia anterior`
+  - `Hoje`
+  - `Proximo dia`
+- O filtro de data, o filtro por profissional e o botao `Novo agendamento` foram preservados.
+
+#### 5. Skeleton adaptado
+
+- O skeleton desktop foi ajustado para a nova agenda diaria com colunas por profissional.
+- O mobile, o formulario e o modal de horarios permanecem com a mesma estrutura aprovada.
+
+### Validacao executada
+
+- `yarn eslint app/(app)/agendamentos/page.tsx`
+- Checagem rapida de TypeScript sem erro novo apontado em `app/(app)/agendamentos/page.tsx`
+
+### Fora do escopo (mantido)
+
+- Sem drag and drop
+- Sem remarcacao por arrastar
+- Sem visao mensal
+- Sem retrabalho do mobile
+- Sem alteracao de endpoints
+- Sem alteracao da regra de disponibilidade
+
+### Resultado
+
+O desktop de `/agendamentos` volta a ter uma base visual mais adequada para a operacao do dia, com cards maiores, melhor aproveitamento do espaco e leitura mais natural para uso real.
+
+## 02 de abril de 2026 - Confirmacao obrigatoria ao criar bloqueio com appointments conflitantes
+
+### Objetivo
+
+Melhorar o fluxo de criacao de bloqueios para que o sistema nao salve bloqueio silenciosamente sobre horarios com appointments ativos e permita uma decisao explicita entre manter ou cancelar os atendimentos conflitantes.
+
+### Arquivos alterados
+
+- `app/api/schedule/blocked/route.ts`
+- `src/lib/validators/schedule.ts`
+- `app/(app)/agendamentos/page.tsx`
+- `app/(app)/horarios-de-atendimento/page.tsx`
+- `app/(app)/horarios-de-atendimento/controllers/useBlockedScheduleFormController.ts`
+- `app/(app)/horarios-de-atendimento/controllers/useBlockedScheduleListController.ts`
+- `app/(app)/horarios-de-atendimento/types.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Deteccao real de conflito no backend antes de criar o bloqueio
+
+- `POST /api/schedule/blocked` passou a montar a janela real do bloqueio com `date`, `startTime`, `endTime` e timezone da agenda.
+- A consulta agora busca appointments ativos (`SCHEDULED` e `CONFIRMED`) que interceptam a janela pedida.
+- O escopo do conflito respeita o bloqueio real:
+  - bloqueio da loja inteira: considera appointments ativos da loja
+  - bloqueio por profissional: considera apenas appointments ativos daquele profissional
+- Appointments ja cancelados ou com status finais continuam fora do conflito.
+
+#### 2. Contrato de confirmacao explicita
+
+- O schema Zod de criacao de bloqueio passou a aceitar `conflictAction`.
+- Quando ha appointments conflitantes e o payload ainda nao traz `conflictAction`, a API responde com `409` estruturado, `code = APPOINTMENT_CONFLICT_REQUIRES_CONFIRMATION`, quantidade e resumo dos appointments afetados.
+- Isso evita erro generico e impede cancelamento silencioso.
+
+#### 3. Persistencia da decisao no backend
+
+- `KEEP_EXISTING_APPOINTMENTS`:
+  - cria o bloqueio
+  - nao altera appointments existentes
+  - impede apenas novos encaixes no periodo
+- `CANCEL_CONFLICTING_APPOINTMENTS`:
+  - cria o bloqueio
+  - cancela em lote os appointments conflitantes usando o status real `CANCELED`
+  - libera a agenda para o bloqueio assumir o intervalo
+
+#### 4. Fluxo seguro na UI sem redesenhar os modais
+
+- O modal existente de bloqueio em `/agendamentos` foi preservado.
+- Quando a API retorna conflito, a tela abre um `AlertDialog` curto com as duas escolhas obrigatorias:
+  - manter atendimentos
+  - cancelar atendimentos
+- O modal de `/horarios-de-atendimento` recebeu o mesmo fluxo de confirmacao, tambem sem redesenho geral.
+
+#### 5. Preservacao de escopo por loja e por profissional
+
+- `/horarios-de-atendimento` passou a expor no proprio modal o alvo do bloqueio (`Loja inteira` ou profissional).
+- A listagem de bloqueios nessa tela agora mostra o escopo do item.
+- Os indicadores de bloqueio usados no expediente semanal passaram a considerar apenas o escopo relevante selecionado, evitando que bloqueio de um profissional polua a leitura da loja inteira ou de outro profissional.
+
+### Validacao executada
+
+- `yarn eslint app/api/schedule/blocked/route.ts src/lib/validators/schedule.ts app/(app)/agendamentos/page.tsx app/(app)/horarios-de-atendimento/page.tsx app/(app)/horarios-de-atendimento/controllers/useBlockedScheduleFormController.ts app/(app)/horarios-de-atendimento/controllers/useBlockedScheduleListController.ts app/(app)/horarios-de-atendimento/types.ts`
+- `yarn tsc --noEmit --pretty false --incremental false --ignoreDeprecations 5.0` ainda falha por erros legados fora do escopo (`.next/dev/types/validator.ts`, `.next/types/validator.ts`, `contas-a-pagar/novo`, `usuarios/controllers`, `app-sidebar`, `auth-options`, `src/scripts/seed.ts`), sem apontar erro novo nos arquivos deste ajuste
+
+### Fora do escopo (mantido)
+
+- Sem redesenho da tela de `/agendamentos`
+- Sem mudanca estrutural do modal de bloqueio fora do necessario
+- Sem alteracao do fluxo atual quando nao ha conflito
+- Sem mudanca no contrato de `storeId` vindo da sessao
+- Sem introduzir status novo para cancelamento
+
+### Resultado
+
+Criar bloqueio sobre horarios com appointments ativos agora exige confirmacao explicita, permite escolher entre manter ou cancelar os atendimentos afetados e persiste a decisao de forma segura no backend, preservando o comportamento atual quando nao existe conflito.
+
+## 02 de abril de 2026 - Ajuste fino do scroll no modal de bloqueio em /agendamentos
+
+### Objetivo
+
+Corrigir o corte dos CTAs no modal de bloqueio da agenda quando o conteudo interno cresce e o scroll passa a disputar espaco com o rodape.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+- O `DialogContent` do modal de bloqueio em `/agendamentos` passou a usar layout em coluna com altura limitada.
+- O formulario foi dividido entre:
+  - area rolavel apenas para o corpo
+  - `DialogFooter` fixo fora do scroll
+- Isso preserva o layout atual e impede que os botoes `Cancelar` e `Salvar bloqueio` fiquem cortados.
+
+### Validacao executada
+
+- `yarn eslint app/(app)/agendamentos/page.tsx`
+
+### Resultado
+
+O modal continua com o mesmo visual, mas agora o scroll ocorre apenas no corpo e o rodape permanece sempre acessivel.
+
+## 02 de abril de 2026 - Agenda publica por link da loja com disponibilidade real
+
+### Objetivo
+
+Criar um fluxo publico de agendamento online por link da loja, resolvendo a loja por `slug`, exibindo disponibilidade real e persistindo `Appointment` no banco sem depender de login.
+
+### Arquivos alterados
+
+- `src/lib/validators/appointment.ts`
+- `src/lib/appointments/create.ts`
+- `src/lib/public-booking.ts`
+- `app/api/appointments/route.ts`
+- `app/api/public/agenda/[slug]/route.ts`
+- `app/api/public/agenda/[slug]/availability/route.ts`
+- `app/api/public/agenda/[slug]/appointments/route.ts`
+- `app/agenda/[slug]/page.tsx`
+- `app/agenda/[slug]/public-booking-page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Resolucao publica da loja por slug
+
+- Foi criado um helper central para agenda publica em `src/lib/public-booking.ts`.
+- A loja publica agora e resolvida por `slug`, filtrando apenas loja ativa.
+- O helper retorna os dados publicos reais da store, servicos ativos, profissionais com servicos ativos, timezone e `todayDate`.
+
+#### 2. APIs publicas da agenda
+
+- `GET /api/public/agenda/[slug]`
+  - retorna os dados publicos reais da loja para a agenda online
+- `GET /api/public/agenda/[slug]/availability`
+  - recebe `serviceId`, `staffMembershipId` e `searchDate`
+  - reutiliza `listAvailableSlotsForDate` da engine real
+  - valida servico ativo, profissional elegivel, bloqueios, expediente, appointments e timezone
+- `POST /api/public/agenda/[slug]/appointments`
+  - recebe os dados do cliente e o slot escolhido
+  - resolve a loja pelo `slug`
+  - revalida o horario no backend antes de persistir
+  - cria `Appointment` com `source: "WEB"`
+
+#### 3. Helper compartilhado para criacao real de Appointment
+
+- A logica de create foi centralizada em `src/lib/appointments/create.ts`.
+- Esse helper reaproveita:
+  - validacao de servico ativo da loja
+  - elegibilidade do profissional para o servico
+  - timezone da agenda
+  - `checkAvailabilityForSlot` como validacao final do horario
+- O `POST /api/appointments` do painel foi ajustado para usar o mesmo helper, evitando fluxo paralelo.
+
+#### 4. Pagina publica `/agenda/[slug]`
+
+- A rota publica foi criada fora do app autenticado, sem depender do middleware de login.
+- A pagina mostra:
+  - nome da loja
+  - telefone / WhatsApp / endereco
+  - observacoes publicas da loja
+  - servicos ativos
+  - profissionais elegiveis
+  - horarios disponiveis reais
+  - formulario do cliente com nome, telefone e e-mail opcional
+- O cliente seleciona servico, profissional, data, horario e confirma o agendamento no mesmo fluxo.
+
+#### 5. Revalidacao final de horario
+
+- Mesmo depois de listar os slots, o `POST` final reexecuta a validacao de disponibilidade antes de gravar.
+- Se o slot tiver sido ocupado no intervalo entre listagem e confirmacao, a API devolve erro legivel e o agendamento nao e criado.
+
+### Validacao executada
+
+- `yarn eslint src/lib/validators/appointment.ts src/lib/appointments/create.ts src/lib/public-booking.ts app/api/appointments/route.ts app/api/public/agenda/[slug]/route.ts app/api/public/agenda/[slug]/availability/route.ts app/api/public/agenda/[slug]/appointments/route.ts app/agenda/[slug]/page.tsx app/agenda/[slug]/public-booking-page.tsx`
+- `yarn tsc --noEmit --pretty false --incremental false --ignoreDeprecations 5.0` ainda falha por erros legados fora do escopo (`.next/dev/types/validator.ts`, `.next/types/validator.ts`, `contas-a-pagar/novo`, `usuarios/controllers`, `app-sidebar`, `auth-options`, `src/scripts/seed.ts`), sem novo erro apontado nos arquivos desta feature
+
+### Fora do escopo (mantido)
+
+- Sem criar fluxo paralelo de disponibilidade
+- Sem receber `storeId` pelo frontend
+- Sem mock de horarios
+- Sem alterar o fluxo WhatsApp existente
+- Sem mexer no middleware do app autenticado
+
+### Resultado
+
+A loja agora pode compartilhar um link publico de agenda com disponibilidade real, selecao de servico e profissional e criacao final de `Appointment` com persistencia via Prisma, reaproveitando a mesma fonte de verdade de disponibilidade ja usada no sistema.
+
+## 02 de abril de 2026 - Correcao preventiva de Route Handler dinamico para Next 16
+
+### Objetivo
+
+Corrigir o handler dinamico de `app/api/admin/[id]/route.ts` para o contrato exigido pelo Next 16 e fazer uma varredura preventiva por outros casos equivalentes que pudessem quebrar o build.
+
+### Arquivos alterados
+
+- `app/api/admin/[id]/route.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Handler dinamico alinhado ao Next 16
+
+- O `PATCH` de `app/api/admin/[id]/route.ts` usava a assinatura antiga:
+  - `({ params }: { params: { id: string } })`
+- O arquivo foi ajustado para o padrao atual:
+  - `context: { params: Promise<{ id: string }> }`
+  - `const { id } = await params`
+- A logica do endpoint foi preservada; so a assinatura e o acesso ao `id` foram atualizados.
+
+#### 2. Varredura preventiva dos handlers dinamicos
+
+- Foi feita busca nos `route.ts` dinamicos em `app/api`.
+- No fonte atual, o unico caso confirmado com assinatura antiga era `app/api/admin/[id]/route.ts`.
+- Os demais handlers dinamicos ja estavam no formato compativel com `params: Promise<...>`.
+
+#### 3. Verificacao preventiva de rotas invalidas em `controllers/`
+
+- Foi feita busca por `page.tsx` em pastas `controllers`, `helpers` e `hooks`.
+- Nao ha `page.tsx` fonte ativo nesses diretorios no estado atual do workspace.
+- O erro anterior de `.next/.../equipe/controllers/page` veio de tipos gerados antigos; depois de rodar `yarn build`, esse ponto deixou de ser o bloqueio atual.
+
+#### 4. Novo proximo erro raiz confirmado
+
+- Depois da correcao do handler de admin, o `yarn build` passou a falhar no proximo arquivo raiz:
+  - `app/(app)/contas-a-pagar/novo/page.tsx:33`
+- Erro atual:
+  - `type: "EXPENSE"` nao existe em `FinanceExpenseCreatePayload`
+
+### Validacao executada
+
+- `yarn eslint app/api/admin/[id]/route.ts`
+- `yarn build`
+
+### Resultado
+
+O erro de compatibilidade do Next 16 em `app/api/admin/[id]/route.ts` foi eliminado. O build agora avanca e revela o proximo problema real do projeto em `app/(app)/contas-a-pagar/novo/page.tsx:33`, o que reduz o risco de corrigir um erro por vez sem visibilidade do gargalo seguinte.
+

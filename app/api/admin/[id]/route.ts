@@ -4,7 +4,11 @@ import { authOptions } from "@/lib/auth-options"
 import { prisma } from "@/lib/prisma"
 import { SUPER_ADMIN_ROLE } from "@/lib/auth"
 
-export async function PATCH(_req: NextRequest, { params }: { params: { id: string } }) {
+type Params = {
+  params: Promise<{ id: string }>
+}
+
+export async function PATCH(_req: NextRequest, { params }: Params) {
   const session = await getServerSession(authOptions)
   if (!session?.user) {
     return Response.json({ ok: false, message: "Unauthorized" }, { status: 401 })
@@ -13,8 +17,10 @@ export async function PATCH(_req: NextRequest, { params }: { params: { id: strin
     return Response.json({ ok: false, message: "Forbidden" }, { status: 403 })
   }
 
+  const { id } = await params
+
   const updated = await prisma.store.update({
-    where: { id: params.id },
+    where: { id },
     data: { active: false },
     select: { id: true, active: true },
   })

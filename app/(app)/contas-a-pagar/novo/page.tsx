@@ -30,7 +30,6 @@ export default function ItemNovo() {
 
   const onSubmit = async (data: FormValues) => {
     const result = await createEntry({
-      type: "EXPENSE",
       amount: Number(data.amount),
       category: data.category,
       description: data.description?.trim() ? data.description.trim() : null,
@@ -116,7 +115,13 @@ export default function ItemNovo() {
             render={({ field, fieldState }) => (
               <Field data-invalid={fieldState.invalid}>
                 <FieldLabel htmlFor="dueDate">Vencimento</FieldLabel>
-                <Input {...field} id="dueDate" type="date" aria-invalid={fieldState.invalid} />
+                <Input
+                  {...field}
+                  id="dueDate"
+                  type="date"
+                  aria-invalid={fieldState.invalid}
+                  value={field.value ?? ""}
+                />
                 {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
               </Field>
             )}

@@ -12,16 +12,23 @@ import {
   listEligibleStaffForService,
   listAvailableSlotsForDate,
 } from "@/lib/appointments/availability"
-import { getBotTimezone, getDateKeyInTimeZone } from "@/lib/bot/datetime"
+import {
+  getBotTimezone,
+  getDateKeyInTimeZone,
+  getTimeKeyInTimeZone,
+} from "@/lib/bot/datetime"
 
 function serializeSlot(slot: {
   startAt: Date
   endAt: Date
   label: string
-}) {
+}, timeZone: string) {
   return {
     startAt: slot.startAt.toISOString(),
     endAt: slot.endAt.toISOString(),
+    date: getDateKeyInTimeZone(slot.startAt, timeZone),
+    time: getTimeKeyInTimeZone(slot.startAt, timeZone),
+    endTime: getTimeKeyInTimeZone(slot.endAt, timeZone),
     label: slot.label,
   }
 }
@@ -37,6 +44,7 @@ export async function GET(req: Request) {
     const parsed = AppointmentAvailabilityQuerySchema.safeParse({
       serviceId: searchParams.get("serviceId"),
       staffMembershipId: searchParams.get("staffMembershipId"),
+      excludeAppointmentId: searchParams.get("excludeAppointmentId"),
       searchDate: searchParams.get("searchDate"),
       searchStartAt: searchParams.get("searchStartAt"),
     })
@@ -122,10 +130,11 @@ export async function GET(req: Request) {
       durationMin: service.durationMin,
       timeZone,
       staffMembershipId: resolvedStaffMembershipId,
+      excludeAppointmentId: input.excludeAppointmentId,
       notBefore: searchDate === currentDateKey ? new Date() : null,
     })
 
-    return ok(slots.map(serializeSlot))
+    return ok(slots.map((slot) => serializeSlot(slot, timeZone)))
   } catch (e) {
     console.error("[GET /api/appointments/availability]", e)
     return serverError()

@@ -31,6 +31,14 @@ export async function GET() {
             service: { select: { id: true, name: true, durationMin: true, active: true } },
           },
         },
+        professionalWeekSchedules: {
+          include: {
+            intervals: {
+              orderBy: { startTime: "asc" },
+            },
+          },
+          orderBy: { weekday: "asc" },
+        },
         types: { select: { type: true } },
       },
       orderBy: { id: "desc" },
@@ -50,6 +58,14 @@ export async function GET() {
         active: s.service.active,
       })),
       serviceIds: m.services.map((s) => s.serviceId),
+      scheduleDays: m.professionalWeekSchedules.map((day) => ({
+        weekday: day.weekday,
+        enabled: day.enabled,
+        intervals: day.intervals.map((interval) => ({
+          startTime: interval.startTime,
+          endTime: interval.endTime,
+        })),
+      })),
     }));
 
     return ok(data);

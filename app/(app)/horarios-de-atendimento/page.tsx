@@ -1,7 +1,7 @@
 "use client"
 
 import HeaderPage from "@/components/headerPage"
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Horarios from "./components/horarios"
 
 import {
@@ -11,6 +11,15 @@ import {
 } from "./controllers"
 
 import { Button } from "@/components/ui/button"
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import {
   Dialog,
   DialogContent,
@@ -29,12 +38,35 @@ import { Controller as RHFController } from "react-hook-form"
 import CalendarMultiSelect from "./components/calendar-multi-select"
 import { formatDate } from "@/lib/utils/date"
 import { getWeekdayBlockedInfo } from "./utils/blockedSchedule"
+import {
+  BlockedScheduleListSkeleton,
+  SchedulePageSkeleton,
+} from "./components/schedule-page-skeleton"
 
 const PAGE_SIZE = 10
 
+type ScheduleProfessionalOption = {
+  membershipId: string
+  name: string
+}
+
+function formatBlockedScopeLabel(item: {
+  membershipId: string | null
+  membershipName: string | null
+}) {
+  if (!item.membershipId) {
+    return "Loja inteira"
+  }
+
+  return item.membershipName ?? "Profissional selecionado"
+}
+
 export default function HorariosDeAtendimento() {
+  const [scheduleScopeMembershipId, setScheduleScopeMembershipId] = useState<string | null>(null)
+  const [scheduleProfessionals, setScheduleProfessionals] = useState<ScheduleProfessionalOption[]>([])
+
   /** controller WEEKLY (cookie-based) */
-  const weekController = useWeekScheduleFormController()
+  const weekController = useWeekScheduleFormController(scheduleScopeMembershipId)
 
   /** controller da LISTA (bloqueios) */
   const listController = useBlockedScheduleListController()
@@ -44,7 +76,17 @@ export default function HorariosDeAtendimento() {
     onSuccess: listController.refresh,
   })
 
-  const { form, onSubmit, allDay, resetForm, setEditingItem } = formController
+  const {
+    form,
+    onSubmit,
+    allDay,
+    resetForm,
+    setEditingItem,
+    submitting,
+    conflictPrompt,
+    dismissConflictPrompt,
+    confirmConflictAction,
+  } = formController
 
   const {
     items,
@@ -57,9 +99,22 @@ export default function HorariosDeAtendimento() {
   } = listController
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
 
-  const blockedInfoByWeekday = getWeekdayBlockedInfo(items)
+  const blockedItemsForSelectedScope = useMemo(
+    () =>
+      items.filter((item) => {
+        if (!scheduleScopeMembershipId) {
+          return item.membershipId === null
+        }
+
+        return item.membershipId === null || item.membershipId === scheduleScopeMembershipId
+      }),
+    [items, scheduleScopeMembershipId]
+  )
+  const blockedInfoByWeekday = getWeekdayBlockedInfo(blockedItemsForSelectedScope)
   const visibleItems = useMemo(() => items.slice(0, visibleCount), [items, visibleCount])
   const hasMoreItems = visibleItems.length < items.length
+  const showPageSkeleton =
+    weekController.initialLoading || (listController.loading && items.length === 0)
   const weekDays = [
     "Domingo",
     "Segunda",
@@ -70,6 +125,48 @@ export default function HorariosDeAtendimento() {
     "Sábado",
   ]
 
+  useEffect(() => {
+    let alive = true
+
+    async function loadProfessionals() {
+      try {
+        const response = await fetch("/api/team", { cache: "no-store" })
+        const json = await response.json()
+
+        if (!response.ok || !json?.ok) {
+          throw new Error(json?.error ?? "Falha ao carregar profissionais")
+        }
+
+        if (!alive) {
+          return
+        }
+
+        setScheduleProfessionals(
+          (json.data ?? [])
+            .map((item: { membershipId: string; name: string }) => ({
+              membershipId: item.membershipId,
+              name: item.name,
+            }))
+            .sort((left: ScheduleProfessionalOption, right: ScheduleProfessionalOption) =>
+              left.name.localeCompare(right.name, "pt-BR")
+            )
+        )
+      } catch {
+        if (!alive) {
+          return
+        }
+
+        setScheduleProfessionals([])
+      }
+    }
+
+    void loadProfessionals()
+
+    return () => {
+      alive = false
+    }
+  }, [])
+
   return (
     <>
       <HeaderPage>
@@ -78,6 +175,9 @@ export default function HorariosDeAtendimento() {
         </div>
       </HeaderPage>
 
+      {showPageSkeleton ? (
+        <SchedulePageSkeleton />
+      ) : (
       <div className="w-full max-w-5xl bg-white px-4 py-6 sm:px-6 sm:py-7">
 
       {/* ================== */}
@@ -93,6 +193,25 @@ export default function HorariosDeAtendimento() {
           Nenhuma loja selecionada. Troque/seleciona uma loja para carregar e salvar os horários.
         </div>
       )}
+
+      <div className="mb-6 grid max-w-sm gap-2">
+        <label className="text-sm font-medium text-slate-700">Escopo do expediente</label>
+        <select
+          value={scheduleScopeMembershipId ?? ""}
+          onChange={(event) => setScheduleScopeMembershipId(event.target.value || null)}
+          className="h-11 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm"
+        >
+          <option value="">Loja inteira</option>
+          {scheduleProfessionals.map((professional) => (
+            <option key={professional.membershipId} value={professional.membershipId}>
+              {professional.name}
+            </option>
+          ))}
+        </select>
+        <p className="text-xs text-slate-500">
+          Use a loja como padrão geral ou personalize o expediente de um profissional específico.
+        </p>
+      </div>
 
       <div className="gap-3">
         {weekDays.map((dayLabel, index) => {
@@ -171,6 +290,7 @@ export default function HorariosDeAtendimento() {
             open={dialogOpen}
             onOpenChange={(open) => {
               if (!open) {
+                dismissConflictPrompt()
                 closeDialog()
                 resetForm()
                 setEditingItem(null)
@@ -184,6 +304,9 @@ export default function HorariosDeAtendimento() {
                   openForCreate()
                   setEditingItem(null)
                   resetForm()
+                  form.setValue("membershipId", scheduleScopeMembershipId, {
+                    shouldDirty: false,
+                  })
                 }}
                 className="inline-flex items-center gap-1 rounded-md border px-3 py-1.5 text-xs"
               >
@@ -224,6 +347,31 @@ export default function HorariosDeAtendimento() {
 
                   {/* Horários */}
                   <div className="space-y-4 border-l pl-6">
+                    <RHFController
+                      name="membershipId"
+                      control={form.control}
+                      render={({ field }) => (
+                        <Field>
+                          <Label>Aplicar bloqueio em</Label>
+                          <select
+                            value={field.value ?? ""}
+                            onChange={(event) => field.onChange(event.target.value || null)}
+                            className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm"
+                          >
+                            <option value="">Loja inteira</option>
+                            {scheduleProfessionals.map((professional) => (
+                              <option
+                                key={professional.membershipId}
+                                value={professional.membershipId}
+                              >
+                                {professional.name}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
+                      )}
+                    />
+
                     <div className="grid gap-3 grid-cols-2">
                       <RHFController
                         name="startTime"
@@ -286,7 +434,9 @@ export default function HorariosDeAtendimento() {
                   <Button
                     type="button"
                     variant="outline"
+                    disabled={submitting}
                     onClick={() => {
+                      dismissConflictPrompt()
                       closeDialog()
                       resetForm()
                       setEditingItem(null)
@@ -294,8 +444,8 @@ export default function HorariosDeAtendimento() {
                   >
                     Cancelar
                   </Button>
-                  <Button type="submit">
-                    {editingItem ? "Salvar" : "Adicionar"}
+                  <Button type="submit" disabled={submitting}>
+                    {submitting ? "Salvando..." : editingItem ? "Salvar" : "Adicionar"}
                   </Button>
                 </DialogFooter>
               </form>
@@ -303,8 +453,68 @@ export default function HorariosDeAtendimento() {
           </Dialog>
         </div>
 
+        <AlertDialog
+          open={Boolean(conflictPrompt)}
+          onOpenChange={(open) => {
+            if (!open && !submitting) {
+              dismissConflictPrompt()
+            }
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Existem agendamentos neste periodo</AlertDialogTitle>
+              <AlertDialogDescription>
+                {conflictPrompt
+                  ? `Existem ${conflictPrompt.conflictingAppointmentsCount} agendamentos ativos neste periodo. Deseja manter esses atendimentos e bloquear apenas novos horarios, ou cancelar os atendimentos conflitantes?`
+                  : "Confirme como o bloqueio deve tratar os atendimentos existentes."}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+
+            {conflictPrompt?.conflictingAppointments.length ? (
+              <div className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                {conflictPrompt.conflictingAppointments.slice(0, 5).map((appointment) => (
+                  <div key={appointment.id} className="text-sm text-slate-700">
+                    <p className="font-medium text-slate-900">{appointment.customerName}</p>
+                    <p>
+                      {formatDate(appointment.date)} {appointment.startTime} - {appointment.endTime}
+                      {appointment.staffName ? ` / ${appointment.staffName}` : ""}
+                    </p>
+                  </div>
+                ))}
+                {conflictPrompt.conflictingAppointmentsCount > 5 ? (
+                  <p className="text-xs text-slate-500">
+                    E mais {conflictPrompt.conflictingAppointmentsCount - 5} agendamentos.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={submitting}>Voltar</AlertDialogCancel>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={submitting}
+                onClick={() => void confirmConflictAction("KEEP_EXISTING_APPOINTMENTS")}
+              >
+                Manter atendimentos
+              </Button>
+              <Button
+                type="button"
+                disabled={submitting}
+                onClick={() => void confirmConflictAction("CANCEL_CONFLICTING_APPOINTMENTS")}
+              >
+                {submitting ? "Salvando..." : "Cancelar atendimentos"}
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
         {/* Lista de bloqueios */}
-        {items.length === 0 ? (
+        {listController.loading && items.length === 0 ? (
+          <BlockedScheduleListSkeleton />
+        ) : items.length === 0 ? (
           <div className="border border-dashed p-4 text-sm text-gray-500">
             Nenhum horário bloqueado.
           </div>
@@ -320,6 +530,7 @@ export default function HorariosDeAtendimento() {
                   <div className="text-xs text-gray-500">
                     {item.allDay ? "Dia inteiro" : `${item.startTime} - ${item.endTime}`}
                   </div>
+                  <div className="text-xs text-gray-500">{formatBlockedScopeLabel(item)}</div>
                 </div>
 
                 <div className="flex flex-wrap gap-3 text-sm">
@@ -350,6 +561,7 @@ export default function HorariosDeAtendimento() {
         )}
       </div>
       </div>
+      )}
     </>
   )
 }

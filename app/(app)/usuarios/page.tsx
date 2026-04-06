@@ -7,6 +7,7 @@ import { toast } from "sonner"
 import { useSession } from "next-auth/react"
 import { Button } from "@/components/ui/button"
 import { useRouter } from "next/navigation"
+import ListPageSkeleton from "@/components/loading/list-page-skeleton"
 
 import {
   AlertDialog,
@@ -45,6 +46,7 @@ export default function UsuariosPage() {
 
   const visibleItems = useMemo(() => items.slice(0, visibleCount), [items, visibleCount])
   const hasMoreItems = visibleItems.length < items.length
+  const showInitialSkeleton = loading && items.length === 0
 
   async function loadUsers() {
     try {
@@ -105,10 +107,11 @@ export default function UsuariosPage() {
         </div>
       </HeaderPage>
 
+      {showInitialSkeleton ? (
+        <ListPageSkeleton message="Carregando usuários..." showAction={canManage} />
+      ) : (
       <div className="bg-white px-6 py-7">
-        {loading ? (
-          <div>Carregando...</div>
-        ) : items.length === 0 ? (
+        {items.length === 0 ? (
           <div>Nenhum usuário nesta loja.</div>
         ) : (
           <>
@@ -201,6 +204,7 @@ export default function UsuariosPage() {
           </>
         )}
       </div>
+      )}
     </>
   )
 }

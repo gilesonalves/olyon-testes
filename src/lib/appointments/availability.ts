@@ -16,7 +16,11 @@ import {
 
 type AvailabilityDbClient = Pick<
   PrismaClient,
-  "weekScheduleDay" | "blockedSchedule" | "appointment" | "membership"
+  | "weekScheduleDay"
+  | "membershipWeekScheduleDay"
+  | "blockedSchedule"
+  | "appointment"
+  | "membership"
 >
 
 export type EligibleStaffMember = {
@@ -95,7 +99,8 @@ type AvailabilityContext = {
   stepMin: number
   searchDays: number
   staffMembershipId: string | null
-  workingDaysByWeekday: Map<Weekday, WorkingDay>
+  storeWorkingDaysByWeekday: Map<Weekday, WorkingDay>
+  membershipWorkingDaysByWeekday: Map<Weekday, WorkingDay>
   blockedByDateKey: Map<string, BlockedWindow[]>
   appointments: AppointmentWindow[]
 }
@@ -200,6 +205,7 @@ export async function checkAvailabilityForSlot(params: {
   durationMin: number
   timeZone: string
   staffMembershipId?: string | null
+  excludeAppointmentId?: string | null
   suggestionsLimit?: number
   searchDays?: number
   stepMin?: number
@@ -218,6 +224,7 @@ export async function checkAvailabilityForSlot(params: {
     searchDays,
     stepMin,
     staffMembershipId: params.staffMembershipId ?? null,
+    excludeAppointmentId: params.excludeAppointmentId ?? null,
   })
 
   const requestedEndAt = addMinutes(params.requestedStartAt, params.durationMin)
@@ -248,6 +255,7 @@ export async function listNextAvailableSlots(params: {
   durationMin: number
   timeZone: string
   staffMembershipId?: string | null
+  excludeAppointmentId?: string | null
   searchStartAt?: Date
   limit?: number
   searchDays?: number
@@ -268,6 +276,7 @@ export async function listNextAvailableSlots(params: {
     searchDays,
     stepMin,
     staffMembershipId: params.staffMembershipId ?? null,
+    excludeAppointmentId: params.excludeAppointmentId ?? null,
   })
 
   return findSuggestedSlots(context, searchStartAt, limit)
@@ -280,6 +289,7 @@ export async function listAvailableSlotsForDate(params: {
   durationMin: number
   timeZone: string
   staffMembershipId?: string | null
+  excludeAppointmentId?: string | null
   notBefore?: Date | null
   stepMin?: number
 }) {
@@ -294,6 +304,7 @@ export async function listAvailableSlotsForDate(params: {
     searchDays: 1,
     stepMin,
     staffMembershipId: params.staffMembershipId ?? null,
+    excludeAppointmentId: params.excludeAppointmentId ?? null,
   })
 
   return findAvailableSlotsForDate({
@@ -312,6 +323,7 @@ async function buildAvailabilityContext(params: {
   searchDays: number
   stepMin: number
   staffMembershipId: string | null
+  excludeAppointmentId: string | null
 }) {
   const lastDateKey = addDaysToDateKey(params.requestedDateKey, params.searchDays - 1)
   const appointmentRangeStart = combineDateKeyAndTime(params.requestedDateKey, "00:00", params.timeZone)
@@ -320,16 +332,39 @@ async function buildAvailabilityContext(params: {
     "00:00",
     params.timeZone
   )
+  const membershipWorkingDaysPromise = params.staffMembershipId
+    ? params.db.membershipWeekScheduleDay.findMany({
+        where: { membershipId: params.staffMembershipId },
+        include: { intervals: { orderBy: { startTime: "asc" } } },
+        orderBy: { weekday: "asc" },
+      })
+    : Promise.resolve([] as Array<{
+        weekday: Weekday
+        enabled: boolean
+        intervals: Array<{
+          startTime: string
+          endTime: string
+        }>
+      }>)
 
-  const [workingDays, blockedSchedules, appointments] = await Promise.all([
+  const [storeWorkingDays, membershipWorkingDays, blockedSchedules, appointments] = await Promise.all([
     params.db.weekScheduleDay.findMany({
       where: { storeId: params.storeId },
       include: { intervals: { orderBy: { startTime: "asc" } } },
       orderBy: { weekday: "asc" },
     }),
+    membershipWorkingDaysPromise,
     params.db.blockedSchedule.findMany({
       where: {
         storeId: params.storeId,
+        ...(params.staffMembershipId
+          ? {
+              OR: [
+                { membershipId: null },
+                { membershipId: params.staffMembershipId },
+              ],
+            }
+          : { membershipId: null }),
         date: {
           gte: parseDateKeyToStoreDate(params.requestedDateKey),
           lte: parseDateKeyToStoreDate(lastDateKey),
@@ -343,6 +378,7 @@ async function buildAvailabilityContext(params: {
         status: { in: [AppointmentStatus.SCHEDULED, AppointmentStatus.CONFIRMED] },
         startAt: { lt: appointmentRangeEnd },
         endAt: { gt: appointmentRangeStart },
+        ...(params.excludeAppointmentId ? { id: { not: params.excludeAppointmentId } } : {}),
         ...(params.staffMembershipId
           ? {
               OR: [
@@ -361,8 +397,22 @@ async function buildAvailabilityContext(params: {
     }),
   ])
 
-  const workingDaysByWeekday = new Map<Weekday, WorkingDay>(
-    workingDays.map((day) => [
+  const storeWorkingDaysByWeekday = new Map<Weekday, WorkingDay>(
+    storeWorkingDays.map((day) => [
+      day.weekday,
+      {
+        weekday: day.weekday,
+        enabled: day.enabled,
+        intervals: day.intervals.map((interval) => ({
+          startTime: interval.startTime,
+          endTime: interval.endTime,
+        })),
+      },
+    ])
+  )
+
+  const membershipWorkingDaysByWeekday = new Map<Weekday, WorkingDay>(
+    membershipWorkingDays.map((day) => [
       day.weekday,
       {
         weekday: day.weekday,
@@ -378,7 +428,7 @@ async function buildAvailabilityContext(params: {
   const blockedByDateKey = new Map<string, BlockedWindow[]>()
 
   for (const blocked of blockedSchedules) {
-    const dateKey = blocked.date.toISOString().slice(0, 10)
+    const dateKey = getDateKeyInTimeZone(blocked.date, params.timeZone)
     const entries = blockedByDateKey.get(dateKey) ?? []
     entries.push({
       allDay: blocked.allDay,
@@ -395,7 +445,8 @@ async function buildAvailabilityContext(params: {
     stepMin: params.stepMin,
     searchDays: params.searchDays,
     staffMembershipId: params.staffMembershipId,
-    workingDaysByWeekday,
+    storeWorkingDaysByWeekday,
+    membershipWorkingDaysByWeekday,
     blockedByDateKey,
     appointments,
   } satisfies AvailabilityContext
@@ -407,9 +458,9 @@ function evaluateSlot(context: AvailabilityContext, startAt: Date, endAt: Date) 
   const startTimeKey = getTimeKeyInTimeZone(startAt, context.timeZone)
   const endTimeKey = getTimeKeyInTimeZone(endAt, context.timeZone)
   const weekday = getWeekdayFromDateKey(startDateKey)
-  const workingDay = context.workingDaysByWeekday.get(weekday)
+  const workingDay = getEffectiveWorkingDay(context, weekday)
 
-  if (!hasAnyEnabledWorkingDay(context.workingDaysByWeekday)) {
+  if (!hasAnyEnabledWorkingDay(context)) {
     return {
       available: false as const,
       reason: "NO_WORKING_HOURS_CONFIGURED" as const,
@@ -457,9 +508,17 @@ function evaluateSlot(context: AvailabilityContext, startAt: Date, endAt: Date) 
   }
 }
 
-function hasAnyEnabledWorkingDay(workingDaysByWeekday: Map<Weekday, WorkingDay>) {
-  for (const day of workingDaysByWeekday.values()) {
-    if (day.enabled && day.intervals.length > 0) {
+function getEffectiveWorkingDay(context: AvailabilityContext, weekday: Weekday) {
+  return (
+    context.membershipWorkingDaysByWeekday.get(weekday) ??
+    context.storeWorkingDaysByWeekday.get(weekday)
+  )
+}
+
+function hasAnyEnabledWorkingDay(context: AvailabilityContext) {
+  for (const weekday of Object.values(Weekday)) {
+    const day = getEffectiveWorkingDay(context, weekday)
+    if (day?.enabled && day.intervals.length > 0) {
       return true
     }
   }
@@ -521,7 +580,7 @@ function findAvailableSlotsForDate(params: {
   const suggestions: SuggestedSlot[] = []
   const seen = params.seen ?? new Set<string>()
   const weekday = getWeekdayFromDateKey(params.dateKey)
-  const workingDay = params.context.workingDaysByWeekday.get(weekday)
+  const workingDay = getEffectiveWorkingDay(params.context, weekday)
 
   if (!workingDay?.enabled || workingDay.intervals.length === 0) {
     return suggestions

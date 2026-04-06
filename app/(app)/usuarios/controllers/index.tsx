@@ -1,11 +1,12 @@
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useState } from "react"
 import { useFieldArray, useForm } from "react-hook-form"
+import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import * as z from "zod"
 import { maskPhone } from "@/lib/utils/maskPhone"
-import { formSchema } from "../schemas"
-import { useRouter } from "next/navigation"
+import { userFormCreateSchema as formSchema } from "../schemas"
+
 export const Controller = () => {
   type FormValues = z.input<typeof formSchema>
   const router = useRouter()
@@ -32,7 +33,7 @@ export const Controller = () => {
     },
   })
 
-  type Contact = FormValues["contacts"][number]
+  type Contact = NonNullable<FormValues["contacts"]>[number]
 
   const emptyContact: Contact = {
     name: "",

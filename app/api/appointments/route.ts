@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma"
+import { AppointmentStatus } from "../../../generated/prisma/client"
 import {
   badRequest,
   created,
@@ -8,9 +9,21 @@ import {
   unauthorized,
 } from "@/lib/api/response"
 import { requireMembershipRole } from "@/lib/guards/require-membership-role"
-import { AppointmentCreateSchema } from "@/lib/validators/appointment"
-import { checkAvailabilityForSlot } from "@/lib/appointments/availability"
-import { getBotTimezone } from "@/lib/bot/datetime"
+import {
+  AppointmentCreateSchema,
+  AppointmentListQuerySchema,
+} from "@/lib/validators/appointment"
+import {
+  AppointmentCreationError,
+  createAppointmentForStore,
+} from "@/lib/appointments/create"
+import {
+  addDaysToDateKey,
+  combineDateKeyAndTime,
+  getBotTimezone,
+  getDateKeyInTimeZone,
+  getTimeKeyInTimeZone,
+} from "@/lib/bot/datetime"
 
 function serializeAppointment(appointment: {
   id: string
@@ -35,7 +48,7 @@ function serializeAppointment(appointment: {
       name: string
     }
   } | null
-}) {
+}, timeZone: string) {
   return {
     id: appointment.id,
     customerName: appointment.customerName,
@@ -43,6 +56,9 @@ function serializeAppointment(appointment: {
     customerEmail: appointment.customerEmail,
     startAt: appointment.startAt.toISOString(),
     endAt: appointment.endAt.toISOString(),
+    date: getDateKeyInTimeZone(appointment.startAt, timeZone),
+    startTime: getTimeKeyInTimeZone(appointment.startAt, timeZone),
+    endTime: getTimeKeyInTimeZone(appointment.endAt, timeZone),
     status: appointment.status,
     source: appointment.source,
     notes: appointment.notes,
@@ -58,17 +74,57 @@ function serializeAppointment(appointment: {
   }
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
     const guard = await requireMembershipRole("STAFF")
     if (!guard.ok) {
       return guard.status === 401 ? unauthorized(guard.error) : forbidden(guard.error)
     }
 
-    const appointments = await prisma.appointment.findMany({
-      where: {
-        storeId: guard.storeId,
+    const { searchParams } = new URL(req.url)
+    const parsedQuery = AppointmentListQuerySchema.safeParse({
+      date: searchParams.get("date"),
+    })
+
+    if (!parsedQuery.success) {
+      return badRequest(
+        parsedQuery.error.issues.map((issue) => issue.message).join(" | ") || "Query invalida"
+      )
+    }
+
+    const timeZone = getBotTimezone()
+    const where: {
+      storeId: string
+      status: {
+        in: AppointmentStatus[]
+      }
+      startAt?: {
+        gte: Date
+        lte: Date
+      }
+    } = {
+      storeId: guard.storeId,
+      status: {
+        in: [AppointmentStatus.SCHEDULED, AppointmentStatus.CONFIRMED],
       },
+    }
+
+    if (parsedQuery.data.date) {
+      const dayStart = combineDateKeyAndTime(parsedQuery.data.date, "00:00", timeZone)
+      const nextDayStart = combineDateKeyAndTime(
+        addDaysToDateKey(parsedQuery.data.date, 1),
+        "00:00",
+        timeZone
+      )
+
+      where.startAt = {
+        gte: dayStart,
+        lte: new Date(nextDayStart.getTime() - 1),
+      }
+    }
+
+    const appointments = await prisma.appointment.findMany({
+      where,
       include: {
         service: {
           select: {
@@ -94,7 +150,7 @@ export async function GET() {
       ],
     })
 
-    return ok(appointments.map(serializeAppointment))
+    return ok(appointments.map((appointment) => serializeAppointment(appointment, timeZone)))
   } catch (e) {
     console.error("[GET /api/appointments]", e)
     return serverError()
@@ -118,111 +174,31 @@ export async function POST(req: Request) {
     }
 
     const input = parsed.data
-
-    const service = await prisma.service.findFirst({
-      where: {
-        id: input.serviceId,
-        storeId: guard.storeId,
-        active: true,
-      },
-      select: {
-        id: true,
-        name: true,
-        durationMin: true,
-      },
-    })
-
-    if (!service) {
-      return badRequest("Servico invalido para a loja atual.")
-    }
-
-    if (input.staffMembershipId) {
-      const eligibleStaff = await prisma.membership.findFirst({
-        where: {
-          id: input.staffMembershipId,
-          storeId: guard.storeId,
-          types: { some: { type: "PROFISSIONAL" } },
-          services: { some: { serviceId: input.serviceId } },
-        },
-        select: {
-          id: true,
-        },
-      })
-
-      if (!eligibleStaff) {
-        return badRequest("O profissional selecionado nao executa esse servico nesta loja.")
-      }
-    }
-
-    const requestedStartAt = new Date(input.startAt)
-    if (Number.isNaN(requestedStartAt.getTime())) {
-      return badRequest("Data/hora invalida.")
-    }
+    const timeZone = getBotTimezone()
 
     const createdByUser = await prisma.user.findUnique({
       where: { id: guard.userId },
       select: { name: true },
     })
 
-    const timeZone = getBotTimezone()
-
-    const availability = await checkAvailabilityForSlot({
+    const appointment = await createAppointmentForStore({
       db: prisma,
       storeId: guard.storeId,
-      requestedStartAt,
-      durationMin: service.durationMin,
-      timeZone,
-      staffMembershipId: input.staffMembershipId,
-      suggestionsLimit: 5,
-    })
-
-    if (!availability.available) {
-      return badRequest(availability.message)
-    }
-
-    const appointment = await prisma.appointment.create({
-      data: {
-        storeId: guard.storeId,
-        status: "SCHEDULED",
-        serviceId: service.id,
-        staffMembershipId: input.staffMembershipId,
-        customerName: input.customerName,
-        customerPhone: input.customerPhone ?? undefined,
-        customerEmail: input.customerEmail ?? undefined,
-        startAt: availability.startAt,
-        endAt: availability.endAt,
-        notes: input.notes ?? undefined,
-        source: "ADMIN",
-        metadata: {
-          createdBy: "panel",
-          createdByUserId: guard.userId,
-          createdByUserName: createdByUser?.name ?? null,
-          createdByRole: guard.role,
-        },
-      },
-      include: {
-        service: {
-          select: {
-            id: true,
-            name: true,
-            durationMin: true,
-          },
-        },
-        membership: {
-          select: {
-            id: true,
-            user: {
-              select: {
-                name: true,
-              },
-            },
-          },
-        },
+      input,
+      source: "ADMIN",
+      metadata: {
+        createdBy: "panel",
+        createdByUserId: guard.userId,
+        createdByUserName: createdByUser?.name ?? null,
+        createdByRole: guard.role,
       },
     })
 
-    return created(serializeAppointment(appointment))
+    return created(serializeAppointment(appointment, timeZone))
   } catch (e) {
+    if (e instanceof AppointmentCreationError) {
+      return badRequest(e.message)
+    }
     console.error("[POST /api/appointments]", e)
     return serverError()
   }

@@ -21,19 +21,32 @@ import { Select, SelectContent, SelectGroup, SelectTrigger, SelectValue } from "
 import { SelectItem } from "./select"
 import { Store } from "../../../types/store"
 
-// This is sample data.
-const data = {
+type SidebarNavItem = {
+  title: string
+  url: string
+  isActive?: boolean
+}
+
+type SidebarNavGroup = {
+  title: string
+  url: string
+  items: SidebarNavItem[]
+}
+
+const data: {
+  versions: string[]
+  navMain: SidebarNavGroup[]
+} = {
   versions: ["1.0.1", "1.1.0-alpha", "2.0.0-beta1"],
   navMain: [
     {
-      title: "Eventos",
+      title: "Home",
       url: "#",
       items: [
         {
-          title: "Tipos de eventos",
-          url: "/eventos",
+          title: "Home",
+          url: "/dashboard",
         },
-
       ],
     },
     {
@@ -99,7 +112,7 @@ const data = {
         },
         {
           title: "Clientes",
-          url: "/",
+          url: "/clientes",
         },
 
       ],
