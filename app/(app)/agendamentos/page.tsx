@@ -22,15 +22,29 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Textarea } from "@/components/ui/textarea"
 import {
+  APPOINTMENT_STATUS_FILTER_OPTIONS,
+  getAppointmentDisplayStatus,
+  getAppointmentStatusTone,
   getAppointmentSourceLabel,
   getAppointmentStatusLabel,
+  type AppointmentStatusFilterValue,
+  type AppointmentStatusValue,
 } from "@/lib/appointments/presentation"
 import { ClientCreateApiSchema } from "@/lib/validators/client"
 import { formatPhone, maskPhone, normalizePhone } from "@/lib/utils/maskPhone"
+import { cn } from "@/lib/utils"
 import AppointmentsPageSkeleton from "./components/appointments-page-skeleton"
+import AppointmentStatusMenu from "./components/appointment-status-menu"
 import ProfessionalScheduleBoard from "./components/professional-schedule-board"
 import {
   type EmptySlotSelection,
@@ -93,6 +107,7 @@ type ApiSuccess<T> = {
 type ApiError = {
   ok: false
   error: string
+  message?: string
 }
 
 type AppointmentUpdatePayload = {
@@ -105,7 +120,20 @@ type AppointmentUpdatePayload = {
   time?: string
   allowPastScheduling?: boolean
   notes?: string | null
-  status?: string
+  status?: AppointmentStatusValue
+}
+
+type AppointmentCreatePayload = {
+  serviceId: string
+  staffMembershipId?: string
+  customerName: string
+  customerPhone?: string
+  customerEmail?: string
+  date: string
+  time: string
+  allowPastScheduling: boolean
+  allowConflict?: boolean
+  notes?: string
 }
 
 type AppointmentClientOption = {
@@ -158,6 +186,35 @@ type ConflictingAppointmentSummary = {
   staffName: string | null
 }
 
+type AppointmentConflictDetails = {
+  requiresConfirmation: boolean
+  canOverride: boolean
+  reason: "APPOINTMENT_CONFLICT"
+  requestedSlot: AvailabilitySlot
+  conflictingAppointmentsCount: number
+  conflictingAppointments: ConflictingAppointmentSummary[]
+  suggestions: AvailabilitySlot[]
+}
+
+type AppointmentCreateConflictError = {
+  ok: false
+  error?: string
+  message?: string
+  code?: string
+  details?: AppointmentConflictDetails
+}
+
+type AppointmentSlotValidationResult = {
+  available: boolean
+  canOverride: boolean
+  reason: "NO_WORKING_HOURS_CONFIGURED" | "OUTSIDE_WORKING_HOURS" | "BLOCKED" | "APPOINTMENT_CONFLICT" | null
+  message: string | null
+  slot: AvailabilitySlot
+  suggestions: AvailabilitySlot[]
+  conflictingAppointmentsCount: number
+  conflictingAppointments: ConflictingAppointmentSummary[]
+}
+
 type BlockConflictDetails = {
   requiresConfirmation: boolean
   conflictActionOptions: BlockConflictAction[]
@@ -193,15 +250,19 @@ type WorkingHoursRange = {
   endMinutes: number
 }
 
-type ScheduleDayConfig = {
-  hasExplicitConfig: boolean
-  range: WorkingHoursRange | null
-}
-
 type BlockScope = "STORE" | "PROFESSIONAL"
-const ACTIVE_APPOINTMENT_STATUSES = new Set(["SCHEDULED", "CONFIRMED"])
 const BLOCK_CONFLICT_REQUIRES_CONFIRMATION_CODE =
   "APPOINTMENT_CONFLICT_REQUIRES_CONFIRMATION"
+const MANUAL_APPOINTMENT_CONFLICT_REQUIRES_CONFIRMATION_CODE =
+  "MANUAL_APPOINTMENT_CONFLICT_REQUIRES_CONFIRMATION"
+const EMPTY_SERVICE_SELECT_VALUE = "__empty_service__"
+const EMPTY_STAFF_SELECT_VALUE = "__empty_staff__"
+
+type AgendaSelectOption = {
+  value: string
+  label: string
+  disabled?: boolean
+}
 
 function parseDateKey(value: string) {
   return new Date(`${value}T12:00:00`)
@@ -238,12 +299,23 @@ function getMinutesFromTimeKey(value: string) {
 function getWorkingHoursRangeFromDay(
   day: WeekScheduleDayItem | null | undefined
 ): WorkingHoursRange | null {
-  if (!day?.enabled || day.intervals.length === 0) {
+  return getWorkingHoursRangeFromIntervals(
+    day?.enabled ? day.intervals : []
+  )
+}
+
+function getWorkingHoursRangeFromIntervals(
+  intervals: Array<{
+    startTime: string
+    endTime: string
+  }>
+): WorkingHoursRange | null {
+  if (intervals.length === 0) {
     return null
   }
 
-  const starts = day.intervals.map((interval) => getMinutesFromTimeKey(interval.startTime))
-  const ends = day.intervals.map((interval) => getMinutesFromTimeKey(interval.endTime))
+  const starts = intervals.map((interval) => getMinutesFromTimeKey(interval.startTime))
+  const ends = intervals.map((interval) => getMinutesFromTimeKey(interval.endTime))
 
   return {
     startMinutes: Math.min(...starts),
@@ -251,24 +323,63 @@ function getWorkingHoursRangeFromDay(
   }
 }
 
-function getScheduleDayConfig(
-  scheduleDays: WeekScheduleDayItem[] | undefined,
+function getEffectiveProfessionalIntervals(
+  professionalScheduleDays: WeekScheduleDayItem[] | undefined,
+  storeScheduleDays: WeekScheduleDayItem[] | undefined,
   dateKey: string
-): ScheduleDayConfig {
+): Array<{ startTime: string; endTime: string }> {
   const weekday = getWeekdayCodeFromDateKey(dateKey)
-  const day = scheduleDays?.find((item) => item.weekday === weekday)
+  const professionalDay = professionalScheduleDays?.find((item) => item.weekday === weekday)
+  const storeDay = storeScheduleDays?.find((item) => item.weekday === weekday)
 
-  if (!day) {
-    return {
-      hasExplicitConfig: false,
-      range: null,
+  if (!professionalDay?.enabled || professionalDay.intervals.length === 0) {
+    return []
+  }
+
+  if (!storeDay?.enabled || storeDay.intervals.length === 0) {
+    return []
+  }
+
+  const intersections: Array<{ startTime: string; endTime: string }> = []
+
+  for (const professionalInterval of professionalDay.intervals) {
+    const professionalStart = getMinutesFromTimeKey(professionalInterval.startTime)
+    const professionalEnd = getMinutesFromTimeKey(professionalInterval.endTime)
+
+    for (const storeInterval of storeDay.intervals) {
+      const storeStart = getMinutesFromTimeKey(storeInterval.startTime)
+      const storeEnd = getMinutesFromTimeKey(storeInterval.endTime)
+      const startMinutes = Math.max(professionalStart, storeStart)
+      const endMinutes = Math.min(professionalEnd, storeEnd)
+
+      if (startMinutes < endMinutes) {
+        intersections.push({
+          startTime: `${String(Math.floor(startMinutes / 60)).padStart(2, "0")}:${String(startMinutes % 60).padStart(2, "0")}`,
+          endTime: `${String(Math.floor(endMinutes / 60)).padStart(2, "0")}:${String(endMinutes % 60).padStart(2, "0")}`,
+        })
+      }
     }
   }
 
-  return {
-    hasExplicitConfig: true,
-    range: getWorkingHoursRangeFromDay(day),
-  }
+  return intersections
+}
+
+function getProfessionalOwnWorkingHoursRange(
+  scheduleDays: WeekScheduleDayItem[] | undefined,
+  storeScheduleDays: WeekScheduleDayItem[] | undefined,
+  dateKey: string
+) {
+  return getWorkingHoursRangeFromIntervals(
+    getEffectiveProfessionalIntervals(scheduleDays, storeScheduleDays, dateKey)
+  )
+}
+
+function hasProfessionalOwnWorkingHoursRange(
+  scheduleDays: WeekScheduleDayItem[] | undefined,
+  storeScheduleDays: WeekScheduleDayItem[] | undefined,
+  dateKey: string
+) {
+  return Boolean(getProfessionalOwnWorkingHoursRange(scheduleDays, storeScheduleDays, dateKey))
 }
 
 function formatTimeRange(startTime: string, endTime: string) {
@@ -297,6 +408,87 @@ function formatConflictingAppointmentLabel(item: ConflictingAppointmentSummary) 
 
 function sortClientsByName(items: ClientItem[]) {
   return [...items].sort((left, right) => left.name.localeCompare(right.name, "pt-BR"))
+}
+
+function AgendaSelectField({
+  value,
+  onValueChange,
+  options,
+  placeholder,
+  disabled = false,
+  triggerClassName,
+  contentClassName,
+}: {
+  value?: string
+  onValueChange: (value: string) => void
+  options: AgendaSelectOption[]
+  placeholder?: string
+  disabled?: boolean
+  triggerClassName?: string
+  contentClassName?: string
+}) {
+  return (
+    <Select value={value} onValueChange={onValueChange} disabled={disabled}>
+      <SelectTrigger
+        className={cn(
+          "h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-left text-sm text-slate-700 shadow-sm",
+          triggerClassName
+        )}
+      >
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent
+        align="start"
+        sideOffset={6}
+        className={cn(
+          "max-h-72 rounded-2xl border-slate-200 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.12)]",
+          contentClassName
+        )}
+      >
+        {options.map((option) => (
+          <SelectItem
+            key={option.value}
+            value={option.value}
+            disabled={option.disabled}
+            className="rounded-xl px-3 py-2.5 text-sm text-slate-700 data-[state=checked]:bg-slate-100 data-[state=checked]:text-slate-900"
+          >
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+}
+
+function getAppointmentCustomerDisplayName(value: string | null | undefined) {
+  const normalizedValue = value?.trim()
+  return normalizedValue ? normalizedValue : "Cliente sem nome"
+}
+
+function areAvailabilitySlotsEqual(
+  left: AvailabilitySlot | null,
+  right: AvailabilitySlot | null
+) {
+  if (!left || !right) {
+    return left === right
+  }
+
+  return (
+    left.startAt === right.startAt &&
+    left.endAt === right.endAt &&
+    left.date === right.date &&
+    left.time === right.time &&
+    left.endTime === right.endTime &&
+    left.label === right.label
+  )
+}
+
+async function readJsonSafely<T>(response: Response) {
+  try {
+    return (await response.json()) as T
+  } catch {
+    return null
+  }
 }
 
 function AppointmentClientPicker({
@@ -460,18 +652,25 @@ function AppointmentDetailsDialog({
   onOpenChange,
   services,
   team,
+  storeScheduleDays,
   servicesLoading,
   onSave,
   onCancel,
+  onStatusChange,
 }: {
   appointment: AppointmentItem | null
   open: boolean
   onOpenChange: (value: boolean) => void
   services: ServiceItem[]
   team: TeamItem[]
+  storeScheduleDays: WeekScheduleDayItem[]
   servicesLoading: boolean
   onSave: (appointmentId: string, payload: AppointmentUpdatePayload) => Promise<void>
   onCancel: (appointmentId: string) => Promise<void>
+  onStatusChange: (
+    appointmentId: string,
+    status: AppointmentStatusValue
+  ) => Promise<void>
 }) {
   const [activeTab, setActiveTab] = useState<"details" | "edit">("details")
   const [isSaving, setIsSaving] = useState(false)
@@ -500,8 +699,16 @@ function AppointmentDetailsDialog({
       return []
     }
 
-    return team.filter((member) => member.serviceIds.includes(serviceId))
-  }, [serviceId, team])
+    return team.filter(
+      (member) =>
+        member.serviceIds.includes(serviceId) &&
+        hasProfessionalOwnWorkingHoursRange(
+          member.scheduleDays,
+          storeScheduleDays,
+          slotSearchDate
+        )
+    )
+  }, [serviceId, slotSearchDate, storeScheduleDays, team])
 
   useEffect(() => {
     if (!appointment) {
@@ -555,8 +762,17 @@ function AppointmentDetailsDialog({
   }
 
   const appointmentId = appointment.id
+  const customerDisplayName = getAppointmentCustomerDisplayName(appointment.customerName)
+  const displayStatus = getAppointmentDisplayStatus(appointment.status, {
+    endAt: appointment.endAt,
+  })
   const formattedPhone = formatPhone(appointment.customerPhone)
   const isCanceled = appointment.status === "CANCELED"
+  const displayStatusTone = getAppointmentStatusTone(appointment.status, {
+    endAt: appointment.endAt,
+  })
+  const persistedStatusTone = getAppointmentStatusTone(appointment.status)
+  const isFinalStatus = persistedStatusTone.final
   const scheduleLabel = selectedRescheduleSlot
     ? selectedRescheduleSlot.label
     : `${formatDateLabel(appointment.date)} • ${formatTimeRange(
@@ -575,7 +791,7 @@ function AppointmentDetailsDialog({
     if (eligibleTeam.length === 0) {
       return {
         ok: false as const,
-        error: "Nao ha profissional elegivel para este servico.",
+        error: "Nao ha profissional elegivel com expediente proprio valido para este servico nesta data.",
       }
     }
 
@@ -701,9 +917,12 @@ function AppointmentDetailsDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[calc(100vh-1rem)] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] flex-col overflow-hidden p-0 md:max-w-3xl xl:max-w-4xl">
         <DialogHeader className="border-b border-slate-200 px-5 py-4 pr-14 sm:px-6">
-          <DialogTitle>{appointment.customerName}</DialogTitle>
+          <DialogTitle>{customerDisplayName}</DialogTitle>
           <DialogDescription>
-            {formatTimeRange(appointment.startTime, appointment.endTime)} • {getAppointmentStatusLabel(appointment.status)}
+            {formatTimeRange(appointment.startTime, appointment.endTime)} •{" "}
+            {getAppointmentStatusLabel(appointment.status, {
+              endAt: appointment.endAt,
+            })}
           </DialogDescription>
         </DialogHeader>
 
@@ -753,13 +972,15 @@ function AppointmentDetailsDialog({
                 <div className="grid gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2 xl:grid-cols-3">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Cliente</p>
-                    <p className="mt-1 text-base font-medium text-slate-900">{appointment.customerName}</p>
+                    <p className="mt-1 text-base font-medium text-slate-900">{customerDisplayName}</p>
                   </div>
 
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Status</p>
-                    <p className="mt-1 text-base font-medium text-slate-900">
-                      {getAppointmentStatusLabel(appointment.status)}
+                    <p className={`mt-1 inline-flex rounded-full border px-3 py-1 text-sm font-semibold ${displayStatusTone.badge}`}>
+                      {getAppointmentStatusLabel(appointment.status, {
+                        endAt: appointment.endAt,
+                      })}
                     </p>
                   </div>
 
@@ -827,6 +1048,24 @@ function AppointmentDetailsDialog({
                   </p>
                 </div>
 
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Acoes rapidas</p>
+                      <p className="mt-1 text-sm text-slate-600">
+                        Atualize o status real sem editar o restante do agendamento.
+                      </p>
+                    </div>
+
+                    <AppointmentStatusMenu
+                      currentStatus={displayStatus}
+                      buttonLabel="Atualizar status"
+                      onStatusChange={(status) => onStatusChange(appointmentId, status)}
+                      disabled={isSaving || isCanceling}
+                    />
+                  </div>
+                </div>
+
                 {confirmCancel ? (
                   <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700">
                     <p>Cancelar este agendamento? O registro continua na agenda com status de cancelado.</p>
@@ -861,46 +1100,57 @@ function AppointmentDetailsDialog({
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Status atual</p>
                     <p className="mt-2 text-base font-medium text-slate-900">
-                      {getAppointmentStatusLabel(appointment.status)}
+                      {getAppointmentStatusLabel(appointment.status, {
+                        endAt: appointment.endAt,
+                      })}
                     </p>
                   </div>
 
                   <div className="grid gap-2">
                     <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Servico</label>
-                    <select
-                      value={serviceId}
-                      onChange={(event) => setServiceId(event.target.value)}
-                      className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900"
+                    <AgendaSelectField
+                      value={serviceId || EMPTY_SERVICE_SELECT_VALUE}
+                      onValueChange={(value) =>
+                        setServiceId(
+                          value === EMPTY_SERVICE_SELECT_VALUE ? "" : value
+                        )
+                      }
                       disabled={servicesLoading}
-                    >
-                      <option value="">Selecione</option>
-                      {activeServices.map((service) => (
-                        <option key={service.id} value={service.id}>
-                          {service.name} ({service.durationMin} min)
-                        </option>
-                      ))}
-                    </select>
+                      options={[
+                        { value: EMPTY_SERVICE_SELECT_VALUE, label: "Selecione" },
+                        ...activeServices.map((service) => ({
+                          value: service.id,
+                          label: `${service.name} (${service.durationMin} min)`,
+                        })),
+                      ]}
+                    />
                   </div>
 
                   <div className="grid gap-2">
                     <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Profissional</label>
-                    <select
-                      value={staffMembershipId}
-                      onChange={(event) => setStaffMembershipId(event.target.value)}
-                      className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900"
+                    <AgendaSelectField
+                      value={staffMembershipId || EMPTY_STAFF_SELECT_VALUE}
+                      onValueChange={(value) =>
+                        setStaffMembershipId(
+                          value === EMPTY_STAFF_SELECT_VALUE ? "" : value
+                        )
+                      }
                       disabled={!serviceId}
-                    >
-                      <option value="">Sem preferencia</option>
-                      {eligibleTeam.map((member) => (
-                        <option key={member.membershipId} value={member.membershipId}>
-                          {member.name}
-                        </option>
-                      ))}
-                    </select>
+                      options={[
+                        {
+                          value: EMPTY_STAFF_SELECT_VALUE,
+                          label: "Sem preferencia",
+                        },
+                        ...eligibleTeam.map((member) => ({
+                          value: member.membershipId,
+                          label: member.name,
+                        })),
+                      ]}
+                    />
                     {!serviceId ? (
                       <p className="text-xs text-slate-500">Selecione um servico para liberar a equipe.</p>
                     ) : eligibleTeam.length === 0 ? (
-                      <p className="text-xs text-amber-700">Nenhum profissional elegivel foi encontrado para este servico.</p>
+                      <p className="text-xs text-amber-700">Nenhum profissional com expediente proprio valido foi encontrado para este servico nesta data.</p>
                     ) : null}
                   </div>
 
@@ -1036,7 +1286,7 @@ function AppointmentDetailsDialog({
                 <Button type="button" variant="primary" onClick={() => setActiveTab("edit")} className="w-full sm:w-auto">
                   Editar e remarcar
                 </Button>
-                {!isCanceled && !confirmCancel ? (
+                {!isFinalStatus && !confirmCancel ? (
                   <Button
                     type="button"
                     variant="destructive"
@@ -1064,7 +1314,7 @@ function AppointmentDetailsDialog({
                 >
                   {isSaving ? "Salvando..." : "Salvar alteracoes"}
                 </Button>
-                {!isCanceled ? (
+                {!isFinalStatus ? (
                   <Button
                     type="button"
                     variant="destructive"
@@ -1097,6 +1347,7 @@ export default function AgendamentosPage() {
 
   const [appointmentsLoading, setAppointmentsLoading] = useState(true)
   const [teamLoading, setTeamLoading] = useState(true)
+  const [weeklyScheduleLoading, setWeeklyScheduleLoading] = useState(true)
   const [servicesLoading, setServicesLoading] = useState(false)
   const [servicesLoaded, setServicesLoaded] = useState(false)
   const [clientsLoading, setClientsLoading] = useState(false)
@@ -1110,6 +1361,8 @@ export default function AgendamentosPage() {
 
   const [selectedDate, setSelectedDate] = useState(getTodayDateValue)
   const [selectedProfessionalFilter, setSelectedProfessionalFilter] = useState("all")
+  const [selectedStatusFilter, setSelectedStatusFilter] =
+    useState<AppointmentStatusFilterValue>("all")
 
   const [saving, setSaving] = useState(false)
   const [showForm, setShowForm] = useState(false)
@@ -1132,6 +1385,13 @@ export default function AgendamentosPage() {
   const [availabilityError, setAvailabilityError] = useState<string | null>(null)
   const [availabilitySlots, setAvailabilitySlots] = useState<AvailabilitySlot[]>([])
   const [slotSearchDate, setSlotSearchDate] = useState(getTodayDateValue)
+  const [slotValidation, setSlotValidation] = useState<AppointmentSlotValidationResult | null>(null)
+  const [slotValidationLoading, setSlotValidationLoading] = useState(false)
+  const [conflictOverrideConfirmed, setConflictOverrideConfirmed] = useState(false)
+  const [appointmentConflictPrompt, setAppointmentConflictPrompt] =
+    useState<AppointmentConflictDetails | null>(null)
+  const [pendingCreatePayload, setPendingCreatePayload] =
+    useState<AppointmentCreatePayload | null>(null)
 
   const [selectedAppointment, setSelectedAppointment] = useState<AppointmentItem | null>(null)
   const [detailsOpen, setDetailsOpen] = useState(false)
@@ -1154,21 +1414,66 @@ export default function AgendamentosPage() {
   const [newClientEmail, setNewClientEmail] = useState("")
   const [newClientSubmitting, setNewClientSubmitting] = useState(false)
   const [newClientError, setNewClientError] = useState<string | null>(null)
-  const skipSlotResetRef = useRef(false)
+  const slotValidationRequestRef = useRef(0)
 
   const sortedTeam = useMemo(
     () => [...team].sort((left, right) => left.name.localeCompare(right.name, "pt-BR")),
     [team]
   )
 
+  const formReferenceDate = useMemo(
+    () => (allowPastScheduling ? manualAppointmentDate : selectedSlot?.date ?? selectedDate),
+    [allowPastScheduling, manualAppointmentDate, selectedDate, selectedSlot]
+  )
+
+  const professionalsWithOwnScheduleOnSelectedDate = useMemo(
+    () =>
+      sortedTeam.filter((member) =>
+        hasProfessionalOwnWorkingHoursRange(
+          member.scheduleDays,
+          weeklySchedule,
+          selectedDate
+        )
+      ),
+    [selectedDate, sortedTeam, weeklySchedule]
+  )
+
   const eligibleTeam = useMemo(() => {
     if (!serviceId) return []
-    return sortedTeam.filter((member) => member.serviceIds.includes(serviceId))
-  }, [serviceId, sortedTeam])
+    return sortedTeam.filter(
+      (member) =>
+        member.serviceIds.includes(serviceId) &&
+        hasProfessionalOwnWorkingHoursRange(
+          member.scheduleDays,
+          weeklySchedule,
+          formReferenceDate
+        )
+    )
+  }, [formReferenceDate, serviceId, sortedTeam, weeklySchedule])
 
   const selectedStaffMember = useMemo(
     () => sortedTeam.find((member) => member.membershipId === staffMembershipId) ?? null,
     [sortedTeam, staffMembershipId]
+  )
+
+  const selectedFilteredProfessional = useMemo(
+    () =>
+      selectedProfessionalFilter === "all"
+        ? null
+        : sortedTeam.find((member) => member.membershipId === selectedProfessionalFilter) ?? null,
+    [selectedProfessionalFilter, sortedTeam]
+  )
+
+  const selectedFilteredProfessionalHasOwnSchedule = useMemo(
+    () =>
+      selectedFilteredProfessional
+        ? hasProfessionalOwnWorkingHoursRange(
+            selectedFilteredProfessional.scheduleDays,
+            weeklySchedule,
+            selectedDate
+          )
+        : false,
+    [selectedDate, selectedFilteredProfessional, weeklySchedule]
   )
 
   const availableServicesForForm = useMemo(() => {
@@ -1243,18 +1548,23 @@ export default function AgendamentosPage() {
   const filteredAppointments = useMemo(() => {
     return appointments
       .filter((appointment) => {
-        if (!ACTIVE_APPOINTMENT_STATUSES.has(appointment.status)) {
-          return false
-        }
+        const displayStatus = getAppointmentDisplayStatus(appointment.status, {
+          endAt: appointment.endAt,
+        })
 
         if (selectedProfessionalFilter === "all") {
-          return true
+          return selectedStatusFilter === "all" || displayStatus === selectedStatusFilter
         }
 
-        return appointment.staff?.membershipId === selectedProfessionalFilter
+        const matchesProfessional =
+          appointment.staff?.membershipId === selectedProfessionalFilter
+        const matchesStatus =
+          selectedStatusFilter === "all" || displayStatus === selectedStatusFilter
+
+        return matchesProfessional && matchesStatus
       })
       .sort((left, right) => left.startAt.localeCompare(right.startAt))
-  }, [appointments, selectedProfessionalFilter])
+  }, [appointments, selectedProfessionalFilter, selectedStatusFilter])
 
   const selectedDayAppointments = useMemo(() => {
     return filteredAppointments
@@ -1278,52 +1588,33 @@ export default function AgendamentosPage() {
   )
 
   const visibleStaffColumns = useMemo<ProfessionalColumnItem[]>(() => {
-    const baseColumns: ProfessionalColumnItem[] =
+    const eligibleProfessionals =
       selectedProfessionalFilter === "all"
-        ? sortedTeam.map((member) => {
-            const professionalSchedule = getScheduleDayConfig(member.scheduleDays, selectedDate)
-            const effectiveWorkingHoursRange = professionalSchedule.hasExplicitConfig
-              ? professionalSchedule.range
-              : selectedDayWorkingHoursRange
-            const displayWorkingHoursRange = professionalSchedule.hasExplicitConfig
-              ? professionalSchedule.range
-              : (selectedDayWorkingHoursRange ?? fallbackWorkingHoursRange)
+        ? professionalsWithOwnScheduleOnSelectedDate
+        : professionalsWithOwnScheduleOnSelectedDate.filter(
+            (member) => member.membershipId === selectedProfessionalFilter
+          )
 
-            return {
-              membershipId: member.membershipId,
-              name: member.name,
-              workingHoursRange: displayWorkingHoursRange,
-              canCreateAppointments: Boolean(effectiveWorkingHoursRange),
-              blockedSchedules: blockedSchedules.filter(
-                (item) =>
-                  item.date === selectedDate &&
-                  (item.membershipId === null || item.membershipId === member.membershipId)
-              ),
-            }
-          })
-        : sortedTeam
-            .filter((member) => member.membershipId === selectedProfessionalFilter)
-            .map((member) => {
-              const professionalSchedule = getScheduleDayConfig(member.scheduleDays, selectedDate)
-              const effectiveWorkingHoursRange = professionalSchedule.hasExplicitConfig
-                ? professionalSchedule.range
-                : selectedDayWorkingHoursRange
-              const displayWorkingHoursRange = professionalSchedule.hasExplicitConfig
-                ? professionalSchedule.range
-                : (selectedDayWorkingHoursRange ?? fallbackWorkingHoursRange)
+    const baseColumns: ProfessionalColumnItem[] =
+      eligibleProfessionals.map((member) => {
+        const professionalWorkingHoursRange = getProfessionalOwnWorkingHoursRange(
+          member.scheduleDays,
+          weeklySchedule,
+          selectedDate
+        )
 
-              return {
-                membershipId: member.membershipId,
-                name: member.name,
-                workingHoursRange: displayWorkingHoursRange,
-                canCreateAppointments: Boolean(effectiveWorkingHoursRange),
-                blockedSchedules: blockedSchedules.filter(
-                  (item) =>
-                    item.date === selectedDate &&
-                    (item.membershipId === null || item.membershipId === member.membershipId)
-                ),
-              }
-            })
+        return {
+          membershipId: member.membershipId,
+          name: member.name,
+          workingHoursRange: professionalWorkingHoursRange,
+          canCreateAppointments: Boolean(professionalWorkingHoursRange),
+          blockedSchedules: blockedSchedules.filter(
+            (item) =>
+              item.date === selectedDate &&
+              (item.membershipId === null || item.membershipId === member.membershipId)
+          ),
+        }
+      })
 
     if (showUnassignedColumn) {
       baseColumns.push({
@@ -1340,12 +1631,13 @@ export default function AgendamentosPage() {
   }, [
     blockedSchedules,
     fallbackWorkingHoursRange,
+    professionalsWithOwnScheduleOnSelectedDate,
     selectedDate,
     selectedDateStoreBlockedSchedules,
     selectedDayWorkingHoursRange,
     selectedProfessionalFilter,
     showUnassignedColumn,
-    sortedTeam,
+    weeklySchedule,
   ])
 
   useEffect(() => {
@@ -1372,11 +1664,33 @@ export default function AgendamentosPage() {
     [hiddenProfessionalIds, visibleStaffColumns]
   )
 
-  const renderedColumnsHaveConfiguredWorkingHours = useMemo(
-    () => renderedStaffColumns.some((professional) => professional.canCreateAppointments),
-    [renderedStaffColumns]
-  )
+  const scheduleBoardEmptyMessage = useMemo(() => {
+    if (
+      selectedProfessionalFilter !== "all" &&
+      selectedFilteredProfessional &&
+      !selectedFilteredProfessionalHasOwnSchedule
+    ) {
+      return `${selectedFilteredProfessional.name} nao possui expediente proprio configurado dentro do horario da loja para esta data. Configure o expediente do profissional para exibi-lo na agenda.`
+    }
 
+    if (
+      selectedProfessionalFilter === "all" &&
+      visibleStaffColumns.length === 0 &&
+      !showUnassignedColumn
+    ) {
+      return "Nenhum profissional possui expediente proprio configurado dentro do horario da loja para esta data."
+    }
+
+    return undefined
+  }, [
+    selectedFilteredProfessional,
+    selectedFilteredProfessionalHasOwnSchedule,
+    selectedProfessionalFilter,
+    showUnassignedColumn,
+    visibleStaffColumns.length,
+  ])
+
+  const scheduleBoardLoading = appointmentsLoading || teamLoading || weeklyScheduleLoading
   const showInitialPageSkeleton = appointmentsLoading && appointments.length === 0
 
   const blockTargetMembershipId = useMemo(() => {
@@ -1508,6 +1822,8 @@ export default function AgendamentosPage() {
   }, [])
 
   const loadWeeklySchedule = useCallback(async () => {
+    setWeeklyScheduleLoading(true)
+
     try {
       const response = await fetch("/api/schedule/weekly", { cache: "no-store" })
       const json = (await response.json()) as ApiSuccess<WeekScheduleResponse> | { ok: false; message?: string }
@@ -1519,6 +1835,8 @@ export default function AgendamentosPage() {
       setWeeklySchedule(json.data.days)
     } catch {
       setWeeklySchedule([])
+    } finally {
+      setWeeklyScheduleLoading(false)
     }
   }, [])
 
@@ -1584,15 +1902,6 @@ export default function AgendamentosPage() {
   }, [serviceId, staffMembershipId, eligibleTeam, staffLockedFromGrid])
 
   useEffect(() => {
-    if (skipSlotResetRef.current) {
-      skipSlotResetRef.current = false
-      return
-    }
-
-    setSelectedSlot(null)
-  }, [serviceId, staffMembershipId])
-
-  useEffect(() => {
     if (!serviceId) {
       return
     }
@@ -1642,6 +1951,34 @@ export default function AgendamentosPage() {
     [appointments, ensureFormDependencies]
   )
 
+  const handleAppointmentStatusChange = useCallback(
+    async (appointmentId: string, status: AppointmentStatusValue) => {
+      const response = await fetch(`/api/appointments/${appointmentId}/status`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ status }),
+      })
+
+      const json = (await response.json()) as ApiSuccess<AppointmentItem> | ApiError
+
+      if (!response.ok || !json.ok) {
+        throw new Error(json.ok ? "Nao foi possivel atualizar o status." : json.error)
+      }
+
+      setAppointments((current) =>
+        current
+          .map((appointment) => (appointment.id === appointmentId ? json.data : appointment))
+          .sort((left, right) => left.startTime.localeCompare(right.startTime))
+      )
+      setSelectedAppointment((current) =>
+        current?.id === appointmentId ? json.data : current
+      )
+    },
+    []
+  )
+
   const handleAppointmentSaved = useCallback(
     async (appointmentId: string, payload: AppointmentUpdatePayload) => {
       const response = await fetch(`/api/appointments/${appointmentId}`, {
@@ -1658,15 +1995,14 @@ export default function AgendamentosPage() {
         throw new Error(json.ok ? "Nao foi possivel salvar o agendamento." : json.error)
       }
 
-      const isActiveAppointment = ACTIVE_APPOINTMENT_STATUSES.has(json.data.status)
-
       setAppointments((current) => {
-        if (json.data.date !== selectedDate || !isActiveAppointment) {
-          return current.filter((appointment) => appointment.id !== appointmentId)
+        const remainingAppointments = current.filter((appointment) => appointment.id !== appointmentId)
+
+        if (json.data.date !== selectedDate) {
+          return remainingAppointments
         }
 
-        return current
-          .map((appointment) => (appointment.id === appointmentId ? json.data : appointment))
+        return [...remainingAppointments, json.data]
           .sort((left, right) => left.startTime.localeCompare(right.startTime))
       })
       setSelectedAppointment(json.data)
@@ -1682,11 +2018,9 @@ export default function AgendamentosPage() {
 
   const handleAppointmentCanceled = useCallback(
     async (appointmentId: string) => {
-      await handleAppointmentSaved(appointmentId, {
-        status: "CANCELED",
-      })
+      await handleAppointmentStatusChange(appointmentId, "CANCELED")
     },
-    [handleAppointmentSaved]
+    [handleAppointmentStatusChange]
   )
 
   function resetForm() {
@@ -1706,6 +2040,11 @@ export default function AgendamentosPage() {
     setAvailabilityError(null)
     setAvailabilitySlots([])
     setSlotSearchDate(selectedDate)
+    setSlotValidation(null)
+    setSlotValidationLoading(false)
+    setConflictOverrideConfirmed(false)
+    setAppointmentConflictPrompt(null)
+    setPendingCreatePayload(null)
     setFormError(null)
     setNewClientError(null)
     setNewClientOpen(false)
@@ -1720,10 +2059,12 @@ export default function AgendamentosPage() {
   }
 
   function handleServiceChange(nextServiceId: string) {
+    setFormError(null)
     setServiceId(nextServiceId)
   }
 
   function handleStaffChange(nextStaffMembershipId: string) {
+    setFormError(null)
     setStaffMembershipId(nextStaffMembershipId)
   }
 
@@ -1760,7 +2101,6 @@ export default function AgendamentosPage() {
 
   const handleGridEmptySlotClick = useCallback(
     async (slot: EmptySlotSelection) => {
-      skipSlotResetRef.current = true
       setShowForm(true)
       setAvailabilityOpen(false)
       setFormError(null)
@@ -1772,6 +2112,11 @@ export default function AgendamentosPage() {
       setNotes("")
       setAvailabilitySlots([])
       setAvailabilityError(null)
+      setSlotValidation(null)
+      setSlotValidationLoading(false)
+      setConflictOverrideConfirmed(false)
+      setAppointmentConflictPrompt(null)
+      setPendingCreatePayload(null)
       setNewClientError(null)
       setNewClientOpen(false)
       setSelectedSlot(slot)
@@ -1798,7 +2143,7 @@ export default function AgendamentosPage() {
     if (eligibleTeam.length === 0) {
       return {
         ok: false as const,
-        error: "Nao ha profissional elegivel para este servico.",
+        error: "Nao ha profissional elegivel com expediente proprio para este servico nesta data.",
       }
     }
 
@@ -1858,6 +2203,178 @@ export default function AgendamentosPage() {
     }
   }, [])
 
+  const fetchSelectedSlotValidation = useCallback(async (params: {
+    serviceId: string
+    staffMembershipId: string
+    startAt: string
+  }) => {
+    const query = new URLSearchParams({
+      serviceId: params.serviceId,
+      staffMembershipId: params.staffMembershipId,
+      searchStartAt: params.startAt,
+      validateSelection: "true",
+    })
+
+    const response = await fetch(`/api/appointments/availability?${query.toString()}`, {
+      cache: "no-store",
+    })
+
+    const json = await readJsonSafely<
+      | ApiSuccess<AppointmentSlotValidationResult>
+      | ApiError
+    >(response)
+
+    if (!json) {
+      throw new Error(
+        response.status === 500
+          ? "Erro interno do servidor."
+          : "Nao foi possivel validar o horario."
+      )
+    }
+
+    if (!response.ok || !json.ok) {
+      throw new Error(json.ok ? "Nao foi possivel validar o horario." : json.error)
+    }
+
+    return json.data
+  }, [])
+
+  useEffect(() => {
+    if (!selectedSlot || allowPastScheduling || !serviceId) {
+      setSlotValidation(null)
+      setSlotValidationLoading(false)
+      setConflictOverrideConfirmed(false)
+      setAppointmentConflictPrompt(null)
+      setPendingCreatePayload(null)
+      return
+    }
+
+    const resolvedStaff = resolveAvailabilityStaff()
+    if (!resolvedStaff.ok) {
+      setSlotValidation(null)
+      setSlotValidationLoading(false)
+      setConflictOverrideConfirmed(false)
+      setAppointmentConflictPrompt(null)
+      setPendingCreatePayload(null)
+      return
+    }
+
+    if (resolvedStaff.autoSelected && staffMembershipId !== resolvedStaff.staffMembershipId) {
+      setStaffMembershipId(resolvedStaff.staffMembershipId)
+      return
+    }
+
+    const requestId = slotValidationRequestRef.current + 1
+    slotValidationRequestRef.current = requestId
+    setSlotValidationLoading(true)
+    setConflictOverrideConfirmed(false)
+    setAppointmentConflictPrompt(null)
+    setPendingCreatePayload(null)
+
+    void fetchSelectedSlotValidation({
+      serviceId,
+      staffMembershipId: resolvedStaff.staffMembershipId,
+      startAt: selectedSlot.startAt,
+    })
+      .then((result) => {
+        if (slotValidationRequestRef.current !== requestId) {
+          return
+        }
+
+        setSelectedSlot((current) =>
+          areAvailabilitySlotsEqual(current, result.slot) ? current : result.slot
+        )
+        setSlotValidation(result.available ? null : result)
+      })
+      .catch((cause) => {
+        if (slotValidationRequestRef.current !== requestId) {
+          return
+        }
+
+        setSlotValidation({
+          available: false,
+          canOverride: false,
+          reason: null,
+          message:
+            cause instanceof Error ? cause.message : "Nao foi possivel validar o horario.",
+          slot: selectedSlot,
+          suggestions: [],
+          conflictingAppointmentsCount: 0,
+          conflictingAppointments: [],
+        })
+      })
+      .finally(() => {
+        if (slotValidationRequestRef.current === requestId) {
+          setSlotValidationLoading(false)
+        }
+      })
+  }, [
+    allowPastScheduling,
+    fetchSelectedSlotValidation,
+    resolveAvailabilityStaff,
+    selectedSlot,
+    serviceId,
+    staffMembershipId,
+  ])
+
+  async function submitCreateAppointmentPayload(payload: AppointmentCreatePayload) {
+    const response = await fetch("/api/appointments", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    })
+
+    const json = await readJsonSafely<
+      | ApiSuccess<AppointmentItem>
+      | AppointmentCreateConflictError
+      | ApiError
+    >(response)
+
+    if (!json) {
+      throw new Error(
+        response.status === 500
+          ? "Erro interno do servidor."
+          : "Nao foi possivel criar o agendamento."
+      )
+    }
+
+    if (
+      response.status === 409 &&
+      !json.ok &&
+      json.code === MANUAL_APPOINTMENT_CONFLICT_REQUIRES_CONFIRMATION_CODE &&
+      json.details?.requiresConfirmation
+    ) {
+      setPendingCreatePayload(payload)
+      setAppointmentConflictPrompt(json.details)
+      return { requiresConfirmation: true as const }
+    }
+
+    if (!response.ok || !json.ok) {
+      throw new Error(
+        json.ok
+          ? "Nao foi possivel criar o agendamento."
+          : (json.message ?? json.error ?? "Nao foi possivel criar o agendamento.")
+      )
+    }
+
+    setAppointments((current) =>
+      json.data.date === selectedDate
+        ? [...current, json.data].sort((left, right) => left.startTime.localeCompare(right.startTime))
+        : [json.data]
+    )
+
+    handleSelectedDateChange(json.data.date)
+    resetForm()
+    setShowForm(false)
+
+    return {
+      requiresConfirmation: false as const,
+      appointment: json.data,
+    }
+  }
+
   async function openAvailabilityModal() {
     setFormError(null)
 
@@ -1913,83 +2430,125 @@ export default function AgendamentosPage() {
     })
   }, [availabilityOpen, slotSearchDate, serviceId, fetchAvailability, resolveAvailabilityStaff])
 
+  function buildCreateAppointmentPayload(): AppointmentCreatePayload {
+    if (!serviceId) {
+      throw new Error("Selecione um servico.")
+    }
+
+    if (!customerName.trim()) {
+      throw new Error("Informe o nome do cliente.")
+    }
+
+    if (!allowPastScheduling && !selectedSlot) {
+      throw new Error("Selecione um horario disponivel.")
+    }
+
+    if (allowPastScheduling && !manualAppointmentDate) {
+      throw new Error("Informe a data do atendimento realizado.")
+    }
+
+    if (allowPastScheduling && !manualAppointmentTime) {
+      throw new Error("Informe a hora do atendimento realizado.")
+    }
+
+    if (!allowPastScheduling && slotValidationLoading) {
+      throw new Error("Aguarde a revalidacao do horario antes de salvar.")
+    }
+
+    const phoneDigits = normalizePhone(customerPhone)
+    if (customerPhone.trim() && (phoneDigits.length < 10 || phoneDigits.length > 11)) {
+      throw new Error("Telefone invalido. Informe DDD + numero.")
+    }
+
+    const appointmentDate = allowPastScheduling
+      ? manualAppointmentDate
+      : selectedSlot?.date
+    const appointmentTime = allowPastScheduling
+      ? manualAppointmentTime
+      : selectedSlot?.time
+
+    if (!appointmentDate || !appointmentTime) {
+      throw new Error("Data/hora invalida para o agendamento.")
+    }
+
+    if (!allowPastScheduling && slotValidation && !slotValidation.available && !slotValidation.canOverride) {
+      throw new Error(slotValidation.message ?? "Escolha outro horario para continuar.")
+    }
+
+    return {
+      serviceId,
+      staffMembershipId: staffMembershipId.trim() ? staffMembershipId.trim() : undefined,
+      customerName: customerName.trim(),
+      customerPhone: phoneDigits ? phoneDigits : undefined,
+      customerEmail: customerEmail.trim() ? customerEmail.trim() : undefined,
+      date: appointmentDate,
+      time: appointmentTime,
+      allowPastScheduling,
+      allowConflict:
+        !allowPastScheduling &&
+        Boolean(slotValidation?.canOverride && !slotValidation.available && conflictOverrideConfirmed),
+      notes: notes.trim() ? notes.trim() : undefined,
+    }
+  }
+
+  async function handleChooseAnotherSlotAfterConflict() {
+    setAppointmentConflictPrompt(null)
+    setPendingCreatePayload(null)
+    setConflictOverrideConfirmed(false)
+    await openAvailabilityModal()
+  }
+
+  async function handleConfirmAppointmentConflict() {
+    setConflictOverrideConfirmed(true)
+    setAppointmentConflictPrompt(null)
+
+    if (!pendingCreatePayload) {
+      return
+    }
+
+    setSaving(true)
+
+    try {
+      const payload = {
+        ...pendingCreatePayload,
+        allowConflict: true,
+      } satisfies AppointmentCreatePayload
+
+      setPendingCreatePayload(null)
+      await submitCreateAppointmentPayload(payload)
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : "Erro ao criar agendamento.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function handleCreateAppointment(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setSaving(true)
     setFormError(null)
 
     try {
-      if (!serviceId) {
-        throw new Error("Selecione um servico.")
+      const payload = buildCreateAppointmentPayload()
+
+      if (!allowPastScheduling && slotValidation?.canOverride && !slotValidation.available && !conflictOverrideConfirmed) {
+        setPendingCreatePayload(payload)
+        setAppointmentConflictPrompt({
+          requiresConfirmation: true,
+          canOverride: true,
+          reason: "APPOINTMENT_CONFLICT",
+          requestedSlot: slotValidation.slot,
+          conflictingAppointmentsCount: slotValidation.conflictingAppointmentsCount,
+          conflictingAppointments: slotValidation.conflictingAppointments,
+          suggestions: slotValidation.suggestions,
+        })
+        return
       }
 
-      if (!customerName.trim()) {
-        throw new Error("Informe o nome do cliente.")
+      const result = await submitCreateAppointmentPayload(payload)
+      if (result.requiresConfirmation) {
+        return
       }
-
-      if (!allowPastScheduling && !selectedSlot) {
-        throw new Error("Selecione um horario disponivel.")
-      }
-
-      if (allowPastScheduling && !manualAppointmentDate) {
-        throw new Error("Informe a data do atendimento realizado.")
-      }
-
-      if (allowPastScheduling && !manualAppointmentTime) {
-        throw new Error("Informe a hora do atendimento realizado.")
-      }
-
-      const phoneDigits = normalizePhone(customerPhone)
-      if (customerPhone.trim() && (phoneDigits.length < 10 || phoneDigits.length > 11)) {
-        throw new Error("Telefone invalido. Informe DDD + numero.")
-      }
-
-      const appointmentDate = allowPastScheduling
-        ? manualAppointmentDate
-        : selectedSlot?.date
-      const appointmentTime = allowPastScheduling
-        ? manualAppointmentTime
-        : selectedSlot?.time
-
-      if (!appointmentDate || !appointmentTime) {
-        throw new Error("Data/hora invalida para o agendamento.")
-      }
-
-      const payload = {
-        serviceId,
-        staffMembershipId: staffMembershipId.trim() ? staffMembershipId.trim() : undefined,
-        customerName: customerName.trim(),
-        customerPhone: phoneDigits ? phoneDigits : undefined,
-        customerEmail: customerEmail.trim() ? customerEmail.trim() : undefined,
-        date: appointmentDate,
-        time: appointmentTime,
-        allowPastScheduling,
-        notes: notes.trim() ? notes.trim() : undefined,
-      }
-
-      const response = await fetch("/api/appointments", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      })
-
-      const json = (await response.json()) as ApiSuccess<AppointmentItem> | ApiError
-
-      if (!response.ok || !json.ok) {
-        throw new Error(json.ok ? "Nao foi possivel criar o agendamento." : json.error)
-      }
-
-      setAppointments((current) =>
-        json.data.date === selectedDate
-          ? [...current, json.data].sort((left, right) => left.startTime.localeCompare(right.startTime))
-          : [json.data]
-      )
-
-      handleSelectedDateChange(json.data.date)
-      resetForm()
-      setShowForm(false)
     } catch (e) {
       setFormError(e instanceof Error ? e.message : "Erro ao criar agendamento.")
     } finally {
@@ -2227,7 +2786,7 @@ export default function AgendamentosPage() {
             <div className="flex flex-col gap-5 2xl:flex-row 2xl:items-end 2xl:justify-between">
               
 
-              <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-[auto_220px_240px_auto]">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-[220px_220px_220px_auto]">
                 
 
                 <div className="grid gap-2">
@@ -2246,19 +2805,34 @@ export default function AgendamentosPage() {
                   <label className="text-xs font-medium uppercase tracking-wide text-slate-500">
                     Profissional
                   </label>
-                  <select
+                  <AgendaSelectField
                     value={selectedProfessionalFilter}
-                    onChange={(e) => setSelectedProfessionalFilter(e.target.value)}
-                    className="h-11 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm"
+                    onValueChange={setSelectedProfessionalFilter}
                     disabled={teamLoading && sortedTeam.length === 0}
-                  >
-                    <option value="all">Todos</option>
-                    {sortedTeam.map((member) => (
-                      <option key={member.membershipId} value={member.membershipId}>
-                        {member.name}
-                      </option>
-                    ))}
-                  </select>
+                    options={[
+                      { value: "all", label: "Todos" },
+                      ...sortedTeam.map((member) => ({
+                        value: member.membershipId,
+                        label: member.name,
+                      })),
+                    ]}
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <label className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Status
+                  </label>
+                  <AgendaSelectField
+                    value={selectedStatusFilter}
+                    onValueChange={(value) =>
+                      setSelectedStatusFilter(value as AppointmentStatusFilterValue)
+                    }
+                    options={APPOINTMENT_STATUS_FILTER_OPTIONS.map((option) => ({
+                      value: option.value,
+                      label: option.label,
+                    }))}
+                  />
                 </div>
 
                 
@@ -2296,18 +2870,13 @@ export default function AgendamentosPage() {
           </div>
         ) : null}
 
-        {!renderedColumnsHaveConfiguredWorkingHours && weeklySchedule.length > 0 ? (
-          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-600">
-            Nao ha horario de atendimento configurado para este dia. A grade usa apenas o range ja definido na configuracao semanal para manter a leitura da agenda sem estender ate um horario fixo.
-          </div>
-        ) : null}
-
         <ProfessionalScheduleBoard
           selectedDate={selectedDate}
           appointments={selectedDayAppointments}
           professionals={renderedStaffColumns}
-          loading={appointmentsLoading}
+          loading={scheduleBoardLoading}
           error={appointmentsError}
+          emptyMessage={scheduleBoardEmptyMessage}
           onAppointmentClick={handleAppointmentClick}
           onEmptySlotClick={(slot) => {
             void handleGridEmptySlotClick(slot)
@@ -2316,7 +2885,15 @@ export default function AgendamentosPage() {
           onHideColumn={handleHideProfessionalColumn}
         />
 
-        {!appointmentsLoading && !appointmentsError && selectedDayAppointments.length === 0 ? (
+        {!scheduleBoardLoading && !appointmentsError && renderedStaffColumns.length > 0 && selectedDayAppointments.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 px-4 py-5 text-sm text-slate-600">
+            {selectedStatusFilter === "all"
+              ? "Nenhum agendamento neste dia. As agendas com expediente proprio continuam abertas para destacar horarios livres e facilitar novos encaixes."
+              : `Nenhum agendamento com status ${APPOINTMENT_STATUS_FILTER_OPTIONS.find((option) => option.value === selectedStatusFilter)?.label ?? selectedStatusFilter} nesta data.`}
+          </div>
+        ) : null}
+
+        {false && !scheduleBoardLoading && !appointmentsError && selectedDayAppointments.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 px-4 py-5 text-sm text-slate-600">
             Nenhum agendamento neste dia. As agendas por profissional continuam abertas para destacar horários livres e facilitar novos encaixes.
           </div>
@@ -2349,19 +2926,21 @@ export default function AgendamentosPage() {
                 <div className="grid gap-4 lg:grid-cols-2">
                   <div className="grid gap-2">
                     <label className="text-sm font-medium text-slate-700">Servico</label>
-                    <select
-                      value={serviceId}
-                      onChange={(e) => handleServiceChange(e.target.value)}
-                      className="rounded-xl border border-slate-300 px-3 py-2.5"
-                      required
-                    >
-                      <option value="">Selecione</option>
-                      {availableServicesForForm.map((service) => (
-                        <option key={service.id} value={service.id}>
-                          {service.name} ({service.durationMin} min)
-                        </option>
-                      ))}
-                    </select>
+                    <AgendaSelectField
+                      value={serviceId || EMPTY_SERVICE_SELECT_VALUE}
+                      onValueChange={(value) =>
+                        handleServiceChange(
+                          value === EMPTY_SERVICE_SELECT_VALUE ? "" : value
+                        )
+                      }
+                      options={[
+                        { value: EMPTY_SERVICE_SELECT_VALUE, label: "Selecione" },
+                        ...availableServicesForForm.map((service) => ({
+                          value: service.id,
+                          label: `${service.name} (${service.durationMin} min)`,
+                        })),
+                      ]}
+                    />
                     {servicesError ? (
                       <p className="text-xs text-red-700">{servicesError}</p>
                     ) : staffLockedFromGrid && availableServicesForForm.length === 0 ? (
@@ -2373,20 +2952,38 @@ export default function AgendamentosPage() {
 
                   <div className="grid gap-2">
                     <label className="text-sm font-medium text-slate-700">Profissional</label>
-                    <select
-                      value={staffMembershipId}
-                      onChange={(e) => handleStaffChange(e.target.value)}
-                      className="rounded-xl border border-slate-300 px-3 py-2.5"
+                    <AgendaSelectField
+                      value={
+                        staffLockedFromGrid
+                          ? staffMembershipId
+                          : staffMembershipId || EMPTY_STAFF_SELECT_VALUE
+                      }
+                      onValueChange={(value) =>
+                        handleStaffChange(
+                          value === EMPTY_STAFF_SELECT_VALUE ? "" : value
+                        )
+                      }
                       disabled={staffLockedFromGrid || !serviceId || (teamLoading && sortedTeam.length === 0)}
-                    >
-                      {!staffLockedFromGrid ? <option value="">Sem preferencia</option> : null}
-                      {professionalOptionsForForm.map((member) => (
-                        <option key={member.membershipId} value={member.membershipId}>
-                          {member.name}
-                        </option>
-                      ))}
-                    </select>
-                    
+                      options={[
+                        ...(!staffLockedFromGrid
+                          ? [
+                              {
+                                value: EMPTY_STAFF_SELECT_VALUE,
+                                label: "Sem preferencia",
+                              },
+                            ]
+                          : []),
+                        ...professionalOptionsForForm.map((member) => ({
+                          value: member.membershipId,
+                          label: member.name,
+                        })),
+                      ]}
+                    />
+                    {serviceId && !staffLockedFromGrid && professionalOptionsForForm.length === 0 ? (
+                      <p className="text-xs text-amber-700">
+                        Nenhum profissional com expediente proprio valido foi encontrado para este servico na data selecionada.
+                      </p>
+                    ) : null}
                   </div>
                 </div>
 
@@ -2416,6 +3013,11 @@ export default function AgendamentosPage() {
                       A consulta usa a disponibilidade real do backend. O `POST` continua
                       revalidando antes de salvar.
                     </p>
+                    {slotValidationLoading && selectedSlot ? (
+                      <p className="mt-2 text-xs text-slate-500">
+                        Revalidando o encaixe com a duracao atual do servico...
+                      </p>
+                    ) : null}
                     <div className="mt-3 flex flex-wrap gap-2">
                       <Button type="button" variant="outline" onClick={openAvailabilityModal}>
                         {selectedSlot ? "Trocar horario" : "Escolher horario"}
@@ -2431,6 +3033,63 @@ export default function AgendamentosPage() {
                       ) : null}
                     </div>
                   </div>
+
+                  {slotValidation && !slotValidation.available ? (
+                    <div
+                      className={`rounded-2xl border px-4 py-3 text-sm ${
+                        slotValidation.canOverride
+                          ? "border-amber-200 bg-amber-50 text-amber-900"
+                          : "border-red-200 bg-red-50 text-red-700"
+                      }`}
+                    >
+                      <p className="font-medium">
+                        {slotValidation.message ?? "Este horario precisa ser revisado."}
+                      </p>
+                      {slotValidation.canOverride ? (
+                        <>
+                          <p className="mt-1 text-xs text-amber-800">
+                            Você pode escolher outro horario ou confirmar este encaixe manual mesmo com risco de atraso.
+                          </p>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <Button type="button" variant="outline" onClick={() => void handleChooseAnotherSlotAfterConflict()}>
+                              Escolher outro horario
+                            </Button>
+                            <Button
+                              type="button"
+                              onClick={() =>
+                                setAppointmentConflictPrompt({
+                                  requiresConfirmation: true,
+                                  canOverride: true,
+                                  reason: "APPOINTMENT_CONFLICT",
+                                  requestedSlot: slotValidation.slot,
+                                  conflictingAppointmentsCount: slotValidation.conflictingAppointmentsCount,
+                                  conflictingAppointments: slotValidation.conflictingAppointments,
+                                  suggestions: slotValidation.suggestions,
+                                })
+                              }
+                            >
+                              Manter mesmo assim
+                            </Button>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="mt-3">
+                          <Button type="button" variant="outline" onClick={openAvailabilityModal}>
+                            Escolher outro horario
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+
+                  {conflictOverrideConfirmed && slotValidation?.canOverride ? (
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                      <p className="font-medium">Encaixe manual confirmado.</p>
+                      <p className="mt-1 text-xs">
+                        O backend so vai salvar com conflito porque essa confirmacao foi feita explicitamente.
+                      </p>
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="grid gap-2">
@@ -2509,14 +3168,97 @@ export default function AgendamentosPage() {
                 form="create-appointment-form"
                 type="submit"
                 variant="primary"
-                disabled={saving}
+                disabled={saving || slotValidationLoading}
               >
-                {saving ? "Salvando..." : "Salvar agendamento"}
+                {saving ? "Salvando..." : slotValidationLoading ? "Validando horario..." : "Salvar agendamento"}
               </Button>
             </DialogFooter>
           )}
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={Boolean(appointmentConflictPrompt)}
+        onOpenChange={(open) => {
+          if (!open && !saving) {
+            setAppointmentConflictPrompt(null)
+            setPendingCreatePayload(null)
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Conflito de horario detectado</AlertDialogTitle>
+            <AlertDialogDescription>
+              {appointmentConflictPrompt
+                ? `O intervalo ${appointmentConflictPrompt.requestedSlot.label} entra em conflito com ${appointmentConflictPrompt.conflictingAppointmentsCount} agendamento(s) do profissional. Você pode escolher outro horario ou confirmar este encaixe manual mesmo com risco de atraso.`
+                : "Revise o conflito antes de salvar o encaixe manual."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          {appointmentConflictPrompt?.conflictingAppointments.length ? (
+            <div className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              {appointmentConflictPrompt.conflictingAppointments.slice(0, 5).map((appointment) => (
+                <div key={appointment.id} className="text-sm text-slate-700">
+                  <p className="font-medium text-slate-900">{appointment.customerName}</p>
+                  <p>
+                    {formatConflictingAppointmentLabel(appointment)}
+                    {appointment.staffName ? ` / ${appointment.staffName}` : ""}
+                  </p>
+                </div>
+              ))}
+              {appointmentConflictPrompt.conflictingAppointmentsCount > 5 ? (
+                <p className="text-xs text-slate-500">
+                  E mais {appointmentConflictPrompt.conflictingAppointmentsCount - 5} agendamentos.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
+          {appointmentConflictPrompt?.suggestions.length ? (
+            <div className="grid gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3">
+              <p className="text-sm font-medium text-slate-900">Sugestoes sem conflito</p>
+              <div className="flex flex-wrap gap-2">
+                {appointmentConflictPrompt.suggestions.slice(0, 4).map((slot) => (
+                  <button
+                    key={slot.startAt}
+                    type="button"
+                    className="rounded-full border border-slate-300 px-3 py-1.5 text-sm text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+                    onClick={() => {
+                      setSelectedSlot(slot)
+                      setSlotSearchDate(slot.date)
+                      setAppointmentConflictPrompt(null)
+                      setPendingCreatePayload(null)
+                      setConflictOverrideConfirmed(false)
+                    }}
+                  >
+                    {slot.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={saving}>Voltar</AlertDialogCancel>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={saving}
+              onClick={() => void handleChooseAnotherSlotAfterConflict()}
+            >
+              Escolher outro horario
+            </Button>
+            <Button
+              type="button"
+              disabled={saving}
+              onClick={() => void handleConfirmAppointmentConflict()}
+            >
+              {saving ? "Salvando..." : "Manter mesmo assim"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AppointmentDetailsDialog
         appointment={selectedAppointment}
@@ -2524,9 +3266,11 @@ export default function AgendamentosPage() {
         onOpenChange={setDetailsOpen}
         services={services}
         team={sortedTeam}
+        storeScheduleDays={weeklySchedule}
         servicesLoading={servicesLoading && !servicesLoaded}
         onSave={handleAppointmentSaved}
         onCancel={handleAppointmentCanceled}
+        onStatusChange={handleAppointmentStatusChange}
       />
 
       <Dialog
@@ -2554,14 +3298,17 @@ export default function AgendamentosPage() {
               {blockingProfessional && !blockingProfessional.isUnassigned ? (
                 <div className="grid gap-2">
                   <label className="text-sm font-medium text-slate-700">Aplicar bloqueio em</label>
-                  <select
+                  <AgendaSelectField
                     value={blockScope}
-                    onChange={(event) => setBlockScope(event.target.value as BlockScope)}
-                    className="h-11 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
-                  >
-                    <option value="PROFESSIONAL">{blockingProfessional.name}</option>
-                    <option value="STORE">Loja inteira</option>
-                  </select>
+                    onValueChange={(value) => setBlockScope(value as BlockScope)}
+                    options={[
+                      {
+                        value: "PROFESSIONAL",
+                        label: blockingProfessional.name,
+                      },
+                      { value: "STORE", label: "Loja inteira" },
+                    ]}
+                  />
                 </div>
               ) : null}
 

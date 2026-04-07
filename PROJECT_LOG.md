@@ -1,3 +1,651 @@
+## 07 de abril de 2026 - Agenda online publica com controles mobile refinados
+
+### Objetivo
+
+Corrigir a UX mobile dos campos `Servico`, `Profissional` e `Data` na agenda online publica, evitando os overlays grandes e pesados dos controles nativos do navegador.
+
+### Arquivos alterados
+
+- `app/agenda/[slug]/public-booking-page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Selects nativos substituidos no fluxo publico
+
+- Os campos `Servico` e `Profissional` deixaram de usar `select` nativo.
+- Eles passaram a usar dropdowns compactos, com visual branco, radius maior, scroll interno e largura controlada.
+
+#### 2. Campo de data com calendario proprio
+
+- O `input[type=date]` do fluxo publico foi substituido por um calendario compacto no proprio card.
+- Isso evita o popup grande do navegador em viewport pequena e deixa a interacao mais consistente com o restante da interface.
+
+#### 3. Melhor alinhamento visual no mobile
+
+- Os dropdowns agora ficam contidos no card, alinhados ao trigger e sem o visual nativo azul pesado.
+- O calendario da data tambem passou a respeitar melhor o espaco da coluna mobile, com navegacao por mes e selecao direta do dia.
+
+### Validacao executada
+
+- `yarn eslint app/agenda/[slug]/public-booking-page.tsx`
+
+## 07 de abril de 2026 - Dados publicos da agenda online com fluxo claro de edicao
+
+### Objetivo
+
+Descobrir de onde vinham os dados institucionais exibidos no link publico de agendamento e criar um caminho claro no app para editar essas informacoes sem duplicar fluxo desnecessariamente.
+
+### Arquivos alterados
+
+- `app/api/store/current/route.ts`
+- `app/(app)/agenda-online/page.tsx`
+- `src/components/ui/app-sidebar.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Diagnostico da origem dos dados
+
+- A agenda publica em `app/agenda/[slug]/public-booking-page.tsx` ja consumia dados da `Store`.
+- O loader `src/lib/public-booking.ts` confirmou os campos reais:
+  - `phone`
+  - `whatsappPhone`
+  - `address`
+  - `complement`
+  - `neighborhood`
+  - `city`
+  - `state`
+  - `zipcode`
+  - `businessHoursSummary`
+  - `serviceObservations`
+
+#### 2. Ausencia de fluxo claro no app da loja
+
+- Nao existia uma tela clara no app autenticado para editar esses dados publicos da `Store`.
+- Havia contexto da loja atual (`/api/store/current`), mas sem edicao desses campos e sem atalho intuitivo no menu.
+
+#### 3. Nova tela enxuta de manutencao
+
+- Foi criada a pagina `/agenda-online` no app autenticado.
+- Ela permite editar os dados publicos que alimentam o link de agendamento online da loja atual.
+- A pagina tambem mostra:
+  - o link publico da agenda
+  - CTA para abrir a agenda online
+  - CTA para ir a `Horarios de atendimento`
+
+#### 4. Reaproveitamento do endpoint da loja atual
+
+- O endpoint `app/api/store/current/route.ts` passou a:
+  - retornar os campos publicos da `Store` no `GET`
+  - aceitar `PATCH` para atualizar esses dados
+- O escopo continua sendo a loja atual da sessao.
+
+#### 5. Descoberta facilitada no menu
+
+- Foi adicionado o item `Dados publicos da agenda` na secao `Agendamentos` da sidebar.
+- Isso evita esconder o fluxo dentro de telas nao relacionadas ou depender de area admin para uma manutencao cotidiana da loja.
+
+### Validacao executada
+
+- `yarn eslint app/api/store/current/route.ts app/(app)/agenda-online/page.tsx src/components/ui/app-sidebar.tsx`
+
+## 07 de abril de 2026 - Selects de `/agendamentos` alinhados ao padrao discreto da busca de cliente
+
+### Objetivo
+
+Aplicar nos selects e filtros de `/agendamentos` o mesmo modelo visual leve da lista de busca de cliente, substituindo menus nativos pesados e desalinhados em mobile.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Helper local para selects do modulo
+
+- Foi criado um helper local em `app/(app)/agendamentos/page.tsx` para padronizar trigger, dropdown e itens.
+- O dropdown passou a usar:
+  - container branco
+  - borda suave
+  - radius maior
+  - sombra leve
+  - scroll interno
+
+#### 2. Selects nativos removidos de `/agendamentos`
+
+- Foram trocados os selects nativos de:
+  - filtros `Profissional` e `Status`
+  - formulario `Novo agendamento` (`Servico` e `Profissional`)
+  - dialog de detalhes (`Servico` e `Profissional`)
+  - dialog de bloqueio (`Aplicar bloqueio em`)
+
+#### 3. UX alinhada ao modelo da busca de cliente
+
+- Os novos dropdowns seguem o mesmo padrao visual da ultima referencia:
+  - lista contida
+  - itens mais confortaveis para toque
+  - melhor leitura em viewport pequena
+  - sem o visual nativo azul pesado do navegador
+
+### Validacao executada
+
+- `yarn eslint app/(app)/agendamentos/page.tsx`
+
+## 07 de abril de 2026 - Selects de `/horarios-de-atendimento` revisados para mobile
+
+### Objetivo
+
+Corrigir a UX dos selects da tela `/horarios-de-atendimento`, principalmente em viewport pequena, evitando dropdowns desconfortaveis, desalinhados ou grandes demais.
+
+### Arquivos alterados
+
+- `app/(app)/horarios-de-atendimento/page.tsx`
+- `src/components/ui/select.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Troca dos `select` nativos da tela
+
+- Os dois selects da tela (`Escopo do expediente` e `Aplicar bloqueio em`) deixaram de usar o elemento nativo.
+- Eles passaram a usar o `Select` do projeto com dropdown em portal, melhor controle de largura e posicionamento e comportamento mais previsivel em mobile.
+
+#### 2. Dropdown mais estavel e confortavel
+
+- O menu agora abre alinhado ao trigger e limitado pela largura da viewport.
+- A lista ganhou altura maxima controlada com scroll interno.
+- Os itens ficaram mais altos e confortaveis para toque em telas pequenas.
+
+#### 3. Ajustes no componente base de `Select`
+
+- O `SelectContent` passou a respeitar melhor a largura do trigger e o limite da viewport.
+- O `overflow` foi refinado para evitar corte visual do conteudo.
+- O `SelectItem` ficou com area clicavel maior, melhorando a experiencia de toque sem prejudicar o desktop.
+
+### Validacao executada
+
+- `yarn eslint app/(app)/horarios-de-atendimento/page.tsx src/components/ui/select.tsx`
+
+## 07 de abril de 2026 - Indicador flutuante do Next removido da interface
+
+### Objetivo
+
+Remover o icone flutuante circular com `N` que estava aparecendo sobre a sidebar durante o desenvolvimento local e atrapalhando o acesso ao logout.
+
+### Arquivos alterados
+
+- `next.config.mjs`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Origem confirmada como overlay do Next em desenvolvimento
+
+- O elemento nao vinha do layout do app, da sidebar ou de widget de terceiros.
+- A origem era o `devIndicators` do Next 16, que por padrao renderiza um indicador visual no canto inferior da tela durante o ambiente de desenvolvimento.
+
+#### 2. Desativacao global do indicador
+
+- Foi criado `next.config.mjs` com `devIndicators: false`.
+- Isso remove o botao flutuante `N` do ambiente local sem alterar a estrutura do layout autenticado nem a logica da sidebar.
+
+### Validacao executada
+
+- `yarn eslint next.config.mjs`
+
+## 07 de abril de 2026 - Campo Categoria de Entradas/Saidas refinado para autocomplete discreto
+
+### Objetivo
+
+Substituir o painel fixo de sugestoes do campo `Categoria` em `Entradas/Saidas > Novo` por uma UX mais leve, mantendo as categorias por tipo e a digitacao livre.
+
+### Arquivos alterados
+
+- `app/(app)/entradas-saidas/novo/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Painel grande removido
+
+- O bloco fixo de chips abaixo do input foi removido.
+- Isso deixa o formulario mais leve e devolve espaco visual para os demais campos.
+
+#### 2. Autocomplete discreto no proprio campo
+
+- O campo `Categoria` agora abre um dropdown pequeno e contextual ao focar ou digitar.
+- As sugestoes continuam mudando por tipo:
+  - `Entrada` usa categorias de receita
+  - `Saida` usa categorias de despesa
+- A lista inicial e limitada e possui scroll interno quando necessario.
+
+#### 3. Digitacao livre preservada
+
+- O usuario continua podendo digitar qualquer categoria personalizada.
+- Selecionar uma sugestao apenas preenche o `input`; o valor final salvo continua sendo uma string livre.
+
+#### 4. Navegacao basica por teclado
+
+- O campo agora suporta abrir as sugestoes e navegar com `ArrowUp`, `ArrowDown`, `Enter` e `Escape`.
+
+### Validacao executada
+
+- `yarn eslint app/(app)/entradas-saidas/novo/page.tsx`
+
+## 07 de abril de 2026 - UX das categorias sugeridas em Entradas/Saidas refinada
+
+### Objetivo
+
+Substituir o `datalist` nativo do campo `Categoria` em `Entradas/Saidas > Novo` por uma lista de sugestoes mais clara e consistente com a UI do projeto, mantendo digitacao livre.
+
+### Arquivos alterados
+
+- `app/(app)/entradas-saidas/novo/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Remocao do dropdown nativo escuro
+
+- O `datalist` nativo foi removido do campo `Categoria`.
+- Isso elimina o popup escuro do navegador que estava destoando visualmente da tela.
+
+#### 2. Lista de sugestoes clara dentro do formulario
+
+- As categorias sugeridas agora aparecem em um bloco leve logo abaixo do input.
+- A lista respeita o tipo selecionado:
+  - `Entrada` usa categorias de receita
+  - `Saida` usa categorias de despesa
+- O usuario pode clicar em uma sugestao para preencher rapidamente o campo.
+
+#### 3. Digitacao livre preservada
+
+- O campo continua sendo um `input` de texto normal.
+- O usuario pode ignorar as sugestoes e salvar qualquer categoria personalizada.
+- As sugestoes tambem passam a filtrar conforme o texto digitado, sem travar o valor final.
+
+### Validacao executada
+
+- `yarn eslint app/(app)/entradas-saidas/novo/page.tsx`
+
+## 07 de abril de 2026 - Categorias sugeridas no Novo lancamento de Entradas/Saidas
+
+### Objetivo
+
+Adicionar sugestoes de categoria no formulario `Entradas/Saidas > Novo`, aproveitando as categorias do Glaavo como base, sem transformar `category` em enum fechada e preservando digitacao livre.
+
+### Arquivos alterados
+
+- `src/constants/finance-categories.ts`
+- `app/(app)/entradas-saidas/novo/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Base local de categorias adaptada do Glaavo
+
+- Foi criada uma constante local em `src/constants/finance-categories.ts` com as categorias de receita e despesa adaptadas do arquivo `CATEGORIES.ts` do Glaavo.
+- A adaptacao ficou interna ao projeto Olyon, evitando dependencia direta entre repositorios.
+
+#### 2. Campo assistido sem travar digitacao
+
+- O campo `Categoria` do formulario `Entradas/Saidas > Novo` passou a usar `input + datalist`.
+- Quando o tipo e `Entrada`, o campo sugere `CATEGORIES_INCOME_ARRAY`.
+- Quando o tipo e `Saida`, o campo sugere `CATEGORIES_EXPENSES_ARRAY`.
+- O usuario continua podendo digitar qualquer categoria personalizada.
+
+#### 3. Backend mantido como string livre
+
+- Nenhuma validacao fechada foi adicionada no schema Zod nem no endpoint.
+- `category` continua sendo `string` livre no frontend, no validator e na rota de criacao.
+- Isso preserva compatibilidade com lancamentos antigos e com categorias customizadas novas.
+
+### Validacao executada
+
+- `yarn eslint src/constants/finance-categories.ts app/(app)/entradas-saidas/novo/page.tsx`
+
+## 07 de abril de 2026 - Resumo financeiro da dashboard alinhado aos modulos reais
+
+### Objetivo
+
+Revisar os tres indicadores do card `Resumo financeiro` da dashboard para que os labels e os calculos reflitam corretamente os modulos reais `Entradas/Saidas`, `Contas a Pagar` e `Controle de Pagamentos`.
+
+### Arquivos alterados
+
+- `src/lib/dashboard/overview.ts`
+- `src/components/dashboard/finance-summary-card.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Labels ajustados para a semantica real
+
+- `Total do dia` virou `Saldo liquido do dia`
+- `Total do mes` virou `Saldo liquido do mes`
+- `Pagamentos pendentes` virou `Despesas em aberto`
+
+#### 2. Origem dos dados explicitada
+
+- Os dois primeiros indicadores continuam vindo de `FinanceEntry` por `transactionDate`, somando `INCOME - EXPENSE`, o que corresponde ao modulo `Entradas/Saidas`.
+- O terceiro indicador passou a ficar semanticamente amarrado ao dominio de despesas nao pagas (`type = EXPENSE` e `status != PAID`), que e a base usada nas areas `Contas a Pagar` e `Controle de Pagamentos`.
+
+#### 3. Tipagem do helper ajustada
+
+- O helper da dashboard passou a expor os campos:
+  - `dayNetTotal`
+  - `monthNetTotal`
+  - `openExpensesTotal`
+- Isso reduz ambiguidade entre o nome do campo e o dado realmente calculado.
+
+#### 4. Texto auxiliar revisado
+
+- A observacao do card foi reescrita para explicar de forma curta a origem de cada grupo de indicadores, sem sugerir leitura errada nem misturar recebimentos com controle de pagamento de despesas.
+
+### Validacao executada
+
+- `yarn eslint src/lib/dashboard/overview.ts src/components/dashboard/finance-summary-card.tsx`
+
+## 07 de abril de 2026 - Card `Status da agenda` com dados reais na dashboard
+
+### Objetivo
+
+Substituir os numeros mockados do card `Status da agenda` por dados reais da store atual, mantendo o layout da dashboard e usando a mesma base operacional da agenda por profissional.
+
+### Arquivos alterados
+
+- `app/(app)/dashboard/page.tsx`
+- `src/components/dashboard/schedule-status-card.tsx`
+- `src/lib/dashboard/overview.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Card conectado ao helper real da dashboard
+
+- `ScheduleStatusCard` deixou de usar constantes locais mockadas e passou a receber props tipadas vindas de `getDashboardOverview`.
+- O layout do card foi mantido; mudou apenas a origem dos numeros e do texto descritivo.
+
+#### 2. Calculo real de `Horarios livres hoje`
+
+- O helper da dashboard agora calcula slots livres reais da agenda de hoje com base em slots de 15 minutos por profissional.
+- A contagem considera somente profissionais com expediente proprio valido para hoje.
+- Cada slot livre respeita:
+  - expediente da loja
+  - expediente proprio do profissional
+  - bloqueios da loja e do profissional
+  - agendamentos ativos (`SCHEDULED` e `CONFIRMED`)
+
+#### 3. Calculo real de `Horarios bloqueados`
+
+- O card passou a contar slots bloqueados reais de hoje na mesma granularidade de 15 minutos usada para os slots livres.
+- Bloqueios globais da loja e bloqueios especificos do profissional entram na conta.
+- Como a unidade passou a ser capacidade de agenda por profissional, um bloqueio da loja impacta todos os profissionais com agenda ativa naquele intervalo.
+
+#### 4. Texto descritivo neutro e auditavel
+
+- A frase promocional/mockada do card foi removida.
+- No lugar, o card agora mostra uma observacao neutra baseada no proprio calculo:
+  - ausencia de expediente proprio hoje
+  - ausencia de slots restantes hoje
+  - ou nota explicando que a contagem usa slots de 15 min restantes para hoje
+
+### Validacao executada
+
+- `yarn eslint app/(app)/dashboard/page.tsx src/components/dashboard/schedule-status-card.tsx src/lib/dashboard/overview.ts`
+
+## 07 de abril de 2026 - Loading da agenda separado do estado vazio em /agendamentos
+
+### Objetivo
+
+Evitar que a mensagem de vazio da agenda apareca enquanto a board ainda esta carregando dados de appointments, equipe ou expediente semanal.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `app/(app)/agendamentos/components/professional-schedule-board.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Loading composto da board
+
+- A tela passou a compor um `scheduleBoardLoading` com os carregamentos reais que impactam a board:
+  - `appointmentsLoading`
+  - `teamLoading`
+  - `weeklyScheduleLoading`
+- Isso impede que a regra de vazio rode cedo demais quando ainda faltam dependencias da agenda por profissional.
+
+#### 2. Mensagem explicita durante o carregamento
+
+- A `ProfessionalScheduleBoard` agora mostra skeleton das colunas acompanhado do texto `Carregando agendas...`.
+- Esse estado aparece tanto no carregamento inicial quanto em refetches que realmente disparam nova consulta.
+
+#### 3. Empty state so depois da resposta
+
+- A mensagem `Nenhum profissional possui expediente proprio configurado dentro do horario da loja para esta data.` continua existindo, mas agora so aparece quando o loading da board terminou e realmente nao ha colunas validas para renderizar.
+- O aviso de `Nenhum agendamento...` abaixo da board tambem passou a respeitar o loading consolidado para evitar mensagem incorreta entre requests.
+
+### Validacao executada
+
+- `yarn eslint app/(app)/agendamentos/page.tsx app/(app)/agendamentos/components/professional-schedule-board.tsx`
+
+## 07 de abril de 2026 - Regra final de expediente da loja x profissional consolidada
+
+### Objetivo
+
+Fechar a regra operacional entre `/horarios-de-atendimento` e `/agendamentos`, garantindo que o expediente do profissional fique sempre contido no expediente da loja e que a agenda por profissional nao herde abertura automatica da loja.
+
+### Arquivos alterados
+
+- `app/api/schedule/weekly/route.ts`
+- `src/lib/appointments/availability.ts`
+- `app/(app)/agendamentos/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Validacao backend no salvamento do expediente semanal
+
+- O `PUT /api/schedule/weekly` passou a validar intervalos no backend antes de persistir.
+- Quando o escopo e de um profissional, cada intervalo configurado agora precisa caber integralmente dentro dos intervalos ativos da loja no mesmo dia da semana.
+- O backend tambem passou a impedir expediente do profissional em dias sem abertura da loja e a rejeitar intervalos invalidos ou sobrepostos.
+
+#### 2. Disponibilidade sem heranca automatica para profissional
+
+- A engine central em `src/lib/appointments/availability.ts` deixou de abrir agenda automaticamente pelo expediente da loja quando existe `staffMembershipId`.
+- Para profissional selecionado, a disponibilidade agora considera somente o expediente proprio dele, limitado pelos intervalos validos da loja.
+- Quando o profissional nao possui expediente proprio configurado, a resposta operacional passa a informar isso de forma explicita.
+
+#### 3. Grade de `/agendamentos` alinhada com a mesma regra
+
+- A tela passou a calcular o range visual do profissional considerando apenas o expediente proprio dele dentro da janela valida da loja.
+- Profissionais sem expediente proprio valido continuam fora da grade.
+- O filtro por profissional e os textos de estado vazio foram ajustados para refletir a regra consolidada.
+
+### Fora do escopo mantido
+
+- Nao foram criados models, migrations ou arquivos novos para essa consolidacao.
+- A coluna `Sem profissional` continua usando o expediente da loja, porque nao representa um profissional com agenda propria.
+
+### Validacao executada
+
+- `yarn eslint app/api/schedule/weekly/route.ts src/lib/appointments/availability.ts app/(app)/agendamentos/page.tsx`
+
+## 07 de abril de 2026 - Agenda por profissional sem heranca de expediente da loja
+
+### Objetivo
+
+Ajustar `/agendamentos` para exibir na grade apenas profissionais que tenham expediente proprio configurado na data, sem abrir agenda automaticamente pelo horario geral da loja.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `app/(app)/agendamentos/components/professional-schedule-board.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Helper de expediente proprio por data
+
+- A tela passou a usar helpers locais para identificar se um profissional possui expediente proprio configurado no dia selecionado.
+- O criterio considera apenas configuracao explicita no escopo do profissional para o weekday da data, com intervalos ativos.
+
+#### 2. Grade sem fallback da loja para profissional
+
+- A montagem das colunas em `/agendamentos` deixou de herdar `selectedDayWorkingHoursRange` e `fallbackWorkingHoursRange` para profissionais.
+- Agora as colunas de profissionais usam somente o range retornado pelo expediente proprio deles.
+- Se o profissional nao tiver expediente proprio na data, ele fica fora da grade.
+
+#### 3. Filtro e estado vazio coerentes
+
+- O filtro por profissional continua aceitando a selecao normal da equipe.
+- Quando o filtro aponta para um profissional sem expediente proprio na data, a board mostra estado vazio explicito em vez de abrir uma coluna vazia.
+- A mensagem de vazio da agenda tambem deixou de sugerir que toda a equipe continua aberta quando nao ha coluna renderizavel.
+
+#### 4. Fluxos internos do modal alinhados
+
+- O modal de criacao e o dialog de remarcacao passaram a considerar apenas profissionais com expediente proprio na data de referencia ao montar a equipe elegivel.
+- Isso evita que o board esconda o profissional enquanto o modal ainda ofereca expediente herdado da loja no mesmo fluxo operacional.
+
+### Fora do escopo mantido
+
+- Nenhuma alteracao foi feita na API `/api/team`.
+- A engine global de disponibilidade nao foi reescrita nesta etapa; o ajuste ficou concentrado no comportamento da tela `/agendamentos`.
+
+### Validacao executada
+
+- `yarn eslint app/(app)/agendamentos/page.tsx app/(app)/agendamentos/components/professional-schedule-board.tsx`
+
+## 07 de abril de 2026 - Dashboard com dados reais da loja
+
+### Objetivo
+
+Conectar a dashboard `/dashboard` a dados reais do banco sem alterar o layout base, substituindo cards estaticos por informacao real da loja atual e revisando os links das acoes rapidas.
+
+### Arquivos alterados
+
+- `app/(app)/dashboard/page.tsx`
+- `src/components/dashboard/upcoming-appointments-card.tsx`
+- `src/components/dashboard/finance-summary-card.tsx`
+- `src/components/dashboard/quick-actions-card.tsx`
+- `src/lib/dashboard/overview.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Dashboard carregando dados reais no servidor
+
+- `app/(app)/dashboard/page.tsx` continua como Server Component, mas agora resolve `storeId` da sessao e busca os dados da dashboard no servidor.
+- Foi criado `src/lib/dashboard/overview.ts` para centralizar as consultas e transformacoes do resumo, evitando regra duplicada dentro da UI.
+
+#### 2. Bloco `Proximos agendamentos` com appointments reais
+
+- O card deixou de usar o array mockado local.
+- A consulta agora busca appointments futuros da loja atual, ordenados por `startAt asc`, limitados para o layout do card e com escopo multi-tenant real.
+- O bloco exibe:
+  - horario
+  - referencia de dia (`Hoje`, `Amanha` ou `dd/mm`)
+  - cliente
+  - profissional
+  - servico quando existir
+  - badge com status amigavel reutilizando os helpers de `src/lib/appointments/presentation.ts`
+- Os botoes visuais `Ver detalhes`, `Remarcar` e `Cancelar` foram removidos do card porque nao apontavam para uma acao item-a-item realmente implementada na dashboard. O acesso real continua pelo CTA `Ver agenda`.
+
+#### 3. Bloco `Resumo financeiro` com agregacao real
+
+- O card passou a receber os dados prontos do servidor em vez de calcular tudo no client com fetch tardio.
+- Os numeros agora usam a estrutura real de `FinanceEntry`, sempre escopada pela store atual:
+  - `Total do dia`: saldo liquido do dia por `transactionDate` (`INCOME - EXPENSE`)
+  - `Total do mes`: saldo liquido do mes por `transactionDate`
+  - `Pagamentos pendentes`: soma de despesas ainda nao pagas (`status != PAID`)
+- O card ganhou texto curto explicando a origem desses numeros para nao sugerir placeholder nem criterio oculto.
+
+#### 4. Acoes rapidas revisadas
+
+- `Novo agendamento` permaneceu em `/agendamentos`
+- `Novo cliente` foi corrigido de `/usuarios` para `/clientes`
+- `Novo servico` permaneceu em `/servicos`
+- `Bloquear horario` permaneceu em `/horarios-de-atendimento`
+
+### Fora do escopo mantido
+
+- O card `Status da agenda` nao foi alterado nesta etapa.
+- Nao foram criadas rotas novas, models novas ou acoes falsas para detalhe/remarcacao/cancelamento direto na dashboard.
+
+### Validacao executada
+
+- `yarn eslint app/(app)/dashboard/page.tsx src/components/dashboard/upcoming-appointments-card.tsx src/components/dashboard/finance-summary-card.tsx src/components/dashboard/quick-actions-card.tsx src/lib/dashboard/overview.ts`
+
+## 06 de abril de 2026 - Status real de appointments na tela /agendamentos
+
+### Objetivo
+
+Colocar os statuses reais de `AppointmentStatus` na operacao de `/agendamentos`, com badge, filtro, acoes rapidas e endpoint dedicado para atualizar somente o status sem depender de texto livre no payload.
+
+### Arquivos alterados
+
+- `src/lib/appointments/presentation.ts`
+- `src/lib/validators/appointment.ts`
+- `app/api/appointments/route.ts`
+- `app/api/appointments/[id]/status/route.ts`
+- `app/(app)/agendamentos/page.tsx`
+- `app/(app)/agendamentos/components/appointment-status-menu.tsx`
+- `app/(app)/agendamentos/components/appointment-card.tsx`
+- `app/(app)/agendamentos/components/professional-schedule-board.tsx`
+- `app/(app)/agendamentos/components/professional-schedule-column.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Mapeamento unico de status para UI
+
+- `src/lib/appointments/presentation.ts` passou a concentrar os valores suportados de `AppointmentStatus`, labels PT-BR, opcoes de filtro e tons visuais.
+- O label de `DONE` foi ajustado para `Atendido`, alinhado ao requisito operacional da tela.
+- Os helpers agora distinguem estados ativos (`SCHEDULED`, `CONFIRMED`) de estados finais (`CANCELED`, `DONE`, `NO_SHOW`).
+
+#### 2. Endpoint dedicado para trocar apenas o status
+
+- Foi criada a rota `PATCH /api/appointments/[id]/status` em App Router.
+- O payload e validado com Zod no formato `{ status: AppointmentStatus }`.
+- A rota resolve `storeId` pela sessao/token com `requireMembershipRole`, busca o appointment por `id + storeId`, retorna `404` amigavel quando nao encontra e persiste apenas `status` + metadata de historico simples da mudanca.
+
+#### 3. Agenda operacional exibindo todos os statuses reais
+
+- `GET /api/appointments?date=...` deixou de filtrar so statuses ativos e passou a devolver todos os agendamentos do dia para a UI.
+- A tela `/agendamentos` ganhou filtro por status com opcao `Todos`.
+- Os cards da grade agora exibem badge/status visual real e um menu rapido com as acoes:
+  - `Marcar como confirmado`
+  - `Marcar como atendido`
+  - `Marcar como cancelado`
+  - `Marcar como nao compareceu`
+
+#### 4. Comportamento coerente para estados finais
+
+- Cards finais continuam visiveis na grade com tom mais leve e borda tracejada.
+- O corpo desses cards deixa de bloquear o clique do slot abaixo, preservando a leitura operacional e novos encaixes onde a disponibilidade real permitir.
+- O dialog de detalhes tambem ganhou badge visual de status e menu de acoes rapidas.
+
+### Validacao executada
+
+- `yarn eslint app/api/appointments/route.ts app/api/appointments/[id]/status/route.ts src/lib/validators/appointment.ts src/lib/appointments/presentation.ts app/(app)/agendamentos/page.tsx app/(app)/agendamentos/components/appointment-status-menu.tsx app/(app)/agendamentos/components/appointment-card.tsx app/(app)/agendamentos/components/professional-schedule-board.tsx app/(app)/agendamentos/components/professional-schedule-column.tsx`
+
 ## 02 de abril de 2026 - Saneamento em cadeia do build ate `yarn build` concluir
 
 ### Objetivo

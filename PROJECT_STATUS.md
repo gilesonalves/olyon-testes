@@ -1,6 +1,6 @@
 # PROJECT_STATUS.md
 
-**Data de ultima atualizacao:** 02 de abril de 2026
+**Data de ultima atualizacao:** 07 de abril de 2026
 
 ## Status geral do projeto Olyon
 
@@ -30,12 +30,13 @@
 [x] Modal de `/agendamentos` com excecao explicita para registro retroativo sem liberar passado por padrao
 [x] Modal retroativo de `/agendamentos` agora revela campos manuais de data/hora e mantem o CTA de salvar fixo fora da area rolavel
 [x] Cancelamento em `/agendamentos` libera o slot corretamente e deixa de contar/renderizar appointments inativos na agenda
-[x] `/agendamentos` com expediente individual por profissional, fallback seguro da loja e bloqueio por profissional
+[x] Expediente semanal consolidado com validacao de profissional dentro da loja e agenda sem heranca automatica
 [x] `/agendamentos` com scroll vertical proprio em cada coluna e horario centralizado horizontalmente nas celulas
 [x] Fase A da pagina `/agendamentos` com agenda diaria visual e filtros operacionais
 [x] Fase B da pagina `/agendamentos` com refinamento visual, mobile adaptado e skeletons reais
 [x] Refinamento desktop da agenda diaria com cards mais compactos e hierarquia operacional melhor
 [x] Agenda desktop operacional com dialog de detalhes, remarcacao real e cancelamento por status
+[x] `/agendamentos` com status real por badge, filtro e acoes rapidas usando `AppointmentStatus`
 [x] Migracao desktop de `/agendamentos` para grade semanal de calendario
 [x] Ajuste fino da grade semanal desktop com menos scroll horizontal e cards mais compactos
 [x] Desktop de `/agendamentos` voltou para agenda diaria operacional com colunas por profissional
@@ -82,6 +83,17 @@
 [x] Fase 8.6 do financeiro: responsivo mobile refinado na listagem de entradas-saidas
 [x] Fase 6.2 do financeiro: filtros por status e periodo em controle-pagamentos
 [x] Fase 9 do financeiro: card de resumo do dashboard integrado com dados reais
+[x] Dashboard `/dashboard` com labels financeiros alinhados ao dominio real de Entradas/Saidas, Contas a Pagar e Controle de Pagamentos
+[x] Dashboard `/dashboard` com proximos agendamentos reais da loja e acoes rapidas revisadas
+[x] Dashboard `/dashboard` com card `Status da agenda` alimentado por slots reais da store atual
+[x] `Entradas/Saidas > Novo` com autocomplete discreto de categorias por tipo e digitacao livre preservada
+[x] Indicador flutuante de desenvolvimento do Next removido da interface para nao obstruir a sidebar
+[x] `/horarios-de-atendimento` com selects revisados para mobile, usando dropdown mais controlado e confortavel
+[x] `/agendamentos` com selects e filtros mobile alinhados ao painel discreto do campo de busca de cliente
+[x] Dados publicos da agenda online da loja com tela de edicao acessivel pelo menu lateral
+[x] Agenda online publica com selects e data mobile ajustados para dropdown/calendario compactos
+[x] `/agendamentos` exibindo na grade apenas profissionais com expediente proprio configurado na data
+[x] `/agendamentos` com loading da board separado do estado vazio real
 [x] Estrutura do app autenticado: cabecalho interno padronizado nas paginas sem HeaderPage
 [x] Padronizacao de listagens: 10 itens iniciais com CTA Carregar mais
 [x] Diagnostico temporario do financeiro: helper Prisma sem reuso global em desenvolvimento
@@ -96,19 +108,30 @@ O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) poss
 - CRUD real e multi-tenant de Usuarios, Servicos e Equipe.
 - Tela redundante `/eventos` removida da navegacao e da API; combinacoes como `corte + barba` permanecem cobertas por `Servicos`.
 - Base de dominio multi-tenant do financeiro em Prisma com `FinanceEntry` (fase 1, sem CRUD/API/UI).
+- Dashboard `/dashboard` agora usa dados reais da loja para proximos agendamentos e resumo financeiro agregado no servidor, com acoes rapidas apontando para as telas corretas.
+- O card `Resumo financeiro` do dashboard agora nomeia os indicadores conforme o dominio real: saldos liquidos por `transactionDate` em Entradas/Saidas e despesas nao pagas das areas Contas a Pagar / Controle de Pagamentos.
+- O card `Status da agenda` do dashboard agora usa contagem real de slots livres e bloqueados de hoje, com base em slots de 15 min por profissional.
+- O formulario `Entradas/Saidas > Novo` agora sugere categorias por tipo (`Entrada` ou `Saida`) com base local adaptada do Glaavo em um autocomplete discreto, sem fechar o campo nem restringir o backend.
+- O indicador visual de desenvolvimento do Next foi desativado globalmente para nao sobrepor a sidebar e o botao de logout durante o uso local.
+- A tela `/horarios-de-atendimento` agora usa selects com dropdown controlado para o escopo do expediente e o escopo de bloqueio, com largura e interacao melhores em mobile.
+- Os selects de `/agendamentos` agora usam o mesmo padrao visual discreto do painel de busca de cliente, substituindo menus nativos pesados em filtros, formularios e bloqueios.
+- O link publico de agendamento agora tem um caminho claro de manutencao no app: os dados institucionais lidos de `Store` podem ser editados em `/agenda-online`, com atalho direto no menu lateral.
+- A agenda online publica deixou de depender de `select` e `input[type=date]` nativos no fluxo principal, usando dropdowns e calendario compactos para evitar overlays grandes no mobile.
+- A grade de `/agendamentos` agora mostra apenas profissionais com expediente proprio configurado na data selecionada, sem herdar automaticamente o expediente geral da loja.
 - APIs de horarios semanais e bloqueios de agenda persistidas em Prisma.
+- O backend de horarios semanais agora valida que todo expediente de profissional cabe integralmente dentro do expediente da loja no mesmo dia.
 - Base de conversas WhatsApp com `Conversation`, `ConversationMessage`, `AppointmentDraft` e `Appointment`.
 - Fluxo de bot via WhatsApp com menu inicial hibrido, selecao de servico, resolucao de profissional, sugestao ativa de horarios, escolha de horario por numero ou texto livre, confirmacao e criacao final do agendamento.
 - Tela `/agendamentos` com calendario mensal limpo, resumo por dia, sheet de detalhe, skeletons reais e criacao/edicao guiadas por disponibilidade real.
 - Tela `/agendamentos` agora com agenda diaria operacional por profissional como experiencia principal, preservando criacao, detalhe, edicao e disponibilidade reais.
 - Criacao manual e remarcacao em `/agendamentos` agora trafegam `date + time`, montam `startAt/endAt` de forma explicita no backend e mantem a mesma engine de disponibilidade como fonte de verdade.
 - `GET /api/appointments` agora aceita filtro por `date` e retorna o dia inteiro com intervalo seguro no timezone da agenda, evitando parse ambiguo no frontend.
-- A agenda de `/agendamentos` agora respeita o expediente configurado de cada profissional, com fallback para o horario geral da loja quando nao houver configuracao individual.
+- A agenda de `/agendamentos` agora mostra apenas profissionais com expediente proprio configurado e usa o horario da loja como limite maximo, sem abrir agenda automaticamente por heranca.
 - O formulario de novo agendamento saiu do topo da pagina e passou a abrir em modal com scroll interno, preservando o restante do layout.
 - Quando o modal abre a partir da coluna de um profissional, ele trava esse profissional e mostra apenas os servicos ativos vinculados a ele.
 - O modal de `/agendamentos` passou a ter uma opcao explicita para registrar atendimento ja realizado; sem marcar essa opcao, a trava de passado continua identica ao comportamento anterior.
 - Quando essa excecao retroativa e marcada, o modal agora exibe campos manuais de data e hora e usa esse preenchimento no create sem depender do slot visual.
-- `GET /api/appointments` e a montagem da agenda operacional passaram a considerar apenas statuses ativos, liberando o slot imediatamente apos cancelamento.
+- `GET /api/appointments` passou a devolver todos os statuses do dia para a agenda operacional, enquanto disponibilidade e conflitos continuam considerando apenas `SCHEDULED` e `CONFIRMED` como ocupacao ativa.
 - A disponibilidade passou a considerar bloqueios globais da loja e bloqueios especificos do profissional na mesma engine central.
 - Laboratorio `/agendamentos-lab` com FullCalendar Standard usando dados mockados para validar layout e renderizacao em isolamento.
 - Respostas JSON consistentes, validacoes no servidor e escopo por loja.
@@ -178,7 +201,9 @@ O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) poss
 - [x] Lista de servicos do modal filtrada pelos servicos reais do profissional quando o fluxo parte da coluna dele
 - [x] Create e update de appointments aceitando `allowPastScheduling` apenas como excecao explicita
 - [x] Modo retroativo do modal revelando `date + time` manual e permitindo submit sem depender de slot escolhido
-- [x] Agenda, contadores e cards de `/agendamentos` ignorando `CANCELED`, `DONE` e `NO_SHOW` como ocupacao ativa
+- [x] `/agendamentos` exibindo `SCHEDULED`, `CONFIRMED`, `CANCELED`, `DONE` e `NO_SHOW` com labels PT-BR, badge e filtro por status
+- [x] `PATCH /api/appointments/[id]/status` validando `status` com Zod e resolvendo `storeId` pela sessao
+- [x] Disponibilidade, conflitos e leitura de slot continuam ignorando `CANCELED`, `DONE` e `NO_SHOW` como ocupacao ativa
 - [x] Bloqueio por loja e bloqueio por profissional coexistindo na mesma validacao final do slot
 - [x] Modal de horarios disponiveis com selecao guiada de slot
 - [x] Modal de horarios listando todos os slots validos da data escolhida
@@ -595,6 +620,37 @@ Observacoes remanescentes:
 Proximo passo sugerido:
 
 - Tratar os warnings nao bloqueantes do build, com prioridade para a migracao de `middleware` para `proxy` e para a configuracao explicita de `turbopack.root`.
+
+## 5.5 Ajuste atual - status real de appointments na agenda operacional
+
+- A tela `/agendamentos` passou a exibir todos os valores reais de `AppointmentStatus` na grade por profissional/dia, com badge visual e mapeamento PT-BR (`Agendado`, `Confirmado`, `Cancelado`, `Atendido`, `Nao compareceu`).
+- Foi adicionado filtro por status com opcao `Todos`, sem remover o filtro existente por profissional.
+- Cada card da agenda ganhou menu rapido para marcar `CONFIRMED`, `DONE`, `CANCELED` ou `NO_SHOW`.
+- Cards em status final continuam visiveis na grade, mas disponibilidade e conflitos seguem tratando apenas `SCHEDULED` e `CONFIRMED` como ocupacao ativa.
+- Foi criada a rota `PATCH /api/appointments/[id]/status`, validando payload com Zod, resolvendo `storeId` pela sessao e preservando metadata existente com historico simples da mudanca.
+- `GET /api/appointments?date=...` agora devolve todos os statuses do dia para a UI filtrar, sem alterar a engine de disponibilidade usada no painel e no WhatsApp.
+
+Arquivos alterados neste ajuste:
+
+- `src/lib/appointments/presentation.ts`
+- `src/lib/validators/appointment.ts`
+- `app/api/appointments/route.ts`
+- `app/api/appointments/[id]/status/route.ts`
+- `app/(app)/agendamentos/page.tsx`
+- `app/(app)/agendamentos/components/appointment-status-menu.tsx`
+- `app/(app)/agendamentos/components/appointment-card.tsx`
+- `app/(app)/agendamentos/components/professional-schedule-board.tsx`
+- `app/(app)/agendamentos/components/professional-schedule-column.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+Validacao executada neste ajuste:
+
+- [x] `yarn eslint app/api/appointments/route.ts app/api/appointments/[id]/status/route.ts src/lib/validators/appointment.ts src/lib/appointments/presentation.ts app/(app)/agendamentos/page.tsx app/(app)/agendamentos/components/appointment-status-menu.tsx app/(app)/agendamentos/components/appointment-card.tsx app/(app)/agendamentos/components/professional-schedule-board.tsx app/(app)/agendamentos/components/professional-schedule-column.tsx`
+
+Proximo passo sugerido:
+
+- Cobrir `PATCH /api/appointments/[id]/status` com teste de integracao para sucesso, `404` por `storeId` divergente e `400` para payload invalido.
 
 ---
 

@@ -58,6 +58,10 @@ const data: {
           url: "/agendamentos",
         },
         {
+          title: "Dados públicos da agenda",
+          url: "/agenda-online",
+        },
+        {
           title: "Horários de atendimento",
           url: "/horarios-de-atendimento",
         },
