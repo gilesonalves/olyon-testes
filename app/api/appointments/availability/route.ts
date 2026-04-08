@@ -9,6 +9,7 @@ import {
 import { requireMembershipRole } from "@/lib/guards/require-membership-role"
 import { AppointmentAvailabilityQuerySchema } from "@/lib/validators/appointment"
 import {
+  checkAvailabilityForSlot,
   listEligibleStaffForService,
   listAvailableSlotsForDate,
 } from "@/lib/appointments/availability"
@@ -33,6 +34,82 @@ function serializeSlot(slot: {
   }
 }
 
+function getValidDate(value: unknown) {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value
+  }
+
+  if (typeof value !== "string" || !value.trim()) {
+    return null
+  }
+
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+function getSafeString(value: unknown, fallback: string) {
+  return typeof value === "string" && value.trim() ? value : fallback
+}
+
+function serializeSlotSafely(slot: {
+  startAt: unknown
+  endAt: unknown
+  label?: unknown
+}, timeZone: string) {
+  const startAt = getValidDate(slot.startAt)
+  const endAt = getValidDate(slot.endAt)
+  const label = getSafeString(slot.label, "Horario em conflito")
+
+  if (!startAt || !endAt) {
+    return {
+      startAt: startAt?.toISOString() ?? "",
+      endAt: endAt?.toISOString() ?? "",
+      date: "",
+      time: "",
+      endTime: "",
+      label,
+    }
+  }
+
+  return serializeSlot(
+    {
+      startAt,
+      endAt,
+      label,
+    },
+    timeZone
+  )
+}
+
+function serializeConflictingAppointmentsSafely(
+  appointments: unknown,
+  timeZone: string
+) {
+  if (!Array.isArray(appointments)) {
+    return []
+  }
+
+  return appointments.map((appointment) => {
+    const item =
+      appointment && typeof appointment === "object"
+        ? (appointment as Record<string, unknown>)
+        : {}
+    const startAt = getValidDate(item.startAt)
+    const endAt = getValidDate(item.endAt)
+
+    return {
+      id: getSafeString(item.id, ""),
+      customerName: getSafeString(item.customerName, "Cliente sem nome"),
+      date: startAt ? getDateKeyInTimeZone(startAt, timeZone) : "",
+      startTime: startAt ? getTimeKeyInTimeZone(startAt, timeZone) : "",
+      endTime: endAt ? getTimeKeyInTimeZone(endAt, timeZone) : "",
+      staffMembershipId:
+        typeof item.staffMembershipId === "string" ? item.staffMembershipId : null,
+      staffName: typeof item.staffName === "string" ? item.staffName : null,
+    }
+  })
+}
+
 export async function GET(req: Request) {
   try {
     const guard = await requireMembershipRole("STAFF")
@@ -47,6 +124,7 @@ export async function GET(req: Request) {
       excludeAppointmentId: searchParams.get("excludeAppointmentId"),
       searchDate: searchParams.get("searchDate"),
       searchStartAt: searchParams.get("searchStartAt"),
+      validateSelection: searchParams.get("validateSelection"),
     })
 
     if (!parsed.success) {
@@ -115,6 +193,62 @@ export async function GET(req: Request) {
       }
 
       resolvedStaffMembershipId = eligibleStaff[0].membershipId
+    }
+
+    if (input.validateSelection) {
+      if (!input.searchStartAt) {
+        return badRequest("Horario inicial da validacao e obrigatorio.")
+      }
+
+      const validation = await checkAvailabilityForSlot({
+        db: prisma,
+        storeId: guard.storeId,
+        requestedStartAt: input.searchStartAt,
+        durationMin: service.durationMin,
+        timeZone,
+        staffMembershipId: resolvedStaffMembershipId,
+        excludeAppointmentId: input.excludeAppointmentId,
+        suggestionsLimit: 5,
+      })
+
+      const requestedSlot = serializeSlotSafely(
+        {
+          startAt: validation.startAt,
+          endAt: validation.endAt,
+          label: `${getTimeKeyInTimeZone(validation.startAt, timeZone)} - ${getTimeKeyInTimeZone(validation.endAt, timeZone)}`,
+        },
+        timeZone
+      )
+      const suggestions = validation.suggestions.map((slot) =>
+        serializeSlotSafely(slot, timeZone)
+      )
+      const conflictingAppointments = validation.available
+        ? []
+        : serializeConflictingAppointmentsSafely(
+            validation.conflictingAppointments,
+            timeZone
+          )
+
+      if (!validation.available && validation.reason === "APPOINTMENT_CONFLICT") {
+        console.warn("[GET /api/appointments/availability] conflict detected", {
+          requestedSlot,
+          conflictingAppointmentsCount: conflictingAppointments.length,
+          suggestionsCount: suggestions.length,
+        })
+      }
+
+      return ok({
+        available: validation.available,
+        canOverride: !validation.available && validation.reason === "APPOINTMENT_CONFLICT",
+        reason: validation.available ? null : validation.reason,
+        message: validation.available ? null : validation.message,
+        slot: requestedSlot,
+        suggestions,
+        conflictingAppointmentsCount: validation.available
+          ? 0
+          : conflictingAppointments.length,
+        conflictingAppointments,
+      })
     }
 
     const currentDateKey = getDateKeyInTimeZone(new Date(), timeZone)

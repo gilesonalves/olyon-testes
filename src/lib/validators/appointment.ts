@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { APPOINTMENT_STATUSES } from "@/lib/appointments/presentation"
 import { normalizePhone } from "@/lib/utils/maskPhone"
 
 function isValidDateKey(value: string) {
@@ -74,6 +75,16 @@ const nullableDateKeyString = z
     message: "Data da busca invalida.",
   })
 
+const nullableBooleanString = z
+  .union([z.string(), z.null(), z.undefined()])
+  .transform((value) => {
+    if (typeof value !== "string") {
+      return false
+    }
+
+    return value.trim().toLowerCase() === "true"
+  })
+
 const dateKeyString = z.string().trim().refine(isValidDateKey, {
   message: "Data invalida.",
 })
@@ -97,6 +108,7 @@ export const AppointmentCreateSchema = z.object({
   date: dateKeyString,
   time: timeKeyString,
   allowPastScheduling: z.boolean().optional().default(false),
+  allowConflict: z.boolean().optional().default(false),
   notes: nullableTrimmedString,
 })
 
@@ -122,13 +134,11 @@ const optionalNullablePhoneString = z
     return digits.length > 0 ? digits : null
   })
 
-const AppointmentStatusSchema = z.enum([
-  "SCHEDULED",
-  "CONFIRMED",
-  "CANCELED",
-  "DONE",
-  "NO_SHOW",
-])
+export const AppointmentStatusSchema = z.enum(APPOINTMENT_STATUSES)
+
+export const AppointmentStatusUpdateSchema = z.object({
+  status: AppointmentStatusSchema,
+})
 
 export const AppointmentUpdateSchema = z
   .object({
@@ -167,6 +177,7 @@ export const AppointmentAvailabilityQuerySchema = z.object({
   excludeAppointmentId: nullableTrimmedString,
   searchDate: nullableDateKeyString,
   searchStartAt: nullableDateTimeString,
+  validateSelection: nullableBooleanString,
 }).refine((value) => value.searchDate !== null || value.searchStartAt !== null, {
   message: "Data da busca e obrigatoria.",
   path: ["searchDate"],
@@ -179,7 +190,7 @@ export const PublicAppointmentAvailabilityQuerySchema = z.object({
 })
 
 export const PublicAppointmentCreateSchema = AppointmentCreateSchema
-  .omit({ allowPastScheduling: true })
+  .omit({ allowPastScheduling: true, allowConflict: true })
   .refine((value) => value.staffMembershipId !== null, {
     message: "Profissional e obrigatorio.",
     path: ["staffMembershipId"],
@@ -191,6 +202,7 @@ export const PublicAppointmentCreateSchema = AppointmentCreateSchema
 
 export type AppointmentCreateInput = z.infer<typeof AppointmentCreateSchema>
 export type AppointmentUpdateInput = z.infer<typeof AppointmentUpdateSchema>
+export type AppointmentStatusUpdateInput = z.infer<typeof AppointmentStatusUpdateSchema>
 export type AppointmentListQueryInput = z.infer<typeof AppointmentListQuerySchema>
 export type AppointmentAvailabilityQueryInput = z.infer<typeof AppointmentAvailabilityQuerySchema>
 export type PublicAppointmentAvailabilityQueryInput = z.infer<

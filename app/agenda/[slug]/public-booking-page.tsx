@@ -1,8 +1,10 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import {
   CalendarDays,
+  ChevronLeft,
+  ChevronRight,
   Clock3,
   Mail,
   MapPin,
@@ -15,6 +17,14 @@ import {
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { cn } from "@/lib/utils"
 import { formatPhone, maskPhone, normalizePhone } from "@/lib/utils/maskPhone"
 import type { PublicBookingPageData } from "@/lib/public-booking"
 
@@ -56,6 +66,92 @@ type ApiError = {
   error: string
 }
 
+type BookingSelectOption = {
+  value: string
+  label: string
+  disabled?: boolean
+}
+
+type CalendarDay = {
+  date: Date
+  inMonth: boolean
+}
+
+const EMPTY_SERVICE_VALUE = "__empty_service__"
+const EMPTY_PROFESSIONAL_VALUE = "__empty_professional__"
+const MONTHS_PT_BR = [
+  "janeiro",
+  "fevereiro",
+  "marco",
+  "abril",
+  "maio",
+  "junho",
+  "julho",
+  "agosto",
+  "setembro",
+  "outubro",
+  "novembro",
+  "dezembro",
+]
+const WEEKDAYS_PT_BR = ["D", "S", "T", "Q", "Q", "S", "S"]
+
+function pad(value: number) {
+  return value.toString().padStart(2, "0")
+}
+
+function toDateKey(date: Date) {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
+    date.getDate()
+  )}`
+}
+
+function parseDateKeyToLocalDate(value: string) {
+  const [year, month, day] = value.split("-").map(Number)
+  return new Date(year, month - 1, day, 12, 0, 0)
+}
+
+function isDateBefore(leftDateKey: string, rightDateKey: string) {
+  return parseDateKeyToLocalDate(leftDateKey).getTime() < parseDateKeyToLocalDate(rightDateKey).getTime()
+}
+
+function buildCalendarDays(month: Date): CalendarDay[] {
+  const year = month.getFullYear()
+  const monthIndex = month.getMonth()
+  const firstDayOfMonth = new Date(year, monthIndex, 1)
+  const startWeekday = firstDayOfMonth.getDay()
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate()
+  const daysInPrevMonth = new Date(year, monthIndex, 0).getDate()
+
+  const days: CalendarDay[] = []
+
+  for (let index = 0; index < 42; index += 1) {
+    const dayNumber = index - startWeekday + 1
+
+    if (dayNumber <= 0) {
+      days.push({
+        date: new Date(year, monthIndex - 1, daysInPrevMonth + dayNumber),
+        inMonth: false,
+      })
+      continue
+    }
+
+    if (dayNumber > daysInMonth) {
+      days.push({
+        date: new Date(year, monthIndex + 1, dayNumber - daysInMonth),
+        inMonth: false,
+      })
+      continue
+    }
+
+    days.push({
+      date: new Date(year, monthIndex, dayNumber),
+      inMonth: true,
+    })
+  }
+
+  return days
+}
+
 function buildAddressLabel(data: PublicBookingPageData["store"]) {
   const parts = [
     data.address,
@@ -71,6 +167,185 @@ function buildAddressLabel(data: PublicBookingPageData["store"]) {
 function formatDateLabel(dateKey: string) {
   const [year, month, day] = dateKey.split("-")
   return `${day}/${month}/${year}`
+}
+
+function BookingSelectField({
+  value,
+  onValueChange,
+  options,
+  placeholder,
+  disabled = false,
+}: {
+  value: string
+  onValueChange: (value: string) => void
+  options: BookingSelectOption[]
+  placeholder: string
+  disabled?: boolean
+}) {
+  return (
+    <Select value={value} onValueChange={onValueChange} disabled={disabled}>
+      <SelectTrigger className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-left text-sm text-slate-700 shadow-sm">
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent
+        align="start"
+        sideOffset={6}
+        className="max-h-72 rounded-2xl border-slate-200 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.12)]"
+      >
+        {options.map((option) => (
+          <SelectItem
+            key={option.value}
+            value={option.value}
+            disabled={option.disabled}
+            className="rounded-xl px-3 py-2.5 text-sm text-slate-700 data-[state=checked]:bg-slate-100 data-[state=checked]:text-slate-900"
+          >
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+}
+
+function BookingDateField({
+  value,
+  minDate,
+  onChange,
+}: {
+  value: string
+  minDate: string
+  onChange: (value: string) => void
+}) {
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const [open, setOpen] = useState(false)
+  const [month, setMonth] = useState(() => parseDateKeyToLocalDate(value))
+  const todayDateKey = minDate
+  const days = useMemo(() => buildCalendarDays(month), [month])
+  const monthLabel = `${MONTHS_PT_BR[month.getMonth()]} de ${month.getFullYear()}`
+
+  useEffect(() => {
+    setMonth(parseDateKeyToLocalDate(value))
+  }, [value])
+
+  useEffect(() => {
+    function handlePointerDown(event: MouseEvent) {
+      if (
+        containerRef.current &&
+        event.target instanceof Node &&
+        !containerRef.current.contains(event.target)
+      ) {
+        setOpen(false)
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown)
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown)
+    }
+  }, [])
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className="flex h-11 w-full items-center justify-between rounded-xl border border-slate-300 bg-white px-3 text-left text-sm text-slate-700 shadow-sm transition hover:border-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-200"
+      >
+        <span>{formatDateLabel(value)}</span>
+        <CalendarDays className="size-4 text-slate-400" />
+      </button>
+
+      {open ? (
+        <div className="absolute left-0 right-0 z-30 mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_18px_40px_rgba(15,23,42,0.12)]">
+          <div className="flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                setMonth(
+                  new Date(month.getFullYear(), month.getMonth() - 1, 1, 12, 0, 0)
+                )
+              }
+              className="inline-flex size-9 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:bg-slate-50"
+            >
+              <ChevronLeft className="size-4" />
+            </button>
+            <p className="text-sm font-semibold capitalize text-slate-900">
+              {monthLabel}
+            </p>
+            <button
+              type="button"
+              onClick={() =>
+                setMonth(
+                  new Date(month.getFullYear(), month.getMonth() + 1, 1, 12, 0, 0)
+                )
+              }
+              className="inline-flex size-9 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:bg-slate-50"
+            >
+              <ChevronRight className="size-4" />
+            </button>
+          </div>
+
+          <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[11px] font-medium uppercase tracking-wide text-slate-400">
+            {WEEKDAYS_PT_BR.map((weekday) => (
+              <span key={weekday} className="py-1">
+                {weekday}
+              </span>
+            ))}
+          </div>
+
+          <div className="mt-2 grid grid-cols-7 gap-1">
+            {days.map((day, index) => {
+              const dateKey = toDateKey(day.date)
+              const isDisabled =
+                !day.inMonth || isDateBefore(dateKey, todayDateKey)
+              const isSelected = dateKey === value
+              const isToday = dateKey === todayDateKey
+
+              return (
+                <button
+                  key={`${dateKey}-${index}`}
+                  type="button"
+                  disabled={isDisabled}
+                  onClick={() => {
+                    onChange(dateKey)
+                    setOpen(false)
+                  }}
+                  className={cn(
+                    "flex h-10 items-center justify-center rounded-xl text-sm transition",
+                    isDisabled
+                      ? "cursor-not-allowed text-slate-300"
+                      : "text-slate-700 hover:bg-slate-100",
+                    isToday && !isSelected ? "border border-slate-200" : "",
+                    isSelected ? "bg-slate-900 text-white shadow-sm" : ""
+                  )}
+                >
+                  {day.date.getDate()}
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
+            <button
+              type="button"
+              onClick={() => {
+                onChange(todayDateKey)
+                setMonth(parseDateKeyToLocalDate(todayDateKey))
+                setOpen(false)
+              }}
+              className="text-sm font-medium text-slate-600 transition hover:text-slate-900"
+            >
+              Hoje
+            </button>
+            <p className="text-xs text-slate-400">
+              Selecione uma data futura
+            </p>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
 }
 
 export default function PublicBookingPage({
@@ -429,22 +704,28 @@ export default function PublicBookingPage({
               <div className="grid gap-4">
                 <div className="grid gap-2">
                   <label className="text-sm font-medium text-slate-700">Servico</label>
-                  <select
-                    value={serviceId}
-                    onChange={(event) => setServiceId(event.target.value)}
-                    className="h-11 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 shadow-xs outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
-                  >
-                    {data.services.length === 0 ? (
-                      <option value="">Nenhum servico disponivel</option>
-                    ) : (
-                      <option value="">Selecione um servico</option>
-                    )}
-                    {data.services.map((service) => (
-                      <option key={service.id} value={service.id}>
-                        {service.name} · {service.durationMin} min
-                      </option>
-                    ))}
-                  </select>
+                  <BookingSelectField
+                    value={serviceId || EMPTY_SERVICE_VALUE}
+                    onValueChange={(value) =>
+                      setServiceId(value === EMPTY_SERVICE_VALUE ? "" : value)
+                    }
+                    placeholder="Selecione um servico"
+                    options={[
+                      {
+                        value: EMPTY_SERVICE_VALUE,
+                        label:
+                          data.services.length === 0
+                            ? "Nenhum servico disponivel"
+                            : "Selecione um servico",
+                        disabled: data.services.length === 0,
+                      },
+                      ...data.services.map((service) => ({
+                        value: service.id,
+                        label: `${service.name} · ${service.durationMin} min`,
+                      })),
+                    ]}
+                    disabled={data.services.length === 0}
+                  />
                   {selectedService?.description ? (
                     <p className="text-xs text-slate-500">{selectedService.description}</p>
                   ) : null}
@@ -453,35 +734,38 @@ export default function PublicBookingPage({
                 <div className="grid gap-2 sm:grid-cols-[1fr_220px]">
                   <div className="grid gap-2">
                     <label className="text-sm font-medium text-slate-700">Profissional</label>
-                    <select
-                      value={staffMembershipId}
-                      onChange={(event) => setStaffMembershipId(event.target.value)}
+                    <BookingSelectField
+                      value={staffMembershipId || EMPTY_PROFESSIONAL_VALUE}
+                      onValueChange={(value) =>
+                        setStaffMembershipId(
+                          value === EMPTY_PROFESSIONAL_VALUE ? "" : value
+                        )
+                      }
+                      placeholder="Selecione um profissional"
                       disabled={!serviceId || eligibleProfessionals.length === 0}
-                      className="h-11 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 shadow-xs outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      <option value="">
-                        {eligibleProfessionals.length === 0
-                          ? "Nenhum profissional elegivel"
-                          : "Selecione um profissional"}
-                      </option>
-                      {eligibleProfessionals.map((professional) => (
-                        <option
-                          key={professional.membershipId}
-                          value={professional.membershipId}
-                        >
-                          {professional.name}
-                        </option>
-                      ))}
-                    </select>
+                      options={[
+                        {
+                          value: EMPTY_PROFESSIONAL_VALUE,
+                          label:
+                            eligibleProfessionals.length === 0
+                              ? "Nenhum profissional elegivel"
+                              : "Selecione um profissional",
+                          disabled: eligibleProfessionals.length === 0,
+                        },
+                        ...eligibleProfessionals.map((professional) => ({
+                          value: professional.membershipId,
+                          label: professional.name,
+                        })),
+                      ]}
+                    />
                   </div>
 
                   <div className="grid gap-2">
                     <label className="text-sm font-medium text-slate-700">Data</label>
-                    <Input
-                      type="date"
+                    <BookingDateField
                       value={searchDate}
-                      min={data.todayDate}
-                      onChange={(event) => setSearchDate(event.target.value)}
+                      minDate={data.todayDate}
+                      onChange={setSearchDate}
                     />
                   </div>
                 </div>

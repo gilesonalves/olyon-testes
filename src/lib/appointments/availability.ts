@@ -35,6 +35,15 @@ export type SuggestedSlot = {
   label: string
 }
 
+export type AvailabilityConflictingAppointment = {
+  id: string
+  customerName: string
+  startAt: Date
+  endAt: Date
+  staffMembershipId: string | null
+  staffName: string | null
+}
+
 type AvailabilityReason =
   | "NO_WORKING_HOURS_CONFIGURED"
   | "OUTSIDE_WORKING_HOURS"
@@ -55,6 +64,7 @@ type AvailabilityFailure = {
   reason: AvailabilityReason
   message: string
   suggestions: SuggestedSlot[]
+  conflictingAppointments: AvailabilityConflictingAppointment[]
 }
 
 export type SlotAvailabilityResult = AvailabilitySuccess | AvailabilityFailure
@@ -85,12 +95,7 @@ type BlockedWindow = {
   endTime: string | null
 }
 
-type AppointmentWindow = {
-  id: string
-  startAt: Date
-  endAt: Date
-  staffMembershipId: string | null
-}
+type AppointmentWindow = AvailabilityConflictingAppointment
 
 type AvailabilityContext = {
   timeZone: string
@@ -103,6 +108,11 @@ type AvailabilityContext = {
   membershipWorkingDaysByWeekday: Map<Weekday, WorkingDay>
   blockedByDateKey: Map<string, BlockedWindow[]>
   appointments: AppointmentWindow[]
+}
+
+type WorkingInterval = {
+  startTime: string
+  endTime: string
 }
 
 export async function listEligibleStaffForService(params: {
@@ -246,6 +256,7 @@ export async function checkAvailabilityForSlot(params: {
     reason: requestedEvaluation.reason,
     message: requestedEvaluation.message,
     suggestions: findSuggestedSlots(context, params.requestedStartAt, suggestionsLimit),
+    conflictingAppointments: requestedEvaluation.conflictingAppointments,
   } satisfies AvailabilityFailure
 }
 
@@ -390,9 +401,19 @@ async function buildAvailabilityContext(params: {
       },
       select: {
         id: true,
+        customerName: true,
         startAt: true,
         endAt: true,
         staffMembershipId: true,
+        membership: {
+          select: {
+            user: {
+              select: {
+                name: true,
+              },
+            },
+          },
+        },
       },
     }),
   ])
@@ -448,7 +469,14 @@ async function buildAvailabilityContext(params: {
     storeWorkingDaysByWeekday,
     membershipWorkingDaysByWeekday,
     blockedByDateKey,
-    appointments,
+    appointments: appointments.map((appointment) => ({
+      id: appointment.id,
+      customerName: appointment.customerName,
+      startAt: appointment.startAt,
+      endAt: appointment.endAt,
+      staffMembershipId: appointment.staffMembershipId,
+      staffName: appointment.membership?.user.name ?? null,
+    })),
   } satisfies AvailabilityContext
 }
 
@@ -464,7 +492,8 @@ function evaluateSlot(context: AvailabilityContext, startAt: Date, endAt: Date) 
     return {
       available: false as const,
       reason: "NO_WORKING_HOURS_CONFIGURED" as const,
-      message: "Ainda nao ha horarios de atendimento configurados para a agenda.",
+      message: getNoWorkingHoursMessage(context),
+      conflictingAppointments: [],
     }
   }
 
@@ -473,6 +502,7 @@ function evaluateSlot(context: AvailabilityContext, startAt: Date, endAt: Date) 
       available: false as const,
       reason: "OUTSIDE_WORKING_HOURS" as const,
       message: "Esse horario nao cabe dentro do expediente configurado.",
+      conflictingAppointments: [],
     }
   }
 
@@ -481,6 +511,7 @@ function evaluateSlot(context: AvailabilityContext, startAt: Date, endAt: Date) 
       available: false as const,
       reason: "OUTSIDE_WORKING_HOURS" as const,
       message: "Esse horario fica fora do expediente ou nao comporta toda a duracao do servico.",
+      conflictingAppointments: [],
     }
   }
 
@@ -490,16 +521,22 @@ function evaluateSlot(context: AvailabilityContext, startAt: Date, endAt: Date) 
       available: false as const,
       reason: "BLOCKED" as const,
       message: "Esse horario esta bloqueado na agenda.",
+      conflictingAppointments: [],
     }
   }
 
-  if (context.appointments.some((appointment) => appointment.startAt < endAt && appointment.endAt > startAt)) {
+  const conflictingAppointments = context.appointments.filter(
+    (appointment) => appointment.startAt < endAt && appointment.endAt > startAt
+  )
+
+  if (conflictingAppointments.length > 0) {
     return {
       available: false as const,
       reason: "APPOINTMENT_CONFLICT" as const,
       message: context.staffMembershipId
         ? "Esse horario ja esta ocupado para o profissional escolhido."
         : "Esse horario ja foi ocupado por outro agendamento.",
+      conflictingAppointments,
     }
   }
 
@@ -509,10 +546,35 @@ function evaluateSlot(context: AvailabilityContext, startAt: Date, endAt: Date) 
 }
 
 function getEffectiveWorkingDay(context: AvailabilityContext, weekday: Weekday) {
-  return (
-    context.membershipWorkingDaysByWeekday.get(weekday) ??
-    context.storeWorkingDaysByWeekday.get(weekday)
+  const storeDay = context.storeWorkingDaysByWeekday.get(weekday)
+
+  if (!context.staffMembershipId) {
+    return storeDay
+  }
+
+  const membershipDay = context.membershipWorkingDaysByWeekday.get(weekday)
+  if (!membershipDay?.enabled || membershipDay.intervals.length === 0) {
+    return null
+  }
+
+  if (!storeDay?.enabled || storeDay.intervals.length === 0) {
+    return null
+  }
+
+  const effectiveIntervals = intersectWorkingIntervals(
+    membershipDay.intervals,
+    storeDay.intervals
   )
+
+  if (effectiveIntervals.length === 0) {
+    return null
+  }
+
+  return {
+    weekday,
+    enabled: true,
+    intervals: effectiveIntervals,
+  } satisfies WorkingDay
 }
 
 function hasAnyEnabledWorkingDay(context: AvailabilityContext) {
@@ -524,6 +586,50 @@ function hasAnyEnabledWorkingDay(context: AvailabilityContext) {
   }
 
   return false
+}
+
+function getNoWorkingHoursMessage(context: AvailabilityContext) {
+  if (!context.staffMembershipId) {
+    return "Ainda nao ha horarios de atendimento configurados para a agenda."
+  }
+
+  const hasOwnConfiguredDay = Array.from(context.membershipWorkingDaysByWeekday.values()).some(
+    (day) => day.enabled && day.intervals.length > 0
+  )
+
+  if (!hasOwnConfiguredDay) {
+    return "Este profissional ainda nao possui expediente configurado."
+  }
+
+  return "O horario do profissional precisa estar dentro do expediente da loja."
+}
+
+function intersectWorkingIntervals(
+  membershipIntervals: WorkingInterval[],
+  storeIntervals: WorkingInterval[]
+) {
+  const intersections: WorkingInterval[] = []
+
+  for (const membershipInterval of membershipIntervals) {
+    const membershipStart = timeKeyToMinutes(membershipInterval.startTime)
+    const membershipEnd = timeKeyToMinutes(membershipInterval.endTime)
+
+    for (const storeInterval of storeIntervals) {
+      const storeStart = timeKeyToMinutes(storeInterval.startTime)
+      const storeEnd = timeKeyToMinutes(storeInterval.endTime)
+      const startMinutes = Math.max(membershipStart, storeStart)
+      const endMinutes = Math.min(membershipEnd, storeEnd)
+
+      if (startMinutes < endMinutes) {
+        intersections.push({
+          startTime: minutesToTimeKey(startMinutes),
+          endTime: minutesToTimeKey(endMinutes),
+        })
+      }
+    }
+  }
+
+  return intersections.sort((left, right) => left.startTime.localeCompare(right.startTime))
 }
 
 function fitsAnyInterval(

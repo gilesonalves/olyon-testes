@@ -38,6 +38,7 @@ type ProfessionalScheduleBoardProps = {
   professionals: ProfessionalColumnItem[]
   loading?: boolean
   error?: string | null
+  emptyMessage?: string
   onAppointmentClick: (appointmentId: string) => void
   onEmptySlotClick: (slot: EmptySlotSelection) => void
   onBlockSchedule: (professional: ProfessionalColumnItem) => void
@@ -124,6 +125,7 @@ export default function ProfessionalScheduleBoard({
   professionals,
   loading = false,
   error = null,
+  emptyMessage,
   onAppointmentClick,
   onEmptySlotClick,
   onBlockSchedule,
@@ -172,6 +174,9 @@ export default function ProfessionalScheduleBoard({
   if (loading) {
     return (
       <section className="w-full min-w-0 max-w-full overflow-hidden rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] p-4 shadow-sm sm:p-5">
+        <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-center text-sm font-medium text-slate-600">
+          Carregando agendas...
+        </div>
         <div className="w-full max-w-full overflow-x-auto overscroll-x-contain pb-1">
           <div className="flex min-w-max items-start gap-4">
             {Array.from({ length: Math.max(visibleProfessionals.length, 3) }, (_, index) => (
@@ -194,7 +199,7 @@ export default function ProfessionalScheduleBoard({
   if (professionals.length === 0) {
     return (
       <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50/80 px-5 py-10 text-center text-sm text-slate-600">
-        Nenhuma coluna visivel no momento. Reexiba um profissional para continuar usando a agenda.
+        {emptyMessage ?? "Nenhuma coluna visivel no momento. Reexiba um profissional para continuar usando a agenda."}
       </div>
     )
   }

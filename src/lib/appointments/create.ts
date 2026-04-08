@@ -1,6 +1,10 @@
 import type { Prisma, PrismaClient } from "../../../generated/prisma/client"
 import { AppointmentStatus } from "../../../generated/prisma/client"
-import { checkAvailabilityForSlot } from "@/lib/appointments/availability"
+import {
+  type AvailabilityConflictingAppointment,
+  checkAvailabilityForSlot,
+  type SuggestedSlot,
+} from "@/lib/appointments/availability"
 import { combineDateKeyAndTime, getBotTimezone } from "@/lib/bot/datetime"
 
 type CreateAppointmentDbClient = Pick<
@@ -22,14 +26,70 @@ type CreateAppointmentInput = {
   date: string
   time: string
   allowPastScheduling?: boolean
+  allowConflict?: boolean
   notes?: string | null
+}
+
+export const MANUAL_APPOINTMENT_CONFLICT_REQUIRES_CONFIRMATION_CODE =
+  "MANUAL_APPOINTMENT_CONFLICT_REQUIRES_CONFIRMATION"
+
+export type ManualAppointmentConflictDetails = {
+  reason: "APPOINTMENT_CONFLICT"
+  requestedStartAt: Date
+  requestedEndAt: Date
+  conflictingAppointments: AvailabilityConflictingAppointment[]
+  suggestions: SuggestedSlot[]
 }
 
 export class AppointmentCreationError extends Error {
   constructor(message: string) {
     super(message)
     this.name = "AppointmentCreationError"
+    Object.setPrototypeOf(this, new.target.prototype)
   }
+}
+
+export class AppointmentConflictRequiresConfirmationError extends AppointmentCreationError {
+  code = MANUAL_APPOINTMENT_CONFLICT_REQUIRES_CONFIRMATION_CODE
+  details: ManualAppointmentConflictDetails
+
+  constructor(message: string, details: ManualAppointmentConflictDetails) {
+    super(message)
+    this.name = "AppointmentConflictRequiresConfirmationError"
+    this.details = details
+  }
+}
+
+function getMetadataObject(
+  value: Prisma.InputJsonValue | undefined
+): Prisma.InputJsonObject {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {}
+  }
+
+  return { ...(value as Prisma.InputJsonObject) }
+}
+
+function buildConflictAuditMetadata(params: {
+  source: "ADMIN" | "WEB" | "WHATSAPP"
+  conflictingAppointments: AvailabilityConflictingAppointment[]
+}) {
+  return {
+    manualConflictOverride: {
+      confirmed: true,
+      confirmedAt: new Date().toISOString(),
+      confirmedBySource: params.source,
+      conflictingAppointmentsCount: params.conflictingAppointments.length,
+      conflictingAppointments: params.conflictingAppointments.map((appointment) => ({
+        id: appointment.id,
+        customerName: appointment.customerName,
+        startAt: appointment.startAt.toISOString(),
+        endAt: appointment.endAt.toISOString(),
+        staffMembershipId: appointment.staffMembershipId,
+        staffName: appointment.staffName,
+      })),
+    },
+  } satisfies Prisma.InputJsonObject
 }
 
 export async function createAppointmentForStore(params: {
@@ -97,8 +157,41 @@ export async function createAppointmentForStore(params: {
   })
 
   if (!availability.available) {
-    throw new AppointmentCreationError(availability.message)
+    if (availability.reason === "APPOINTMENT_CONFLICT") {
+      if (!params.input.allowConflict) {
+        console.warn("[createAppointmentForStore] conflict requires confirmation", {
+          storeId: params.storeId,
+          source: params.source,
+          requestedStartAt: availability.startAt.toISOString(),
+          requestedEndAt: availability.endAt.toISOString(),
+          conflictingAppointmentsCount: availability.conflictingAppointments.length,
+        })
+
+        throw new AppointmentConflictRequiresConfirmationError(availability.message, {
+          reason: "APPOINTMENT_CONFLICT",
+          requestedStartAt: availability.startAt,
+          requestedEndAt: availability.endAt,
+          conflictingAppointments: availability.conflictingAppointments,
+          suggestions: availability.suggestions,
+        })
+      }
+    } else {
+      throw new AppointmentCreationError(availability.message)
+    }
   }
+
+  const appointmentStartAt = availability.startAt
+  const appointmentEndAt = availability.endAt
+  const metadata =
+    !availability.available && availability.reason === "APPOINTMENT_CONFLICT"
+      ? {
+          ...getMetadataObject(params.metadata),
+          ...buildConflictAuditMetadata({
+            source: params.source,
+            conflictingAppointments: availability.conflictingAppointments,
+          }),
+        }
+      : params.metadata
 
   return params.db.appointment.create({
     data: {
@@ -109,11 +202,11 @@ export async function createAppointmentForStore(params: {
       customerName: params.input.customerName,
       customerPhone: params.input.customerPhone ?? undefined,
       customerEmail: params.input.customerEmail ?? undefined,
-      startAt: availability.startAt,
-      endAt: availability.endAt,
+      startAt: appointmentStartAt,
+      endAt: appointmentEndAt,
       notes: params.input.notes ?? undefined,
       source: params.source,
-      metadata: params.metadata,
+      metadata,
     },
     include: {
       service: {

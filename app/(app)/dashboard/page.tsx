@@ -1,10 +1,15 @@
-import HeaderPage from "@/components/headerPage";
-import FinanceSummaryCard from "@/components/dashboard/finance-summary-card";
-import QuickActionsCard from "@/components/dashboard/quick-actions-card";
-import ScheduleStatusCard from "@/components/dashboard/schedule-status-card";
-import UpcomingAppointmentsCard from "@/components/dashboard/upcoming-appointments-card";
+import HeaderPage from "@/components/headerPage"
+import FinanceSummaryCard from "@/components/dashboard/finance-summary-card"
+import QuickActionsCard from "@/components/dashboard/quick-actions-card"
+import ScheduleStatusCard from "@/components/dashboard/schedule-status-card"
+import UpcomingAppointmentsCard from "@/components/dashboard/upcoming-appointments-card"
+import { requireStoreId } from "@/lib/current-store"
+import { getDashboardOverview } from "@/lib/dashboard/overview"
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const storeId = await requireStoreId()
+  const dashboardOverview = await getDashboardOverview(storeId)
+
   return (
     <>
       <HeaderPage>
@@ -14,15 +19,15 @@ export default function DashboardPage() {
       </HeaderPage>
 
       <div className="space-y-6 p-7">
-        <UpcomingAppointmentsCard />
+        <UpcomingAppointmentsCard appointments={dashboardOverview.upcomingAppointments} />
 
         <div className="grid gap-6 lg:grid-cols-2">
-          <FinanceSummaryCard />
-          <ScheduleStatusCard />
+          <FinanceSummaryCard summary={dashboardOverview.financeSummary} />
+          <ScheduleStatusCard status={dashboardOverview.scheduleStatus} />
         </div>
 
         <QuickActionsCard />
       </div>
     </>
-  );
+  )
 }

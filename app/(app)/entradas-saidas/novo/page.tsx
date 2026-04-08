@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect } from "react"
+import { useEffect, useId, useMemo, useRef, useState } from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Controller as ControllerForm, useForm } from "react-hook-form"
 import { type Resolver } from "react-hook-form"
@@ -15,10 +15,28 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import HeaderPage from "@/components/headerPage"
 import { Controller } from "../controllers"
 import { formSchema, type FormValues } from "../schemas"
+import {
+  CATEGORIES_EXPENSES_ARRAY,
+  CATEGORIES_INCOME_ARRAY,
+} from "@/constants/finance-categories"
+
+const CATEGORY_SUGGESTIONS_LIMIT = 8
+
+function normalizeCategoryQuery(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+}
 
 export default function ItemNovo() {
   const router = useRouter()
   const { createEntry } = Controller({ autoLoad: false })
+  const categoryFieldRef = useRef<HTMLDivElement | null>(null)
+  const categoryListboxId = useId()
+  const [isCategoryDropdownOpen, setCategoryDropdownOpen] = useState(false)
+  const [highlightedCategoryIndex, setHighlightedCategoryIndex] = useState(0)
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema) as unknown as Resolver<FormValues>,
     defaultValues: {
@@ -31,6 +49,26 @@ export default function ItemNovo() {
     },
   })
   const selectedType = form.watch("type")
+  const categoryValue = form.watch("category")
+  const categorySuggestions =
+    selectedType === "INCOME" ? CATEGORIES_INCOME_ARRAY : CATEGORIES_EXPENSES_ARRAY
+  const filteredCategorySuggestions = useMemo(() => {
+    const normalizedQuery = normalizeCategoryQuery(categoryValue ?? "")
+
+    if (!normalizedQuery) {
+      return categorySuggestions.slice(0, CATEGORY_SUGGESTIONS_LIMIT)
+    }
+
+    return categorySuggestions
+      .filter((category) =>
+        normalizeCategoryQuery(category.label).includes(normalizedQuery)
+      )
+      .slice(0, CATEGORY_SUGGESTIONS_LIMIT)
+  }, [categorySuggestions, categoryValue])
+  const hasCategoryQuery = Boolean(categoryValue?.trim())
+  const shouldShowCategoryDropdown =
+    isCategoryDropdownOpen &&
+    (filteredCategorySuggestions.length > 0 || hasCategoryQuery)
 
   useEffect(() => {
     if (selectedType === "INCOME") {
@@ -38,11 +76,43 @@ export default function ItemNovo() {
     }
   }, [form, selectedType])
 
+  useEffect(() => {
+    setHighlightedCategoryIndex(0)
+  }, [filteredCategorySuggestions.length, selectedType])
+
+  useEffect(() => {
+    function handlePointerDown(event: MouseEvent) {
+      if (
+        categoryFieldRef.current &&
+        event.target instanceof Node &&
+        !categoryFieldRef.current.contains(event.target)
+      ) {
+        setCategoryDropdownOpen(false)
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown)
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown)
+    }
+  }, [])
+
+  function selectCategorySuggestion(
+    value: string,
+    onChange: (value: string) => void
+  ) {
+    onChange(value)
+    form.clearErrors("category")
+    setCategoryDropdownOpen(false)
+    setHighlightedCategoryIndex(0)
+  }
+
   const onSubmit = async (data: FormValues) => {
     const result = await createEntry({
       type: data.type,
       amount: Number(data.amount),
-      category: data.category,
+      category: data.category.trim(),
       description: data.description?.trim() ? data.description.trim() : null,
       transactionDate: data.transactionDate,
       dueDate: data.type === "EXPENSE" && data.dueDate?.trim() ? data.dueDate : null,
@@ -120,13 +190,155 @@ export default function ItemNovo() {
             render={({ field, fieldState }) => (
               <Field data-invalid={fieldState.invalid}>
                 <FieldLabel htmlFor="category">Categoria</FieldLabel>
-                <Input
-                  {...field}
-                  id="category"
-                  type="text"
-                  aria-invalid={fieldState.invalid}
-                  placeholder="Ex.: Fornecedor, Venda, Taxa"
-                />
+                <div ref={categoryFieldRef} className="relative">
+                  <Input
+                    {...field}
+                    id="category"
+                    type="text"
+                    aria-invalid={fieldState.invalid}
+                    aria-autocomplete="list"
+                    aria-controls={categoryListboxId}
+                    aria-expanded={shouldShowCategoryDropdown}
+                    aria-activedescendant={
+                      shouldShowCategoryDropdown &&
+                      filteredCategorySuggestions[highlightedCategoryIndex]
+                        ? `${categoryListboxId}-${highlightedCategoryIndex}`
+                        : undefined
+                    }
+                    role="combobox"
+                    autoComplete="off"
+                    placeholder={
+                      selectedType === "INCOME"
+                        ? "Ex.: Servicos prestados, Vendas, Bonus"
+                        : "Ex.: Fornecedor local, Material de limpeza, Taxa da maquininha"
+                    }
+                    onFocus={() => {
+                      setCategoryDropdownOpen(true)
+                    }}
+                    onBlur={() => {
+                      field.onBlur()
+                      setTimeout(() => {
+                        if (
+                          categoryFieldRef.current &&
+                          !categoryFieldRef.current.contains(document.activeElement)
+                        ) {
+                          setCategoryDropdownOpen(false)
+                        }
+                      }, 0)
+                    }}
+                    onChange={(event) => {
+                      field.onChange(event)
+                      setCategoryDropdownOpen(true)
+                      setHighlightedCategoryIndex(0)
+                    }}
+                    onKeyDown={(event) => {
+                      if (!filteredCategorySuggestions.length) {
+                        if (event.key === "Escape") {
+                          setCategoryDropdownOpen(false)
+                        }
+
+                        return
+                      }
+
+                      if (event.key === "ArrowDown") {
+                        event.preventDefault()
+                        setCategoryDropdownOpen(true)
+                        setHighlightedCategoryIndex((current) =>
+                          current >= filteredCategorySuggestions.length - 1
+                            ? 0
+                            : current + 1
+                        )
+                        return
+                      }
+
+                      if (event.key === "ArrowUp") {
+                        event.preventDefault()
+                        setCategoryDropdownOpen(true)
+                        setHighlightedCategoryIndex((current) =>
+                          current <= 0
+                            ? filteredCategorySuggestions.length - 1
+                            : current - 1
+                        )
+                        return
+                      }
+
+                      if (event.key === "Enter" && shouldShowCategoryDropdown) {
+                        const highlightedCategory =
+                          filteredCategorySuggestions[highlightedCategoryIndex]
+
+                        if (highlightedCategory) {
+                          event.preventDefault()
+                          selectCategorySuggestion(
+                            highlightedCategory.label,
+                            field.onChange
+                          )
+                        }
+
+                        return
+                      }
+
+                      if (event.key === "Escape") {
+                        setCategoryDropdownOpen(false)
+                      }
+                    }}
+                  />
+
+                  {shouldShowCategoryDropdown ? (
+                    <div
+                      id={categoryListboxId}
+                      role="listbox"
+                      className="absolute left-0 right-0 z-20 mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg"
+                    >
+                      {filteredCategorySuggestions.length > 0 ? (
+                        <div className="max-h-56 overflow-y-auto p-1.5">
+                          {filteredCategorySuggestions.map((category, index) => {
+                            const isHighlighted = index === highlightedCategoryIndex
+                            const isSelected =
+                              normalizeCategoryQuery(field.value ?? "") ===
+                              normalizeCategoryQuery(category.label)
+
+                            return (
+                              <button
+                                key={`${selectedType}-${category._id}`}
+                                id={`${categoryListboxId}-${index}`}
+                                role="option"
+                                aria-selected={isSelected}
+                                type="button"
+                                onMouseDown={(event) => {
+                                  event.preventDefault()
+                                }}
+                                onClick={() => {
+                                  selectCategorySuggestion(
+                                    category.label,
+                                    field.onChange
+                                  )
+                                }}
+                                className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition ${
+                                  isHighlighted
+                                    ? "bg-slate-100 text-slate-900"
+                                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                                }`}
+                              >
+                                <span className="truncate">{category.label}</span>
+                                {isSelected ? (
+                                  <span className="ml-3 text-xs font-medium text-slate-500">
+                                    atual
+                                  </span>
+                                ) : null}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      ) : (
+                        <p className="px-3 py-3 text-sm text-slate-500">
+                          Nenhuma sugestao encontrada. Voce pode digitar uma categoria personalizada.
+                        </p>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+
+               
                 {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
               </Field>
             )}

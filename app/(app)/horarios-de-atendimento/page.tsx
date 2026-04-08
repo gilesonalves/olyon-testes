@@ -32,6 +32,13 @@ import {
 import { Field, FieldError } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Controller as RHFController } from "react-hook-form"
 
@@ -44,10 +51,47 @@ import {
 } from "./components/schedule-page-skeleton"
 
 const PAGE_SIZE = 10
+const STORE_SCOPE_VALUE = "__store_scope__"
 
 type ScheduleProfessionalOption = {
   membershipId: string
   name: string
+}
+
+type ScheduleScopeSelectProps = {
+  value: string | null
+  onChange: (value: string | null) => void
+  professionals: ScheduleProfessionalOption[]
+}
+
+function ScheduleScopeSelect({
+  value,
+  onChange,
+  professionals,
+}: ScheduleScopeSelectProps) {
+  return (
+    <Select
+      value={value ?? STORE_SCOPE_VALUE}
+      onValueChange={(nextValue) =>
+        onChange(nextValue === STORE_SCOPE_VALUE ? null : nextValue)
+      }
+    >
+      <SelectTrigger className="h-11 w-full rounded-xl border-slate-300 bg-white px-3 text-left text-sm text-slate-700 shadow-sm">
+        <SelectValue placeholder="Selecione o escopo" />
+      </SelectTrigger>
+      <SelectContent align="start" sideOffset={6} className="max-h-72">
+        <SelectItem value={STORE_SCOPE_VALUE}>Loja inteira</SelectItem>
+        {professionals.map((professional) => (
+          <SelectItem
+            key={professional.membershipId}
+            value={professional.membershipId}
+          >
+            {professional.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
 }
 
 function formatBlockedScopeLabel(item: {
@@ -194,20 +238,13 @@ export default function HorariosDeAtendimento() {
         </div>
       )}
 
-      <div className="mb-6 grid max-w-sm gap-2">
+      <div className="mb-6 grid w-full max-w-sm gap-2">
         <label className="text-sm font-medium text-slate-700">Escopo do expediente</label>
-        <select
-          value={scheduleScopeMembershipId ?? ""}
-          onChange={(event) => setScheduleScopeMembershipId(event.target.value || null)}
-          className="h-11 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm"
-        >
-          <option value="">Loja inteira</option>
-          {scheduleProfessionals.map((professional) => (
-            <option key={professional.membershipId} value={professional.membershipId}>
-              {professional.name}
-            </option>
-          ))}
-        </select>
+        <ScheduleScopeSelect
+          value={scheduleScopeMembershipId}
+          onChange={setScheduleScopeMembershipId}
+          professionals={scheduleProfessionals}
+        />
         <p className="text-xs text-slate-500">
           Use a loja como padrão geral ou personalize o expediente de um profissional específico.
         </p>
@@ -353,21 +390,11 @@ export default function HorariosDeAtendimento() {
                       render={({ field }) => (
                         <Field>
                           <Label>Aplicar bloqueio em</Label>
-                          <select
-                            value={field.value ?? ""}
-                            onChange={(event) => field.onChange(event.target.value || null)}
-                            className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm"
-                          >
-                            <option value="">Loja inteira</option>
-                            {scheduleProfessionals.map((professional) => (
-                              <option
-                                key={professional.membershipId}
-                                value={professional.membershipId}
-                              >
-                                {professional.name}
-                              </option>
-                            ))}
-                          </select>
+                          <ScheduleScopeSelect
+                            value={field.value ?? null}
+                            onChange={field.onChange}
+                            professionals={scheduleProfessionals}
+                          />
                         </Field>
                       )}
                     />

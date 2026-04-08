@@ -1,87 +1,60 @@
-import Link from "next/link";
-import DashboardCard from "./dashboard-card";
+import DashboardCard from "./dashboard-card"
+import type { DashboardUpcomingAppointmentItem } from "@/lib/dashboard/overview"
 
-const appointments = [
-  {
-    id: "apt-001",
-    time: "09:00",
-    client: "Marina Souza",
-    status: "Confirmado",
-  },
-  {
-    id: "apt-002",
-    time: "10:30",
-    client: "Diego Santos",
-    status: "Aguardando",
-  },
-  {
-    id: "apt-003",
-    time: "13:00",
-    client: "Lucia Lima",
-    status: "Remarcado",
-  },
-];
+type UpcomingAppointmentsCardProps = {
+  appointments: DashboardUpcomingAppointmentItem[]
+}
 
-const statusClasses: Record<string, string> = {
-  Confirmado: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  Aguardando: "bg-amber-50 text-amber-700 border-amber-200",
-  Remarcado: "bg-sky-50 text-sky-700 border-sky-200",
-};
-
-export default function UpcomingAppointmentsCard() {
+export default function UpcomingAppointmentsCard({
+  appointments,
+}: UpcomingAppointmentsCardProps) {
   return (
     <DashboardCard
       title="Proximos agendamentos"
       actionLabel="Ver agenda"
       actionHref="/agendamentos"
     >
-      <div className="space-y-4">
-        {appointments.map((appointment) => (
-          <div
-            key={appointment.id}
-            className="flex flex-col gap-3 border-b border-slate-100 pb-4 last:border-b-0 last:pb-0 md:flex-row md:items-center md:justify-between"
-          >
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-16 rounded-md bg-slate-100 text-center text-sm font-semibold text-slate-700 leading-10">
-                {appointment.time}
+      {appointments.length === 0 ? (
+        <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
+          Nenhum agendamento futuro encontrado para a loja atual.
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {appointments.map((appointment) => (
+            <div
+              key={appointment.id}
+              className="flex flex-col gap-3 border-b border-slate-100 pb-4 last:border-b-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between"
+            >
+              <div className="flex items-start gap-3">
+                <div className="flex h-12 w-16 shrink-0 flex-col items-center justify-center rounded-md bg-slate-100 px-2 text-center">
+                  <span className="text-sm font-semibold leading-none text-slate-700">
+                    {appointment.timeLabel}
+                  </span>
+                  <span className="mt-1 text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                    {appointment.dayLabel}
+                  </span>
+                </div>
+
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-slate-900">
+                    {appointment.customerName}
+                  </p>
+                  <p className="mt-1 truncate text-xs text-slate-500">
+                    {appointment.staffName}
+                    {appointment.serviceName ? ` / ${appointment.serviceName}` : ""}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-sm font-medium text-slate-900">
-                  {appointment.client}
-                </p>
-                <span
-                  className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${
-                    statusClasses[appointment.status] ??
-                    "bg-slate-50 text-slate-600 border-slate-200"
-                  }`}
-                >
-                  {appointment.status}
-                </span>
-              </div>
+
+              <span
+                className={`inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-xs font-medium ${appointment.statusClassName}`}
+              >
+                {appointment.statusLabel}
+              </span>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Link
-                href="/agendamentos"
-                className="rounded-md border border-slate-200 px-3 py-1 text-xs font-medium text-slate-700 transition hover:border-slate-300 hover:text-slate-900"
-              >
-                Ver detalhes
-              </Link>
-              <Link
-                href="/agendamentos"
-                className="rounded-md border border-slate-200 px-3 py-1 text-xs font-medium text-slate-700 transition hover:border-slate-300 hover:text-slate-900"
-              >
-                Remarcar
-              </Link>
-              <Link
-                href="/agendamentos"
-                className="rounded-md border border-rose-200 px-3 py-1 text-xs font-medium text-rose-600 transition hover:border-rose-300 hover:text-rose-700"
-              >
-                Cancelar
-              </Link>
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </DashboardCard>
-  );
+  )
 }
