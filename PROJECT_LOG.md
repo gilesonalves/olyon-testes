@@ -5460,3 +5460,65 @@ Corrigir o bloqueio TypeScript em `app/(app)/agendamentos/page.tsx:2346`, preser
 
 O build deixou de falhar em `app/(app)/agendamentos/page.tsx:2346` e passou a concluir com sucesso.
 
+## 22 de abril de 2026 - Conexao Meta e webhook validados no ambiente de testes
+
+### Objetivo
+
+Concluir a validacao real da conexao Meta/WhatsApp no ambiente publicado de testes e confirmar que o webhook configurado no painel da Meta aponta corretamente para o deploy da Vercel.
+
+### Arquivos alterados
+
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi validado
+
+- Deploy de producao da Vercel publicado com Next `16.0.10`
+- Endpoint `GET /api/webhooks/whatsapp` respondendo `200`
+- Validacao manual com `hub.challenge` respondendo corretamente
+- Conexao real com a Graph API validada com sucesso
+- `phoneNumberId` acessivel
+- `webhook_configuration.application` retornando `https://olyon-testes.vercel.app/api/webhooks/whatsapp`
+- Checklist operacional da tela `/configuracoes/whatsapp` com `8/8 checks ok`
+- Status tecnico final da conexao marcado como `CONNECTED`
+
+### Resultado
+
+- A configuracao minima da conexao WhatsApp ficou operacional no ambiente de testes publicado.
+- O problema anterior nao estava no backend do webhook; a falha estava na configuracao/preenchimento no painel da Meta.
+
+### Proximo passo sugerido
+
+- Validar o fluxo ponta a ponta com evento real chegando no webhook e confirmar persistencia/processamento no sistema.
+
+## 22 de abril de 2026 - Registro de avanço do fluxo real WhatsApp e refatoração do webhook inbound
+
+### Objetivo
+
+Registrar o estado atual da integração WhatsApp após validar resposta real do chatbot no cliente e consolidar o log da refatoração do webhook inbound.
+
+### O que foi validado
+
+- Fluxo real no WhatsApp respondeu corretamente ao cumprimento inicial
+- Menu inicial do bot foi exibido corretamente
+- Intenção de agendamento foi reconhecida
+- Bot avançou para a pergunta de serviço
+- O bloqueio atual para concluir o agendamento não é integração, e sim ausência de massa operacional mínima de serviços
+
+### Refatoração registrada
+
+- `app/api/webhooks/whatsapp/route.ts` refatorado para ler body como texto antes do parse
+- Validação de assinatura Meta adicionada com `x-hub-signature-256`
+- Payload de teste endurecido em produção
+- `existingInbound`, `conversation.upsert`, criação do inbound e processamento do bot movidos para a mesma transação
+- Lock por conversa com `SELECT ... FOR UPDATE`
+- Tratamento defensivo para colisão de unique constraint
+- Outbound mantido após commit
+- `yarn build` passou após a mudança
+
+### Resultado
+
+- Integração técnica WhatsApp -> Olyon está funcional no fluxo real de entrada
+- A base do webhook inbound ficou mais robusta para produção
+- Próximo foco permanece na validação manual da refatoração em cenários críticos de retry e idempotência
+

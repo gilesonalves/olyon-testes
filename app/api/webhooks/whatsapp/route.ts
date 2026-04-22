@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from "node:crypto"
 import { NextRequest } from "next/server"
 import { z } from "zod"
 import { prisma, Prisma } from "@/lib/prisma"
@@ -37,6 +38,8 @@ import {
   sendMetaTextMessage,
   type MetaTextOutboundResult,
 } from "@/lib/whatsapp/meta-outbound"
+
+export const runtime = "nodejs"
 
 type DraftWithRelations = Prisma.AppointmentDraftGetPayload<{
   include: {
@@ -115,6 +118,50 @@ function toOptionalString(value: unknown) {
 
 function toOptionalBoolean(value: unknown) {
   return typeof value === "boolean" ? value : null
+}
+
+function parseJsonBody(rawBody: string) {
+  try {
+    return JSON.parse(rawBody) as unknown
+  } catch {
+    return null
+  }
+}
+
+function verifyMetaSignature(rawBody: string, signatureHeader: string | null) {
+  const appSecret = process.env.WHATSAPP_META_APP_SECRET?.trim()
+
+  if (!appSecret) {
+    return process.env.NODE_ENV !== "production"
+  }
+
+  if (!signatureHeader?.startsWith("sha256=")) {
+    return false
+  }
+
+  try {
+    const expected = Buffer.from(
+      createHmac("sha256", appSecret).update(rawBody, "utf8").digest("hex"),
+      "hex"
+    )
+    const received = Buffer.from(signatureHeader.slice("sha256=".length), "hex")
+
+    return received.length === expected.length && timingSafeEqual(received, expected)
+  } catch {
+    return false
+  }
+}
+
+function isProviderMessageUniqueConflict(error: unknown) {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
+    return false
+  }
+
+  const targets = Array.isArray(error.meta?.target)
+    ? error.meta.target.map(String)
+    : [String(error.meta?.target ?? "")]
+
+  return targets.some((target) => target.includes("providerMessageId"))
 }
 
 function hasSuccessfulOutboundDelivery(payload: Record<string, unknown>) {
@@ -544,6 +591,91 @@ type PersistedOutboundMessage = {
   payload: Record<string, unknown>
 }
 
+type ExistingInboundMessage = {
+  id: string
+  conversationId: string
+  conversation: {
+    state: string
+  }
+}
+
+function buildExistingInboundResult(
+  existingInbound: ExistingInboundMessage
+): ProcessIncomingMessageResult {
+  return {
+    conversationId: existingInbound.conversationId,
+    messageId: existingInbound.id,
+    nextState: existingInbound.conversation.state,
+    draftId: null,
+    appointmentId: null,
+    replies: [],
+    replayed: true,
+  }
+}
+
+async function findExistingInboundResult(params: {
+  db: Prisma.TransactionClient
+  storeId: string
+  providerMessageId: string
+}) {
+  const existingInbound = await params.db.conversationMessage.findUnique({
+    where: {
+      storeId_providerMessageId: {
+        storeId: params.storeId,
+        providerMessageId: params.providerMessageId,
+      },
+    },
+    select: {
+      id: true,
+      conversationId: true,
+      conversation: {
+        select: {
+          state: true,
+        },
+      },
+    },
+  })
+
+  return existingInbound ? buildExistingInboundResult(existingInbound) : null
+}
+
+async function findExistingInboundResultAfterUniqueConflict(params: {
+  storeId: string
+  providerMessageId: string
+}) {
+  const existingInbound = await prisma.conversationMessage.findUnique({
+    where: {
+      storeId_providerMessageId: {
+        storeId: params.storeId,
+        providerMessageId: params.providerMessageId,
+      },
+    },
+    select: {
+      id: true,
+      conversationId: true,
+      conversation: {
+        select: {
+          state: true,
+        },
+      },
+    },
+  })
+
+  return existingInbound ? buildExistingInboundResult(existingInbound) : null
+}
+
+async function lockConversationForInboundProcessing(
+  tx: Prisma.TransactionClient,
+  conversationId: string
+) {
+  await tx.$queryRaw<Array<{ id: string }>>`
+    SELECT id
+    FROM "Conversation"
+    WHERE id = ${conversationId}
+    FOR UPDATE
+  `
+}
+
 async function deliverPersistedOutboundMessages(params: {
   storeId: string
   conversationId: string
@@ -659,89 +791,73 @@ async function processIncomingWhatsAppMessage(
     shouldAttemptOutboundDelivery,
   } = params
 
-  const existingInbound = await prisma.conversationMessage.findUnique({
-      where: {
-        storeId_providerMessageId: {
-          storeId: currentStoreId,
-          providerMessageId: incomingMessage.providerMessageId,
-        },
-      },
-      select: {
-        id: true,
-        conversationId: true,
-        conversation: {
-          select: {
-            state: true,
+  const outMessages: string[] = []
+  const persistedOutboundMessages: PersistedOutboundMessage[] = []
+  let transactionResult: ProcessIncomingMessageResult
+
+  try {
+    transactionResult = await prisma.$transaction(async (tx) => {
+      const defaultTimezone = getBotTimezone()
+
+      const conversation = await tx.conversation.upsert({
+        where: {
+          storeId_channel_contact: {
+            storeId: currentStoreId,
+            channel: "WHATSAPP",
+            contact: incomingMessage.from,
           },
         },
-      },
-    })
-
-  if (existingInbound) {
-    return {
-      conversationId: existingInbound.conversationId,
-      messageId: existingInbound.id,
-      nextState: existingInbound.conversation.state,
-      draftId: null,
-      appointmentId: null,
-      replies: [],
-      replayed: true,
-    }
-  }
-
-  const defaultTimezone = getBotTimezone()
-
-  const conversation = await prisma.conversation.upsert({
-      where: {
-        storeId_channel_contact: {
+        update: {
+          lastMessageAt: new Date(),
+        },
+        create: {
           storeId: currentStoreId,
           channel: "WHATSAPP",
           contact: incomingMessage.from,
+          state: "IDLE",
+          context: toJsonValue({ timezone: defaultTimezone }),
+          lastMessageAt: new Date(),
         },
-      },
-      update: {
-        lastMessageAt: new Date(),
-      },
-      create: {
-        storeId: currentStoreId,
-        channel: "WHATSAPP",
-        contact: incomingMessage.from,
-        state: "IDLE",
-        context: toJsonValue({ timezone: defaultTimezone }),
-        lastMessageAt: new Date(),
-      },
-    })
+      })
 
-  const timeZone = resolveConversationTimezone(conversation.context)
-  let conversationContext = getConversationContextRecord(conversation.context)
+      await lockConversationForInboundProcessing(tx, conversation.id)
 
-  const savedIn = await prisma.conversationMessage.create({
-      data: {
+      const existingInbound = await findExistingInboundResult({
+        db: tx,
         storeId: currentStoreId,
-        conversationId: conversation.id,
-        direction: "IN",
         providerMessageId: incomingMessage.providerMessageId,
-        text: incomingMessage.text ?? undefined,
-        payload: toJsonValue(incomingMessage.raw),
-      },
-    })
+      })
 
-  const bot = handleIncomingMessage({
-      state: conversation.state,
-      text: incomingMessage.text,
-      context: buildBotContext(conversation.context),
-  })
+      if (existingInbound) {
+        return existingInbound
+      }
 
-  const outMessages: string[] = []
-  let nextState: string | null = null
-  let ensuredDraftId: string | null = null
-  let createdAppointmentId: string | null = null
-  let parsedDateTime: ParsedDateTimeValue | null = null
-  let draftCache: DraftWithRelations | null = null
-  let shouldStop = false
-  const persistedOutboundMessages: PersistedOutboundMessage[] = []
+      const timeZone = resolveConversationTimezone(conversation.context)
+      let conversationContext = getConversationContextRecord(conversation.context)
 
-  await prisma.$transaction(async (tx) => {
+      const savedIn = await tx.conversationMessage.create({
+        data: {
+          storeId: currentStoreId,
+          conversationId: conversation.id,
+          direction: "IN",
+          providerMessageId: incomingMessage.providerMessageId,
+          text: incomingMessage.text ?? undefined,
+          payload: toJsonValue(incomingMessage.raw),
+        },
+      })
+
+      const bot = handleIncomingMessage({
+        state: conversation.state,
+        text: incomingMessage.text,
+        context: buildBotContext(conversation.context),
+      })
+
+      let nextState: string | null = null
+      let ensuredDraftId: string | null = null
+      let createdAppointmentId: string | null = null
+      let parsedDateTime: ParsedDateTimeValue | null = null
+      let draftCache: DraftWithRelations | null = null
+      let shouldStop = false
       async function updateState(
         state:
           | "IDLE"
@@ -1991,13 +2107,41 @@ async function processIncomingWhatsAppMessage(
           await appendBotReply(action.text)
         }
       }
+
+      return {
+        conversationId: conversation.id,
+        messageId: savedIn.id,
+        nextState,
+        draftId: ensuredDraftId,
+        appointmentId: createdAppointmentId,
+        replies: outMessages,
+        replayed: false,
+      }
     })
+  } catch (error) {
+    if (isProviderMessageUniqueConflict(error)) {
+      const existingInbound = await findExistingInboundResultAfterUniqueConflict({
+        storeId: currentStoreId,
+        providerMessageId: incomingMessage.providerMessageId,
+      })
+
+      if (existingInbound) {
+        return existingInbound
+      }
+    }
+
+    throw error
+  }
 
   // Outbound real acontece apos o commit para nunca perder a mensagem local se a Meta falhar.
-  if (shouldAttemptOutboundDelivery && persistedOutboundMessages.length) {
+  if (
+    !transactionResult.replayed &&
+    shouldAttemptOutboundDelivery &&
+    persistedOutboundMessages.length
+  ) {
     console.info("whatsapp outbound dispatch start", {
       storeId: currentStoreId,
-      conversationId: conversation.id,
+      conversationId: transactionResult.conversationId,
       shouldAttemptOutboundDelivery,
       persistedOutboundMessagesCount: persistedOutboundMessages.length,
       to: incomingMessage.from,
@@ -2005,28 +2149,20 @@ async function processIncomingWhatsAppMessage(
 
     await deliverPersistedOutboundMessages({
       storeId: currentStoreId,
-      conversationId: conversation.id,
+      conversationId: transactionResult.conversationId,
       to: incomingMessage.from,
       messages: persistedOutboundMessages,
     })
 
     console.info("whatsapp outbound dispatch finished", {
       storeId: currentStoreId,
-      conversationId: conversation.id,
+      conversationId: transactionResult.conversationId,
       dispatchedMessagesCount: persistedOutboundMessages.length,
       to: incomingMessage.from,
     })
   }
 
-  return {
-    conversationId: conversation.id,
-    messageId: savedIn.id,
-    nextState,
-    draftId: ensuredDraftId,
-    appointmentId: createdAppointmentId,
-    replies: outMessages,
-    replayed: false,
-  }
+  return transactionResult
 }
 
 export async function GET(req: NextRequest) {
@@ -2077,7 +2213,13 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const payload = (await req.json()) as unknown
+    const rawBody = await req.text()
+    const payload = parseJsonBody(rawBody)
+
+    if (!payload) {
+      return badRequest("Invalid JSON payload for WhatsApp webhook")
+    }
+
     const parsedPayload = parseIncomingWhatsApp(payload)
 
     if (!parsedPayload) {
@@ -2085,6 +2227,12 @@ export async function POST(req: NextRequest) {
     }
 
     if (parsedPayload.source === "meta") {
+      const signature = req.headers.get("x-hub-signature-256")
+
+      if (!verifyMetaSignature(rawBody, signature)) {
+        return unauthorized("Invalid Meta webhook signature")
+      }
+
       const metaStatusItems = extractMetaStatusItems(payload)
 
       console.info("whatsapp webhook meta payload received", {
@@ -2228,6 +2376,10 @@ export async function POST(req: NextRequest) {
     }
 
     const expectedSecret = process.env.WHATSAPP_WEBHOOK_SECRET
+    if (!expectedSecret && process.env.NODE_ENV === "production") {
+      return unauthorized("Test webhook payload disabled in production")
+    }
+
     if (expectedSecret && secret !== expectedSecret) {
       return unauthorized("Unauthorized")
     }

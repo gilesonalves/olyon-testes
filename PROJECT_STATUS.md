@@ -1071,4 +1071,15 @@ Proximo passo sugerido:
 | 25/02/2026 | Eventos: CRUD real com servicos e melhoria no admin para senha inicial do owner |
 | 20/02/2026 | Ajustes finais no CRUD de Usuarios |
 | 19/02/2026 | CRUD de Usuarios com Perfil e Contatos |
-aaaaaaaaaaa
+
+- Conexao Meta/WhatsApp validada com sucesso no ambiente de testes publicado
+- Webhook salvo e refletido no retorno tecnico da Meta em `webhook_configuration.application`
+- Tela `/configuracoes/whatsapp` com auditoria operacional `8/8`
+- Status tecnico da conexao atual: `CONNECTED`
+- Proximo foco: validar evento real chegando no webhook e seguir para fluxo operacional ponta a ponta
+
+- Fluxo real de entrada via WhatsApp validado com resposta correta do chatbot
+- Menu inicial e intenção de agendamento funcionando no cliente
+- Refatoração do webhook inbound registrada com foco em idempotência, assinatura Meta e transação única
+- `app/api/webhooks/whatsapp/route.ts` endurecido para produção
+- Próximo foco: validar manualmente duplicate inbound, retry da Meta, assinatura e concorrência básica por conversa
