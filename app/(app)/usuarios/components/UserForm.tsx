@@ -15,6 +15,7 @@ import * as z from "zod"
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import HeaderPage from "@/components/headerPage"
 import {
   Select,
   SelectContent,
@@ -311,16 +312,28 @@ export function UserForm({ mode, userId }: UserFormProps) {
   }
 
   if (loading) {
-    return <div className="bg-white px-6 py-7">Carregando usuário...</div>
+    return (
+      <>
+        <HeaderPage>
+          <div className="flex items-center justify-between">
+            <span className="text-foreground font-normal">{mode === "create" ? "Novo usuário" : "Editar usuário"}</span>
+          </div>
+        </HeaderPage>
+        <div className="bg-white px-6 py-7">Carregando usuário...</div>
+      </>
+    )
   }
 
   return (
-    <div className="bg-white px-6 py-7">
-      <div className="flex justify-between items-center pb-6">
-        <p>{mode === "create" ? "Novo usuário" : "Editar usuário"}</p>
-      </div>
+    <>
+      <HeaderPage>
+        <div className="flex items-center justify-between">
+          <span className="text-foreground font-normal">{mode === "create" ? "Novo usuário" : "Editar usuário"}</span>
+        </div>
+      </HeaderPage>
 
-      <form className="w-full flex flex-col gap-7" onSubmit={form.handleSubmit(onSubmit)}>
+      <div className="bg-white px-6 py-7">
+        <form className="w-full flex flex-col gap-7" onSubmit={form.handleSubmit(onSubmit)}>
         {/* ROLE + PASSWORD */}
         <FieldGroup className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <ControllerForm
@@ -693,7 +706,8 @@ export function UserForm({ mode, userId }: UserFormProps) {
             {submitting ? "Salvando..." : "Salvar"}
           </Button>
         </div>
-      </form>
-    </div>
+        </form>
+      </div>
+    </>
   )
 }

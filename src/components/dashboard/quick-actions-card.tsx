@@ -8,7 +8,7 @@ const actions = [
   },
   {
     label: "Novo cliente",
-    href: "/usuarios",
+    href: "/clientes",
   },
   {
     label: "Novo servico",

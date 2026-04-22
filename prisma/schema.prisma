@@ -1,6 +1,3 @@
-// Olyon - Multi-tenant SaaS
-// Schema compartilhado entre olyon-admin e olyon-app
-
 generator client {
   provider = "prisma-client"
   output   = "../generated/prisma"
@@ -10,45 +7,31 @@ datasource db {
   provider = "postgresql"
 }
 
-// Role global do usuário (acesso ao olyon-admin). SUPER_ADMIN não possui membership.
-enum GlobalRole {
-  SUPER_ADMIN
-}
-
-// Role dentro de uma loja (Membership). Usado no olyon-app.
-enum MembershipRole {
-  OWNER // dono da loja
-  ADMIN // gerente
-  STAFF // funcionário
-}
-
-enum MembershipType {
-  PROFISSIONAL
-  FINANCEIRO
-  ATENDENTE
-}
-
 model User {
-  id          String        @id @default(cuid())
-  name        String
-  email       String        @unique
-  password    String
-  globalRole  GlobalRole? // SUPER_ADMIN => sem membership, acesso apenas olyon-admin
-  memberships Membership[]
-  profile     UserProfile?
-  contacts    UserContact[]
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id                     String         @id @default(cuid())
+  email                  String         @unique
+  name                   String
+  createdAt              DateTime       @default(now())
+  password               String
+  globalRole             GlobalRole?
+  updatedAt              DateTime       @updatedAt
+  memberships            Membership[]
+  contacts               UserContact[]
+  profile                UserProfile?
+  financeEntriesCreated  FinanceEntry[] @relation("FinanceEntriesCreatedByUser")
 }
 
 model Store {
-  id                   String              @id @default(cuid())
+  id                   String                @id @default(cuid())
   name                 String
-  slug                 String              @unique
-  active               Boolean             @default(true)
+  createdAt            DateTime              @default(now())
+  active               Boolean               @default(true)
+  updatedAt            DateTime              @updatedAt
+  slug                 String                @unique
   phone                String?
   whatsappPhone        String?
   address              String?
+  clients              Client[]
   complement           String?
   neighborhood         String?
   city                 String?
@@ -56,49 +39,63 @@ model Store {
   zipcode              String?
   serviceObservations  String?
   businessHoursSummary String?
-  memberships          Membership[]
-  services             Service[]
-  whatsappConnection   WhatsAppConnection?
-  createdAt            DateTime            @default(now())
-  updatedAt            DateTime            @updatedAt
-
-  events Event[]
-
-  // ✅ ADD (opostos das relações novas)
+  appointments         Appointment[]
+  appointmentDrafts    AppointmentDraft[]
+  blockedSchedules     BlockedSchedule[]
   conversations        Conversation[]
   conversationMessages ConversationMessage[]
-  appointmentDrafts    AppointmentDraft[]
-  appointments         Appointment[]
-
-  blockedSchedules BlockedSchedule[]
-
-  weekScheduleDays WeekScheduleDay[]
+  events               Event[]
+  financeEntries       FinanceEntry[]
+  memberships          Membership[]
+  services             Service[]
+  weekScheduleDays     WeekScheduleDay[]
+  WhatsAppConnection   WhatsAppConnection?
 }
 
 model Membership {
-  id      String         @id @default(cuid())
-  role    MembershipRole
-  userId  String
-  storeId String
-
-  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
-
-  types    MembershipTypeLink[]
-  services MembershipService[]
-
-  // ✅ ADD
-  appointments      Appointment[]
-  appointmentDrafts AppointmentDraft[]
+  id                        String                        @id @default(cuid())
+  role                      MembershipRole
+  userId                    String
+  storeId                   String
+  appointments              Appointment[]
+  appointmentDrafts         AppointmentDraft[]
+  blockedSchedules          BlockedSchedule[]
+  professionalWeekSchedules MembershipWeekScheduleDay[]
+  store                     Store                         @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  user                      User                          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  services                  MembershipService[]
+  types                     MembershipTypeLink[]
 
   @@unique([userId, storeId])
+}
+
+model Client {
+  id             String   @id @default(cuid())
+  storeId        String
+  name           String
+  email          String?
+  cpf            String?
+  phone          String?
+  secondaryPhone String?
+  gender         String?
+  birthDate      DateTime?
+  notes          String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  store          Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId])
+  @@index([storeId, name])
+  @@index([storeId, email])
+  @@index([storeId, cpf])
+  @@index([storeId, isActive])
 }
 
 model MembershipTypeLink {
   membershipId String
   type         MembershipType
-
-  membership Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  membership   Membership     @relation(fields: [membershipId], references: [id], onDelete: Cascade)
 
   @@id([membershipId, type])
   @@index([type])
@@ -107,44 +104,74 @@ model MembershipTypeLink {
 model MembershipService {
   membershipId String
   serviceId    String
-
-  membership Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
-  service    Service    @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  membership   Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  service      Service    @relation(fields: [serviceId], references: [id], onDelete: Cascade)
 
   @@id([membershipId, serviceId])
   @@index([serviceId])
 }
 
+enum FinanceEntryType {
+  INCOME
+  EXPENSE
+}
+
+enum FinanceEntryStatus {
+  PENDING
+  PAID
+  OVERDUE
+}
+
+model FinanceEntry {
+  id              String             @id @default(cuid())
+  storeId         String
+  createdById     String?
+  type            FinanceEntryType
+  status          FinanceEntryStatus @default(PENDING)
+  amount          Decimal            @db.Decimal(12, 2)
+  category        String
+  description     String?
+  transactionDate DateTime
+  dueDate         DateTime?
+  paidAt          DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  store     Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  createdBy User? @relation("FinanceEntriesCreatedByUser", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([storeId, transactionDate])
+  @@index([storeId, dueDate])
+  @@index([storeId, status])
+  @@index([storeId, type])
+  @@index([createdById])
+}
+
 model Service {
-  id          String  @id @default(cuid())
-  storeId     String
-  name        String
-  description String?
-  durationMin Int
-  active      Boolean @default(true)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
-
-  membershipServices MembershipService[]
+  id                 String              @id @default(cuid())
+  storeId            String
+  name               String
+  description        String?
+  durationMin        Int
+  active             Boolean             @default(true)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  appointments       Appointment[]
+  appointmentDrafts  AppointmentDraft[]
   eventServices      EventService[]
-
-  // ✅ ADD
-  appointments      Appointment[]
-  appointmentDrafts AppointmentDraft[]
+  membershipServices MembershipService[]
+  store              Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
   @@unique([storeId, name])
   @@index([storeId])
 }
 
 model UserProfile {
-  userId         String    @id
-  cpf            String?   @unique // opcional, mas único se existir
+  userId         String   @id
+  cpf            String?  @unique
   phone          String?
   secondaryPhone String?
-  gender         String? // storage do JSON { _id, value } ou simples string
+  gender         String?
   birthDate      DateTime?
   zipcode        String?
   state          String?
@@ -153,42 +180,35 @@ model UserProfile {
   address        String?
   number         String?
   complement     String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model UserContact {
-  id           String @id @default(cuid())
+  id           String   @id @default(cuid())
   userId       String
   name         String
   phone        String
   relationship String
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
 
 model Event {
-  id          String  @id @default(cuid())
+  id          String         @id @default(cuid())
   storeId     String
   name        String
   description String?
   durationMin Int?
-  active      Boolean @default(true)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
-
-  services EventService[] // ✅ ADD
+  active      Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  store       Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  services    EventService[]
 
   @@unique([storeId, name])
   @@index([storeId])
@@ -197,22 +217,208 @@ model Event {
 model EventService {
   eventId   String
   serviceId String
-
-  event   Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  event     Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  service   Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
 
   @@id([eventId, serviceId])
   @@index([serviceId])
+}
+
+model Conversation {
+  id            String                @id @default(cuid())
+  storeId       String
+  channel       Channel
+  contact       String
+  state         ConversationState     @default(IDLE)
+  context       Json?
+  lastMessageAt DateTime?
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+  drafts        AppointmentDraft[]
+  store         Store                 @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  messages      ConversationMessage[]
+
+  @@unique([storeId, channel, contact])
+  @@index([storeId, lastMessageAt])
+}
+
+model ConversationMessage {
+  id                String           @id @default(cuid())
+  storeId           String
+  conversationId    String
+  direction         MessageDirection
+  providerMessageId String?
+  text              String?
+  payload           Json?
+  createdAt         DateTime         @default(now())
+  conversation      Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  store             Store            @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, providerMessageId])
+  @@index([conversationId, createdAt])
+}
+
+model AppointmentDraft {
+  id                String       @id @default(cuid())
+  storeId           String
+  conversationId    String
+  status            DraftStatus  @default(DRAFT)
+  serviceId         String?
+  staffMembershipId String?
+  customerName      String?
+  customerPhone     String?
+  customerEmail     String?
+  startAt           DateTime?
+  endAt             DateTime?
+  notes             String?
+  channel           Channel
+  appointmentId     String?      @unique
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  appointment       Appointment? @relation(fields: [appointmentId], references: [id])
+  conversation      Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  service           Service?     @relation(fields: [serviceId], references: [id])
+  membership        Membership?  @relation(fields: [staffMembershipId], references: [id])
+  store             Store        @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, status])
+  @@index([conversationId, status])
+}
+
+model Appointment {
+  id                String            @id @default(cuid())
+  storeId           String
+  status            AppointmentStatus @default(SCHEDULED)
+  serviceId         String?
+  staffMembershipId String?
+  customerName      String
+  customerPhone     String?
+  customerEmail     String?
+  startAt           DateTime
+  endAt             DateTime
+  notes             String?
+  source            Channel
+  externalRef       String?
+  metadata          Json?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  service           Service?          @relation(fields: [serviceId], references: [id])
+  membership        Membership?       @relation(fields: [staffMembershipId], references: [id])
+  store             Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  draft             AppointmentDraft?
+
+  @@index([storeId, startAt])
+  @@index([storeId, status])
+}
+
+model WeekScheduleDay {
+  id        String                 @id @default(cuid())
+  storeId   String
+  weekday   Weekday
+  enabled   Boolean                @default(false)
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+  store     Store                  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  intervals WeekScheduleInterval[]
+
+  @@unique([storeId, weekday])
+  @@index([storeId])
+}
+
+model WeekScheduleInterval {
+  id        String          @id @default(cuid())
+  dayId     String
+  startTime String
+  endTime   String
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  day       WeekScheduleDay @relation(fields: [dayId], references: [id], onDelete: Cascade)
+
+  @@index([dayId])
+}
+
+model MembershipWeekScheduleDay {
+  id           String                          @id @default(cuid())
+  membershipId String
+  weekday      Weekday
+  enabled      Boolean                         @default(false)
+  createdAt    DateTime                        @default(now())
+  updatedAt    DateTime                        @updatedAt
+  membership   Membership                      @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  intervals    MembershipWeekScheduleInterval[]
+
+  @@unique([membershipId, weekday])
+  @@index([membershipId])
+}
+
+model MembershipWeekScheduleInterval {
+  id        String                    @id @default(cuid())
+  dayId     String
+  startTime String
+  endTime   String
+  createdAt DateTime                  @default(now())
+  updatedAt DateTime                  @updatedAt
+  day       MembershipWeekScheduleDay @relation(fields: [dayId], references: [id], onDelete: Cascade)
+
+  @@index([dayId])
+}
+
+model BlockedSchedule {
+  id           String      @id @default(cuid())
+  storeId      String
+  membershipId String?
+  date         DateTime
+  allDay       Boolean     @default(false)
+  startTime    String?
+  endTime      String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  membership   Membership? @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  store        Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, date])
+  @@index([membershipId, date])
+}
+
+model WhatsAppConnection {
+  id                 String                   @id
+  storeId            String                   @unique
+  provider           WhatsAppProvider         @default(META_WHATSAPP)
+  phoneNumberId      String                   @unique
+  businessAccountId  String
+  displayPhoneNumber String
+  verifyToken        String                   @unique
+  accessToken        String
+  status             WhatsAppConnectionStatus @default(PENDING)
+  isActive           Boolean                  @default(true)
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime
+  Store              Store                    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([businessAccountId])
+  @@index([provider, isActive])
+}
+
+enum GlobalRole {
+  SUPER_ADMIN
+}
+
+enum MembershipRole {
+  OWNER
+  ADMIN
+  STAFF
+}
+
+enum MembershipType {
+  PROFISSIONAL
+  FINANCEIRO
+  ATENDENTE
 }
 
 enum Channel {
   WHATSAPP
   WEB
   ADMIN
-}
-
-enum WhatsAppProvider {
-  META_WHATSAPP
 }
 
 enum WhatsAppConnectionStatus {
@@ -223,15 +429,19 @@ enum WhatsAppConnectionStatus {
   ERROR
 }
 
+enum WhatsAppProvider {
+  META_WHATSAPP
+}
+
 enum ConversationState {
   IDLE
   COLLECTING_CUSTOMER
-  CHOOSING_APPOINTMENT
-  CHOOSING_APPOINTMENT_ACTION
   CHOOSING_SERVICE
   CHOOSING_STAFF
   CHOOSING_TIME
   CONFIRMING
+  CHOOSING_APPOINTMENT
+  CHOOSING_APPOINTMENT_ACTION
   CONFIRMING_APPOINTMENT_CANCELLATION
 }
 
@@ -262,173 +472,4 @@ enum Weekday {
   THU
   FRI
   SAT
-}
-
-model Conversation {
-  id            String            @id @default(cuid())
-  storeId       String
-  channel       Channel
-  contact       String // telefone E.164 p/ WhatsApp, ou outro identificador
-  state         ConversationState @default(IDLE)
-  context       Json? // estado auxiliar (tentativas, lastMenu, timezone, etc.)
-  lastMessageAt DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  store    Store                 @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  messages ConversationMessage[]
-  drafts   AppointmentDraft[]
-
-  @@unique([storeId, channel, contact])
-  @@index([storeId, lastMessageAt])
-}
-
-model WhatsAppConnection {
-  id                 String                   @id @default(cuid())
-  storeId            String                   @unique
-  provider           WhatsAppProvider         @default(META_WHATSAPP)
-  phoneNumberId      String                   @unique
-  businessAccountId  String
-  displayPhoneNumber String
-  verifyToken        String                   @unique
-  accessToken        String
-  status             WhatsAppConnectionStatus @default(PENDING)
-  isActive           Boolean                  @default(true)
-  createdAt          DateTime                 @default(now())
-  updatedAt          DateTime                 @updatedAt
-
-  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
-
-  @@index([businessAccountId])
-  @@index([provider, isActive])
-}
-
-model ConversationMessage {
-  id                String           @id @default(cuid())
-  storeId           String
-  conversationId    String
-  direction         MessageDirection
-  providerMessageId String? // idempotência (WhatsApp message id)
-  text              String?
-  payload           Json? // raw do provider (log/auditoria)
-  createdAt         DateTime         @default(now())
-
-  store        Store        @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-
-  @@unique([storeId, providerMessageId])
-  @@index([conversationId, createdAt])
-}
-
-model AppointmentDraft {
-  id             String      @id @default(cuid())
-  storeId        String
-  conversationId String
-  status         DraftStatus @default(DRAFT)
-
-  serviceId         String?
-  staffMembershipId String?
-  customerName      String?
-  customerPhone     String?
-  customerEmail     String?
-
-  startAt DateTime?
-  endAt   DateTime?
-  notes   String?
-
-  // opcional: espelhar origem pra rastreio
-  channel Channel
-
-  // ponte pro appointment final (quando confirmar)
-  appointmentId String? @unique
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  store        Store        @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  service      Service?     @relation(fields: [serviceId], references: [id], onDelete: SetNull)
-  membership   Membership?  @relation(fields: [staffMembershipId], references: [id], onDelete: SetNull)
-  appointment  Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
-
-  @@index([storeId, status])
-  @@index([conversationId, status])
-}
-
-model Appointment {
-  id      String            @id @default(cuid())
-  storeId String
-  status  AppointmentStatus @default(SCHEDULED)
-
-  serviceId         String?
-  staffMembershipId String?
-
-  customerName  String
-  customerPhone String?
-  customerEmail String?
-
-  startAt DateTime
-  endAt   DateTime
-  notes   String?
-
-  source      Channel // ADMIN/WEB/WHATSAPP
-  externalRef String? // id do provider ou correlacao
-  metadata    Json? // extras do canal
-
-  createdAt  DateTime          @default(now())
-  updatedAt  DateTime          @updatedAt
-  draft      AppointmentDraft?
-  store      Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  service    Service?          @relation(fields: [serviceId], references: [id], onDelete: SetNull)
-  membership Membership?       @relation(fields: [staffMembershipId], references: [id], onDelete: SetNull)
-
-  @@index([storeId, startAt])
-  @@index([storeId, status])
-}
-
-model WeekScheduleDay {
-  id      String  @id @default(cuid())
-  storeId String
-  weekday Weekday
-  enabled Boolean @default(false)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  store     Store                  @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  intervals WeekScheduleInterval[]
-
-  @@unique([storeId, weekday])
-  @@index([storeId])
-}
-
-model WeekScheduleInterval {
-  id        String @id @default(cuid())
-  dayId     String
-  startTime String // "HH:MM"
-  endTime   String // "HH:MM"
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  day WeekScheduleDay @relation(fields: [dayId], references: [id], onDelete: Cascade)
-
-  @@index([dayId])
-}
-
-model BlockedSchedule {
-  id        String   @id @default(cuid())
-  storeId   String
-  date      DateTime // armazenar como date (00:00 UTC/local), no frontend usa YYYY-MM-DD
-  allDay    Boolean  @default(false)
-  startTime String? // "HH:MM"
-  endTime   String? // "HH:MM"
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
-
-  @@index([storeId, date])
 }

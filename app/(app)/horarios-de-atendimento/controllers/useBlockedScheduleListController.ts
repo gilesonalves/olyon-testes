@@ -9,6 +9,8 @@ export type BlockedScheduleItem = {
   allDay: boolean
   startTime?: string
   endTime?: string
+  membershipId: string | null
+  membershipName: string | null
 }
 
 export function useBlockedScheduleListController() {
@@ -29,7 +31,7 @@ export function useBlockedScheduleListController() {
 
       if (!res.ok || !json?.ok) {
         // Ex.: sem loja selecionada (cookie ausente)
-        throw new Error(json?.message ?? "Falha ao carregar bloqueios")
+        throw new Error(json?.message ?? json?.error ?? "Falha ao carregar bloqueios")
       }
 
       setItems((json.data ?? []) as BlockedScheduleItem[])
@@ -69,7 +71,7 @@ export function useBlockedScheduleListController() {
       const json = await res.json()
 
       if (!res.ok || !json?.ok) {
-        throw new Error(json?.message ?? "Falha ao remover bloqueio")
+        throw new Error(json?.message ?? json?.error ?? "Falha ao remover bloqueio")
       }
 
       toast.success("Bloqueio removido")

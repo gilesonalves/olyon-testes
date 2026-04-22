@@ -1,10 +1,11 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import HeaderPage from "@/components/headerPage"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
+import ListPageSkeleton from "@/components/loading/list-page-skeleton"
 
 type TeamRow = {
   membershipId: string
@@ -24,11 +25,18 @@ type TeamRow = {
 
 type ApiResponse<T> = { ok: true; data: T } | { ok: false; error: string }
 
+const PAGE_SIZE = 10
+
 export default function Equipe() {
   const router = useRouter()
   const [items, setItems] = useState<TeamRow[]>([])
   const [loading, setLoading] = useState(true)
   const [removingId, setRemovingId] = useState<string | null>(null)
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
+
+  const visibleItems = useMemo(() => items.slice(0, visibleCount), [items, visibleCount])
+  const hasMoreItems = visibleItems.length < items.length
+  const showInitialSkeleton = loading && items.length === 0
 
   async function load() {
     try {
@@ -86,53 +94,69 @@ export default function Equipe() {
         </div>
       </HeaderPage>
 
+      {showInitialSkeleton ? (
+        <ListPageSkeleton message="Carregando equipe..." />
+      ) : (
       <div className="bg-white px-6 py-7">
-        {loading ? (
-          <div>Carregando...</div>
-        ) : items.length === 0 ? (
+        {items.length === 0 ? (
           <div>Nenhum profissional cadastrado na equipe.</div>
         ) : (
-          <div className="space-y-3">
-            {items.map((m) => (
-              <div
-                key={m.membershipId}
-                className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">
-                    {m.name}
-                  </p>
-                  <p className="text-xs text-gray-500 truncate">
-                    {m.email} • {m.role} •{" "}
-                    {m.services?.length ? `${m.services.length} serviço(s)` : "sem serviços"}
-                  </p>
-                </div>
+          <>
+            <div className="space-y-3">
+              {visibleItems.map((m) => (
+                <div
+                  key={m.membershipId}
+                  className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">
+                      {m.name}
+                    </p>
+                    <p className="text-xs text-gray-500 truncate">
+                      {m.email} • {m.role} •{" "}
+                      {m.services?.length ? `${m.services.length} serviço(s)` : "sem serviços"}
+                    </p>
+                  </div>
 
-                <div className="flex items-center justify-between gap-4 sm:justify-end">
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      className="btn-segundary"
-                      onClick={() => router.push(`/equipe/${m.membershipId}`)}
-                    >
-                      Editar
-                    </button>
+                  <div className="flex items-center justify-between gap-4 sm:justify-end">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="btn-segundary"
+                        onClick={() => router.push(`/equipe/${m.membershipId}`)}
+                      >
+                        Editar
+                      </button>
 
-                    <button
-                      type="button"
-                      className="btn-delete"
-                      disabled={removingId === m.membershipId}
-                      onClick={() => removeFromTeam(m.membershipId)}
-                    >
-                      {removingId === m.membershipId ? "Removendo..." : "Remover"}
-                    </button>
+                      <button
+                        type="button"
+                        className="btn-delete"
+                        disabled={removingId === m.membershipId}
+                        onClick={() => removeFromTeam(m.membershipId)}
+                      >
+                        {removingId === m.membershipId ? "Removendo..." : "Remover"}
+                      </button>
+                    </div>
                   </div>
                 </div>
+              ))}
+            </div>
+
+            {hasMoreItems ? (
+              <div className="mt-4 flex justify-center">
+                <button
+                  type="button"
+                  className="btn-segundary"
+                  onClick={() => setVisibleCount((prev) => prev + PAGE_SIZE)}
+                >
+                  Carregar mais
+                </button>
               </div>
-            ))}
-          </div>
+            ) : null}
+          </>
         )}
       </div>
+      )}
     </>
   )
 }

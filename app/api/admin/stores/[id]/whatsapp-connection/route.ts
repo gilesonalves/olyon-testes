@@ -89,7 +89,7 @@ export async function GET(_req: Request, { params }: RouteContext) {
       where: { id },
       select: {
         id: true,
-        whatsappConnection: {
+        WhatsAppConnection: {
           select: whatsAppConnectionEditableSelect,
         },
       },
@@ -99,7 +99,7 @@ export async function GET(_req: Request, { params }: RouteContext) {
       return notFound("Store nao encontrada")
     }
 
-    return ok(toWhatsAppConnectionApiData(store.whatsappConnection))
+    return ok(toWhatsAppConnectionApiData(store.WhatsAppConnection))
   } catch (error) {
     console.error("[GET /api/admin/stores/[id]/whatsapp-connection]", error)
     return serverError("Nao foi possivel carregar a conexao WhatsApp da loja.")
@@ -133,7 +133,7 @@ export async function PUT(req: Request, { params }: RouteContext) {
       where: { id },
       select: {
         id: true,
-        whatsappConnection: {
+        WhatsAppConnection: {
           select: { id: true },
         },
       },
@@ -143,19 +143,27 @@ export async function PUT(req: Request, { params }: RouteContext) {
       return notFound("Store nao encontrada")
     }
 
+    const connectionData = toWhatsAppConnectionUpsertData(parsed.data)
+    const now = new Date()
+
     const savedConnection = await prisma.whatsAppConnection.upsert({
       where: { storeId: id },
       create: {
+        id: crypto.randomUUID(),
         storeId: id,
-        ...toWhatsAppConnectionUpsertData(parsed.data),
+        ...connectionData,
+        updatedAt: now,
       },
-      update: toWhatsAppConnectionUpsertData(parsed.data),
+      update: {
+        ...connectionData,
+        updatedAt: now,
+      },
       select: whatsAppConnectionEditableSelect,
     })
 
     const responseData = toWhatsAppConnectionApiData(savedConnection)
 
-    if (store.whatsappConnection?.id) {
+    if (store.WhatsAppConnection?.id) {
       return ok(responseData)
     }
 

@@ -4,4 +4,6 @@ export type BlockedScheduleItem = {
   allDay: boolean
   startTime?: string
   endTime?: string
+  membershipId: string | null
+  membershipName: string | null
 }

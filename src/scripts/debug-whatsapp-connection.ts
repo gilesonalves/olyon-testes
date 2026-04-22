@@ -46,8 +46,11 @@ async function main() {
     return;
   }
 
+  const now = new Date();
+
   const created = await prisma.whatsAppConnection.create({
     data: {
+      id: crypto.randomUUID(),
       storeId,
       provider: "META_WHATSAPP",
       phoneNumberId: "TEST_PHONE_NUMBER_ID_1",
@@ -57,6 +60,7 @@ async function main() {
       accessToken: "test_access_token",
       status: "CONNECTED",
       isActive: true,
+      updatedAt: now,
     },
     select: {
       id: true,

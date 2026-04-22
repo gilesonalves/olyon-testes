@@ -43,7 +43,7 @@ export default async function AdminStoreDetailsPage({ params }: Props) {
       zipcode: true,
       serviceObservations: true,
       businessHoursSummary: true,
-      whatsappConnection: {
+      WhatsAppConnection: {
         select: whatsAppConnectionEditableSelect,
       },
       createdAt: true,
@@ -73,6 +73,7 @@ export default async function AdminStoreDetailsPage({ params }: Props) {
   }
 
   const owner = store.memberships[0]?.user ?? null
+  const initialConnection = store.WhatsAppConnection
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -135,7 +136,7 @@ export default async function AdminStoreDetailsPage({ params }: Props) {
 
           <StoreWhatsAppConnectionForm
             storeId={store.id}
-            initialConnection={store.whatsappConnection}
+            initialConnection={initialConnection}
           />
         </div>
 

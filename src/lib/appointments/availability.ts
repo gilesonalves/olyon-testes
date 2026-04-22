@@ -16,7 +16,11 @@ import {
 
 type AvailabilityDbClient = Pick<
   PrismaClient,
-  "weekScheduleDay" | "blockedSchedule" | "appointment" | "membership"
+  | "weekScheduleDay"
+  | "membershipWeekScheduleDay"
+  | "blockedSchedule"
+  | "appointment"
+  | "membership"
 >
 
 export type EligibleStaffMember = {
@@ -29,6 +33,15 @@ export type SuggestedSlot = {
   startAt: Date
   endAt: Date
   label: string
+}
+
+export type AvailabilityConflictingAppointment = {
+  id: string
+  customerName: string
+  startAt: Date
+  endAt: Date
+  staffMembershipId: string | null
+  staffName: string | null
 }
 
 type AvailabilityReason =
@@ -51,6 +64,7 @@ type AvailabilityFailure = {
   reason: AvailabilityReason
   message: string
   suggestions: SuggestedSlot[]
+  conflictingAppointments: AvailabilityConflictingAppointment[]
 }
 
 export type SlotAvailabilityResult = AvailabilitySuccess | AvailabilityFailure
@@ -81,12 +95,7 @@ type BlockedWindow = {
   endTime: string | null
 }
 
-type AppointmentWindow = {
-  id: string
-  startAt: Date
-  endAt: Date
-  staffMembershipId: string | null
-}
+type AppointmentWindow = AvailabilityConflictingAppointment
 
 type AvailabilityContext = {
   timeZone: string
@@ -96,9 +105,15 @@ type AvailabilityContext = {
   searchDays: number
   staffMembershipId: string | null
   ignoreAppointmentId: string | null
-  workingDaysByWeekday: Map<Weekday, WorkingDay>
+  storeWorkingDaysByWeekday: Map<Weekday, WorkingDay>
+  membershipWorkingDaysByWeekday: Map<Weekday, WorkingDay>
   blockedByDateKey: Map<string, BlockedWindow[]>
   appointments: AppointmentWindow[]
+}
+
+type WorkingInterval = {
+  startTime: string
+  endTime: string
 }
 
 export async function listEligibleStaffForService(params: {
@@ -242,6 +257,7 @@ export async function checkAvailabilityForSlot(params: {
     reason: requestedEvaluation.reason,
     message: requestedEvaluation.message,
     suggestions: findSuggestedSlots(context, params.requestedStartAt, suggestionsLimit),
+    conflictingAppointments: requestedEvaluation.conflictingAppointments,
   } satisfies AvailabilityFailure
 }
 
@@ -278,6 +294,38 @@ export async function listNextAvailableSlots(params: {
   return findSuggestedSlots(context, searchStartAt, limit)
 }
 
+export async function listAvailableSlotsForDate(params: {
+  db: AvailabilityDbClient
+  storeId: string
+  dateKey: string
+  durationMin: number
+  timeZone: string
+  staffMembershipId?: string | null
+  ignoreAppointmentId?: string | null
+  notBefore?: Date | null
+  stepMin?: number
+}) {
+  const stepMin = params.stepMin ?? 15
+
+  const context = await buildAvailabilityContext({
+    db: params.db,
+    storeId: params.storeId,
+    timeZone: params.timeZone,
+    requestedDateKey: params.dateKey,
+    durationMin: params.durationMin,
+    searchDays: 1,
+    stepMin,
+    staffMembershipId: params.staffMembershipId ?? null,
+    ignoreAppointmentId: params.ignoreAppointmentId ?? null,
+  })
+
+  return findAvailableSlotsForDate({
+    context,
+    dateKey: params.dateKey,
+    notBefore: params.notBefore ?? null,
+  })
+}
+
 async function buildAvailabilityContext(params: {
   db: AvailabilityDbClient
   storeId: string
@@ -287,7 +335,7 @@ async function buildAvailabilityContext(params: {
   searchDays: number
   stepMin: number
   staffMembershipId: string | null
-  ignoreAppointmentId: string | null
+  ignoreAppointmentId?: string | null
 }) {
   const lastDateKey = addDaysToDateKey(params.requestedDateKey, params.searchDays - 1)
   const appointmentRangeStart = combineDateKeyAndTime(params.requestedDateKey, "00:00", params.timeZone)
@@ -297,15 +345,38 @@ async function buildAvailabilityContext(params: {
     params.timeZone
   )
 
-  const [workingDays, blockedSchedules, appointments] = await Promise.all([
+  const membershipWorkingDaysPromise = params.staffMembershipId
+    ? params.db.membershipWeekScheduleDay.findMany({
+        where: { membershipId: params.staffMembershipId },
+        include: { intervals: { orderBy: { startTime: "asc" } } },
+        orderBy: { weekday: "asc" },
+      })
+    : Promise.resolve(
+        [] as Array<{
+          weekday: Weekday
+          enabled: boolean
+          intervals: Array<{
+            startTime: string
+            endTime: string
+          }>
+        }>
+      )
+
+  const [storeWorkingDays, membershipWorkingDays, blockedSchedules, appointments] = await Promise.all([
     params.db.weekScheduleDay.findMany({
       where: { storeId: params.storeId },
       include: { intervals: { orderBy: { startTime: "asc" } } },
       orderBy: { weekday: "asc" },
     }),
+    membershipWorkingDaysPromise,
     params.db.blockedSchedule.findMany({
       where: {
         storeId: params.storeId,
+        ...(params.staffMembershipId
+          ? {
+              OR: [{ membershipId: null }, { membershipId: params.staffMembershipId }],
+            }
+          : { membershipId: null }),
         date: {
           gte: parseDateKeyToStoreDate(params.requestedDateKey),
           lte: parseDateKeyToStoreDate(lastDateKey),
@@ -337,15 +408,39 @@ async function buildAvailabilityContext(params: {
       },
       select: {
         id: true,
+        customerName: true,
         startAt: true,
         endAt: true,
         staffMembershipId: true,
+        membership: {
+          select: {
+            user: {
+              select: {
+                name: true,
+              },
+            },
+          },
+        },
       },
     }),
   ])
 
-  const workingDaysByWeekday = new Map<Weekday, WorkingDay>(
-    workingDays.map((day) => [
+  const storeWorkingDaysByWeekday = new Map<Weekday, WorkingDay>(
+    storeWorkingDays.map((day) => [
+      day.weekday,
+      {
+        weekday: day.weekday,
+        enabled: day.enabled,
+        intervals: day.intervals.map((interval) => ({
+          startTime: interval.startTime,
+          endTime: interval.endTime,
+        })),
+      },
+    ])
+  )
+
+  const membershipWorkingDaysByWeekday = new Map<Weekday, WorkingDay>(
+    membershipWorkingDays.map((day) => [
       day.weekday,
       {
         weekday: day.weekday,
@@ -361,7 +456,7 @@ async function buildAvailabilityContext(params: {
   const blockedByDateKey = new Map<string, BlockedWindow[]>()
 
   for (const blocked of blockedSchedules) {
-    const dateKey = blocked.date.toISOString().slice(0, 10)
+    const dateKey = getDateKeyInTimeZone(blocked.date, params.timeZone)
     const entries = blockedByDateKey.get(dateKey) ?? []
     entries.push({
       allDay: blocked.allDay,
@@ -378,10 +473,18 @@ async function buildAvailabilityContext(params: {
     stepMin: params.stepMin,
     searchDays: params.searchDays,
     staffMembershipId: params.staffMembershipId,
-    ignoreAppointmentId: params.ignoreAppointmentId,
-    workingDaysByWeekday,
+    ignoreAppointmentId: params.ignoreAppointmentId ?? null,
+    storeWorkingDaysByWeekday,
+    membershipWorkingDaysByWeekday,
     blockedByDateKey,
-    appointments,
+    appointments: appointments.map((appointment) => ({
+      id: appointment.id,
+      customerName: appointment.customerName,
+      startAt: appointment.startAt,
+      endAt: appointment.endAt,
+      staffMembershipId: appointment.staffMembershipId,
+      staffName: appointment.membership?.user.name ?? null,
+    })),
   } satisfies AvailabilityContext
 }
 
@@ -391,13 +494,14 @@ function evaluateSlot(context: AvailabilityContext, startAt: Date, endAt: Date) 
   const startTimeKey = getTimeKeyInTimeZone(startAt, context.timeZone)
   const endTimeKey = getTimeKeyInTimeZone(endAt, context.timeZone)
   const weekday = getWeekdayFromDateKey(startDateKey)
-  const workingDay = context.workingDaysByWeekday.get(weekday)
+  const workingDay = getEffectiveWorkingDay(context, weekday)
 
-  if (!hasAnyEnabledWorkingDay(context.workingDaysByWeekday)) {
+  if (!hasAnyEnabledWorkingDay(context)) {
     return {
       available: false as const,
       reason: "NO_WORKING_HOURS_CONFIGURED" as const,
-      message: "Ainda nao ha horarios de atendimento configurados para a agenda.",
+      message: getNoWorkingHoursMessage(context),
+      conflictingAppointments: [],
     }
   }
 
@@ -406,6 +510,7 @@ function evaluateSlot(context: AvailabilityContext, startAt: Date, endAt: Date) 
       available: false as const,
       reason: "OUTSIDE_WORKING_HOURS" as const,
       message: "Esse horario nao cabe dentro do expediente configurado.",
+      conflictingAppointments: [],
     }
   }
 
@@ -414,6 +519,7 @@ function evaluateSlot(context: AvailabilityContext, startAt: Date, endAt: Date) 
       available: false as const,
       reason: "OUTSIDE_WORKING_HOURS" as const,
       message: "Esse horario fica fora do expediente ou nao comporta toda a duracao do servico.",
+      conflictingAppointments: [],
     }
   }
 
@@ -423,16 +529,22 @@ function evaluateSlot(context: AvailabilityContext, startAt: Date, endAt: Date) 
       available: false as const,
       reason: "BLOCKED" as const,
       message: "Esse horario esta bloqueado na agenda.",
+      conflictingAppointments: [],
     }
   }
 
-  if (context.appointments.some((appointment) => appointment.startAt < endAt && appointment.endAt > startAt)) {
+  const conflictingAppointments = context.appointments.filter(
+    (appointment) => appointment.startAt < endAt && appointment.endAt > startAt
+  )
+
+  if (conflictingAppointments.length > 0) {
     return {
       available: false as const,
       reason: "APPOINTMENT_CONFLICT" as const,
       message: context.staffMembershipId
         ? "Esse horario ja esta ocupado para o profissional escolhido."
         : "Esse horario ja foi ocupado por outro agendamento.",
+      conflictingAppointments,
     }
   }
 
@@ -441,14 +553,91 @@ function evaluateSlot(context: AvailabilityContext, startAt: Date, endAt: Date) 
   }
 }
 
-function hasAnyEnabledWorkingDay(workingDaysByWeekday: Map<Weekday, WorkingDay>) {
-  for (const day of workingDaysByWeekday.values()) {
-    if (day.enabled && day.intervals.length > 0) {
+function getEffectiveWorkingDay(context: AvailabilityContext, weekday: Weekday) {
+  const storeDay = context.storeWorkingDaysByWeekday.get(weekday)
+
+  if (!context.staffMembershipId) {
+    return storeDay
+  }
+
+  const membershipDay = context.membershipWorkingDaysByWeekday.get(weekday)
+  if (!membershipDay?.enabled || membershipDay.intervals.length === 0) {
+    return null
+  }
+
+  if (!storeDay?.enabled || storeDay.intervals.length === 0) {
+    return null
+  }
+
+  const effectiveIntervals = intersectWorkingIntervals(
+    membershipDay.intervals,
+    storeDay.intervals
+  )
+
+  if (effectiveIntervals.length === 0) {
+    return null
+  }
+
+  return {
+    weekday,
+    enabled: true,
+    intervals: effectiveIntervals,
+  } satisfies WorkingDay
+}
+
+function hasAnyEnabledWorkingDay(context: AvailabilityContext) {
+  for (const weekday of Object.values(Weekday)) {
+    const day = getEffectiveWorkingDay(context, weekday)
+    if (day?.enabled && day.intervals.length > 0) {
       return true
     }
   }
 
   return false
+}
+
+function getNoWorkingHoursMessage(context: AvailabilityContext) {
+  if (!context.staffMembershipId) {
+    return "Ainda nao ha horarios de atendimento configurados para a agenda."
+  }
+
+  const hasOwnConfiguredDay = Array.from(context.membershipWorkingDaysByWeekday.values()).some(
+    (day) => day.enabled && day.intervals.length > 0
+  )
+
+  if (!hasOwnConfiguredDay) {
+    return "Este profissional ainda nao possui expediente configurado."
+  }
+
+  return "O horario do profissional precisa estar dentro do expediente da loja."
+}
+
+function intersectWorkingIntervals(
+  membershipIntervals: WorkingInterval[],
+  storeIntervals: WorkingInterval[]
+) {
+  const intersections: WorkingInterval[] = []
+
+  for (const membershipInterval of membershipIntervals) {
+    const membershipStart = timeKeyToMinutes(membershipInterval.startTime)
+    const membershipEnd = timeKeyToMinutes(membershipInterval.endTime)
+
+    for (const storeInterval of storeIntervals) {
+      const storeStart = timeKeyToMinutes(storeInterval.startTime)
+      const storeEnd = timeKeyToMinutes(storeInterval.endTime)
+      const startMinutes = Math.max(membershipStart, storeStart)
+      const endMinutes = Math.min(membershipEnd, storeEnd)
+
+      if (startMinutes < endMinutes) {
+        intersections.push({
+          startTime: minutesToTimeKey(startMinutes),
+          endTime: minutesToTimeKey(endMinutes),
+        })
+      }
+    }
+  }
+
+  return intersections.sort((left, right) => left.startTime.localeCompare(right.startTime))
 }
 
 function fitsAnyInterval(
@@ -476,53 +665,88 @@ function findSuggestedSlots(
   requestedStartAt: Date,
   limit: number
 ) {
-  const requestedTimeMinutes = timeKeyToMinutes(getTimeKeyInTimeZone(requestedStartAt, context.timeZone))
   const suggestions: SuggestedSlot[] = []
   const seen = new Set<string>()
 
   for (let offset = 0; offset < context.searchDays && suggestions.length < limit; offset += 1) {
     const dateKey = addDaysToDateKey(context.requestedDateKey, offset)
-    const weekday = getWeekdayFromDateKey(dateKey)
-    const workingDay = context.workingDaysByWeekday.get(weekday)
+    suggestions.push(
+      ...findAvailableSlotsForDate({
+        context,
+        dateKey,
+        notBefore: offset === 0 ? requestedStartAt : null,
+        limit: limit - suggestions.length,
+        seen,
+      })
+    )
+  }
 
-    if (!workingDay?.enabled || workingDay.intervals.length === 0) {
-      continue
+  return suggestions
+}
+
+function findAvailableSlotsForDate(params: {
+  context: AvailabilityContext
+  dateKey: string
+  notBefore?: Date | null
+  limit?: number
+  seen?: Set<string>
+}) {
+  const suggestions: SuggestedSlot[] = []
+  const seen = params.seen ?? new Set<string>()
+  const weekday = getWeekdayFromDateKey(params.dateKey)
+  const workingDay = getEffectiveWorkingDay(params.context, weekday)
+
+  if (!workingDay?.enabled || workingDay.intervals.length === 0) {
+    return suggestions
+  }
+
+  const notBeforeDateKey = params.notBefore
+    ? getDateKeyInTimeZone(params.notBefore, params.context.timeZone)
+    : null
+  const requestedTimeMinutes =
+    params.notBefore && notBeforeDateKey === params.dateKey
+      ? roundUpToStep(
+          timeKeyToMinutes(getTimeKeyInTimeZone(params.notBefore, params.context.timeZone)),
+          params.context.stepMin
+        )
+      : null
+
+  for (const interval of workingDay.intervals) {
+    let candidateMinutes = timeKeyToMinutes(interval.startTime)
+    const intervalEndMinutes = timeKeyToMinutes(interval.endTime)
+
+    if (requestedTimeMinutes !== null) {
+      candidateMinutes = Math.max(candidateMinutes, requestedTimeMinutes)
     }
 
-    for (const interval of workingDay.intervals) {
-      let candidateMinutes = timeKeyToMinutes(interval.startTime)
-      const intervalEndMinutes = timeKeyToMinutes(interval.endTime)
+    while (
+      candidateMinutes + params.context.durationMin <= intervalEndMinutes &&
+      (params.limit === undefined || suggestions.length < params.limit)
+    ) {
+      const timeKey = minutesToTimeKey(candidateMinutes)
+      const startAt = combineDateKeyAndTime(params.dateKey, timeKey, params.context.timeZone)
 
-      if (offset === 0) {
-        candidateMinutes = Math.max(candidateMinutes, roundUpToStep(requestedTimeMinutes, context.stepMin))
+      if (params.notBefore && startAt.getTime() < params.notBefore.getTime()) {
+        candidateMinutes += params.context.stepMin
+        continue
       }
 
-      while (candidateMinutes + context.durationMin <= intervalEndMinutes && suggestions.length < limit) {
-        const timeKey = minutesToTimeKey(candidateMinutes)
-        const startAt = combineDateKeyAndTime(dateKey, timeKey, context.timeZone)
+      const endAt = addMinutes(startAt, params.context.durationMin)
+      const evaluation = evaluateSlot(params.context, startAt, endAt)
 
-        if (startAt.getTime() < requestedStartAt.getTime()) {
-          candidateMinutes += context.stepMin
-          continue
+      if (evaluation.available) {
+        const key = startAt.toISOString()
+        if (!seen.has(key)) {
+          suggestions.push({
+            startAt,
+            endAt,
+            label: formatDateTimeForBot(startAt, params.context.timeZone),
+          })
+          seen.add(key)
         }
-
-        const endAt = addMinutes(startAt, context.durationMin)
-        const evaluation = evaluateSlot(context, startAt, endAt)
-
-        if (evaluation.available) {
-          const key = startAt.toISOString()
-          if (!seen.has(key)) {
-            suggestions.push({
-              startAt,
-              endAt,
-              label: formatDateTimeForBot(startAt, context.timeZone),
-            })
-            seen.add(key)
-          }
-        }
-
-        candidateMinutes += context.stepMin
       }
+
+      candidateMinutes += params.context.stepMin
     }
   }
 
