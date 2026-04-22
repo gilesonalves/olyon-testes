@@ -3,15 +3,12 @@
 import bcrypt from "bcryptjs"
 import { getServerSession } from "next-auth"
 import { redirect } from "next/navigation"
-import { prisma } from "@/lib/prisma"
+import { MembershipRole, prisma } from "@/lib/prisma"
 import { authOptions } from "@/lib/auth-options"
 
 import { createStoreSchema } from "./create-store.schema"
 import { generateSlug } from "./create-store.utils"
 import type { CreateStoreInput, CreateStoreResult } from "./create-store.types"
-
-// ✅ no seu projeto o enum está aqui (como aparece no autocomplete)
-import { MembershipRole } from "../../../generated/prisma/enums"
 
 export async function createStore(
   input: CreateStoreInput

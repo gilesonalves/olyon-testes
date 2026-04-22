@@ -1,8 +1,7 @@
-import { prisma } from "@/lib/prisma"
+import { Prisma, prisma } from "@/lib/prisma"
 import { FinanceEntryUpdateSchema } from "@/lib/validators/finance-entry"
 import { badRequest, notFound, ok, serverError, unauthorized, forbidden } from "@/lib/api/response"
 import { requireMembershipRole } from "@/lib/guards/require-membership-role"
-import { Prisma } from "../../../../../generated/prisma/client"
 
 type Params = {
   params: Promise<{ id: string }>

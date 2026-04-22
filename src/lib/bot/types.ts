@@ -1,5 +1,5 @@
 // src/lib/bot/types.ts
-import type { ConversationState } from "../../../generated/prisma/client"
+import type { ConversationState } from "@/lib/prisma"
 
 type FlowState = Extract<
   ConversationState,

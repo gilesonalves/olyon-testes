@@ -1,8 +1,7 @@
-import { prisma } from "@/lib/prisma"
+import { Prisma, prisma } from "@/lib/prisma"
 import { requireStoreId } from "@/lib/current-store"
 import { ServiceCreateSchema } from "@/lib/validators/service"
 import { badRequest, created, ok, serverError, unauthorized, forbidden } from "@/lib/api/response"
-import { Prisma } from "../../../generated/prisma/client"
 import { requireMembershipRole } from "@/lib/guards/require-membership-role"
 
 export async function GET() {

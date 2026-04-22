@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma"
+import { AppointmentStatus, prisma } from "@/lib/prisma"
 import {
   addDaysToDateKey,
   addMinutes,
@@ -11,7 +11,6 @@ import {
   timeKeyToMinutes,
 } from "@/lib/bot/datetime"
 import { getAppointmentStatusBadgeProps, getAppointmentStatusLabel } from "@/lib/appointments/presentation"
-import { AppointmentStatus } from "../../../generated/prisma/client"
 
 const UPCOMING_APPOINTMENTS_LIMIT = 4
 const DASHBOARD_SLOT_MINUTES = 15

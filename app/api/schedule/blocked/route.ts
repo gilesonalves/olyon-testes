@@ -1,6 +1,5 @@
 import { NextRequest } from "next/server"
-import { AppointmentStatus } from "../../../../generated/prisma/client"
-import { prisma } from "@/lib/prisma"
+import { AppointmentStatus, prisma } from "@/lib/prisma"
 import { blockedScheduleCreateSchema } from "@/lib/validators/schedule"
 import { getCurrentStoreIdOrThrow } from "@/lib/store/current-store"
 import {

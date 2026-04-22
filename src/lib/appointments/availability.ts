@@ -1,5 +1,4 @@
-import type { PrismaClient } from "../../../generated/prisma/client"
-import { AppointmentStatus, MembershipRole, Weekday } from "../../../generated/prisma/client"
+import { AppointmentStatus, Weekday, type MembershipRole, type PrismaClient } from "@/lib/prisma"
 import {
   addDaysToDateKey,
   addMinutes,

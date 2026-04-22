@@ -1,13 +1,11 @@
-import { Pool } from "pg"
-import { PrismaPg } from "@prisma/adapter-pg"
 import {
   AppointmentStatus,
   GlobalRole,
   MembershipRole,
   MembershipType,
-  PrismaClient,
-  Weekday,
-} from "../generated/prisma/client"
+  prisma,
+  type Weekday,
+} from "../src/lib/prisma"
 import bcrypt from "bcryptjs"
 import {
   addDaysToDateKey,
@@ -17,13 +15,6 @@ import {
   getWeekdayFromDateKey,
   parseDateKeyToStoreDate,
 } from "../src/lib/bot/datetime"
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-})
-
-const adapter = new PrismaPg(pool)
-const prisma = new PrismaClient({ adapter })
 
 const STORE_ID = "store-loja-principal"
 const STORE_SLUG = "loja-principal"
@@ -342,5 +333,4 @@ main()
   })
   .finally(async () => {
     await prisma.$disconnect()
-    await pool.end()
   })

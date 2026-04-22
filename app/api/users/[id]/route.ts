@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs"
-import { prisma } from "@/lib/prisma"
+import { Prisma, prisma } from "@/lib/prisma"
 import {
   badRequest,
   forbidden,
@@ -10,7 +10,6 @@ import {
 } from "@/lib/api/response"
 import { requireMembershipRole } from "@/lib/guards/require-membership-role"
 import { UserUpdateApiSchema } from "@/lib/validators/user"
-import { Prisma } from "../../../../generated/prisma/client"
 
 type Params = { params: Promise<{ id: string }> }
 

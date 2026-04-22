@@ -1,5 +1,4 @@
-import type { Prisma, PrismaClient } from "../../../generated/prisma/client"
-import { AppointmentStatus } from "../../../generated/prisma/client"
+import { AppointmentStatus, type Prisma, type PrismaClient } from "@/lib/prisma"
 import {
   type AvailabilityConflictingAppointment,
   checkAvailabilityForSlot,

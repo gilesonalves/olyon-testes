@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs"
-import { prisma } from "@/lib/prisma"
+import { Prisma, prisma } from "@/lib/prisma"
 import { UserCreateApiSchema } from "@/lib/validators/user"
 import {
   badRequest,
@@ -9,7 +9,6 @@ import {
   serverError,
   unauthorized,
 } from "@/lib/api/response"
-import { Prisma } from "../../../generated/prisma/client"
 import { requireMembershipRole } from "@/lib/guards/require-membership-role"
 
 function safeJsonParse(value: string) {

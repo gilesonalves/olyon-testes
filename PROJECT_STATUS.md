@@ -88,6 +88,8 @@
 [x] Dashboard `/dashboard` com card `Status da agenda` alimentado por slots reais da store atual
 [x] `Entradas/Saidas > Novo` com autocomplete discreto de categorias por tipo e digitacao livre preservada
 [x] Indicador flutuante de desenvolvimento do Next removido da interface para nao obstruir a sidebar
+[x] Prisma Client padronizado em `src/lib/prisma`, com `prisma generate` antes do `next build` para Vercel resolver `generated/prisma/client`
+[x] Build TypeScript liberado com narrowing seguro do conflito manual de agendamento e ajuste de `ignoreAppointmentId`
 [x] `/horarios-de-atendimento` com selects revisados para mobile, usando dropdown mais controlado e confortavel
 [x] `/agendamentos` com selects e filtros mobile alinhados ao painel discreto do campo de busca de cliente
 [x] Dados publicos da agenda online da loja com tela de edicao acessivel pelo menu lateral
@@ -1036,7 +1038,7 @@ Proximo passo sugerido:
 3. Coletar nome do cliente no fluxo WhatsApp antes da confirmacao final.
 4. Evoluir disponibilidade por profissional para agendas individuais quando o produto suportar agenda propria por staff.
 5. Cobrir create manual, remarcacao, listagem por data, bloqueio com conflito de appointments e agenda publica com testes automatizados de integracao.
-6. Limpar type errors e warnings antigos fora do escopo da feature, com prioridade para os erros que ainda travam `yarn build`.
+6. Limpar warnings antigos fora do escopo da feature, como lockfiles multiplos, `middleware` depreciado e baseline-browser-mapping desatualizado.
 
 ---
 
@@ -1044,6 +1046,8 @@ Proximo passo sugerido:
 
 | Data | Mudanca |
 |------|---------|
+| 22/04/2026 | Build TypeScript: corrigido narrowing de `json.code` no create de agendamento e alinhado `ignoreAppointmentId` nos callers de disponibilidade; `yarn build` voltou a concluir |
+| 22/04/2026 | Build Vercel/Prisma: imports diretos para `generated/prisma/client` foram centralizados em `src/lib/prisma` e o script `build` passou a executar `prisma generate` antes do `next build` |
 | 22/04/2026 | WhatsAppConnection check real: endpoint corrigido para `GET /v25.0/{phoneNumberId}` sem `fields`, parser reforcado, diagnostico seguro do token lido e comparacao de telefone tolerante a formatacao |
 | 10/04/2026 | WhatsAppConnection teste real da loja: criado `POST /api/store/current/whatsapp-connection/check`, helper de validacao minima na Graph API e UI `/configuracoes/whatsapp` com loading/resultado separado da auditoria local |
 | 09/04/2026 | WhatsAppConnection operacional: criada a classificacao `missing/incomplete/inactive/ready` e integrada na rota store-scoped e na UI `/configuracoes/whatsapp` |

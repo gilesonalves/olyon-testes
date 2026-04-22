@@ -1,6 +1,4 @@
-import type { Prisma } from "../../../../../generated/prisma/client"
-
-import { prisma } from "@/lib/prisma"
+import { prisma, type Prisma } from "@/lib/prisma"
 import {
   badRequest,
   forbidden,

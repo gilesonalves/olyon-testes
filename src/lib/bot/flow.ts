@@ -1,5 +1,5 @@
 // src/lib/bot/flow.ts
-import type { ConversationState } from "../../../generated/prisma/client"
+import type { ConversationState } from "@/lib/prisma"
 import { normalizeBotText } from "./datetime"
 import type { BotAction, BotConversationContext, BotResult } from "./types"
 

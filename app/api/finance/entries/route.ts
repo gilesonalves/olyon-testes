@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma"
+import { Prisma, prisma } from "@/lib/prisma"
 import { requireStoreId } from "@/lib/current-store"
 import { FinanceEntryCreateSchema } from "@/lib/validators/finance-entry"
 import {
@@ -10,7 +10,6 @@ import {
   unauthorized,
 } from "@/lib/api/response"
 import { requireMembershipRole } from "@/lib/guards/require-membership-role"
-import { Prisma } from "../../../../generated/prisma/client"
 
 export async function GET() {
   try {

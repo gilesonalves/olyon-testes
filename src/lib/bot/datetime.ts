@@ -1,4 +1,4 @@
-import { Weekday } from "../../../generated/prisma/client"
+import type { Weekday } from "@/lib/prisma"
 
 const DAY_MS = 24 * 60 * 60 * 1000
 

@@ -207,7 +207,7 @@ export async function GET(req: Request) {
         durationMin: service.durationMin,
         timeZone,
         staffMembershipId: resolvedStaffMembershipId,
-        excludeAppointmentId: input.excludeAppointmentId,
+        ignoreAppointmentId: input.excludeAppointmentId,
         suggestionsLimit: 5,
       })
 
@@ -264,7 +264,7 @@ export async function GET(req: Request) {
       durationMin: service.durationMin,
       timeZone,
       staffMembershipId: resolvedStaffMembershipId,
-      excludeAppointmentId: input.excludeAppointmentId,
+      ignoreAppointmentId: input.excludeAppointmentId,
       notBefore: searchDate === currentDateKey ? new Date() : null,
     })
 

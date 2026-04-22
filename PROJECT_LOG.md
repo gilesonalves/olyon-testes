@@ -5386,3 +5386,77 @@ Corrigir apenas o check real da conexao Meta/WhatsApp do Olyon para reconhecer u
 
 O check real do Olyon agora usa o mesmo caminho da Graph API ja validado externamente e deve marcar sucesso tecnico quando a Meta retornar o `phoneNumberId` com o token salvo na `WhatsAppConnection` da loja atual.
 
+## 22 de abril de 2026 - Correcao do Prisma Client no build da Vercel
+
+### Objetivo
+
+Corrigir apenas a falha de build relacionada a imports de `generated/prisma/client`, mantendo o motor conversacional e o webhook Meta fora do escopo.
+
+### Arquivos alterados
+
+- `package.json`
+- `src/lib/prisma.ts`
+- `prisma/seed.ts`
+- Rotas e libs que importavam tipos/enums diretamente de `generated/prisma/client` ou `generated/prisma/enums`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+- Confirmado que `prisma/schema.prisma` usa `generator client` com `provider = "prisma-client"` e `output = "../generated/prisma"`.
+- O helper `src/lib/prisma.ts` passou a ser o ponto unico para `prisma`, `PrismaClient`, namespace `Prisma`, tipos e enums gerados.
+- Imports relativos frageis para `../../../generated/prisma/client` e equivalentes foram trocados por `@/lib/prisma`.
+- O seed passou a usar o mesmo helper central.
+- O script `build` agora executa `prisma generate && next build`, garantindo que a pasta ignorada `generated/prisma` exista no ambiente da Vercel antes do bundle do Next.
+
+### Fora do escopo mantido
+
+- Sem alterar regras do motor conversacional.
+- Sem alterar webhook Meta.
+- Sem alterar fluxo de outbound WhatsApp.
+- Sem corrigir erros TypeScript antigos fora do escopo desta etapa.
+
+### Validacao executada
+
+- `yarn prisma generate` passou e gerou o client em `generated/prisma`.
+- `yarn build` deixou de falhar por `generated/prisma/client`: o bundle compilou e a execucao parou depois no TypeScript por erro fora do escopo em `app/(app)/agendamentos/page.tsx:2346`, onde `code` nao existe em `ApiError | AppointmentCreateConflictError`.
+
+### Resultado
+
+A falha recorrente de resolucao do Prisma Client no build da Vercel foi enderecada. O proximo bloqueio de build visivel agora e um erro TypeScript da tela de agendamentos, nao relacionado ao Prisma Client.
+
+## 22 de abril de 2026 - Correcao do TypeScript no build de agendamentos
+
+### Objetivo
+
+Corrigir o bloqueio TypeScript em `app/(app)/agendamentos/page.tsx:2346`, preservando a regra atual de conflito manual de agendamento.
+
+### Arquivos alterados
+
+- `app/(app)/agendamentos/page.tsx`
+- `app/api/appointments/[id]/route.ts`
+- `app/api/appointments/availability/route.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+- O acesso a `json.code` no retorno de create de agendamento foi protegido com `"code" in json`, permitindo o narrowing correto entre `ApiError` e `AppointmentCreateConflictError`.
+- Apos esse ajuste, o build revelou callers de disponibilidade usando a chave `excludeAppointmentId` contra funcoes que esperam `ignoreAppointmentId`; apenas a chave interna passada para as funcoes foi alinhada, mantendo o mesmo valor e o mesmo contrato externo.
+
+### Fora do escopo mantido
+
+- Sem alterar Prisma.
+- Sem alterar motor do bot/WhatsApp.
+- Sem alterar webhook Meta.
+- Sem alterar a regra de negocio de conflito/confirmacao de agendamento.
+
+### Validacao executada
+
+- `yarn build` concluiu com sucesso.
+- O build ainda exibe apenas warnings antigos nao bloqueantes: lockfiles multiplos, convencao `middleware` depreciada e `baseline-browser-mapping` desatualizado.
+
+### Resultado
+
+O build deixou de falhar em `app/(app)/agendamentos/page.tsx:2346` e passou a concluir com sucesso.
+

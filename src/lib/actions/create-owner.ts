@@ -3,15 +3,12 @@
 import bcrypt from "bcryptjs"
 import { getServerSession } from "next-auth"
 import { redirect } from "next/navigation"
-import { prisma } from "@/lib/prisma"
+import { MembershipRole, prisma } from "@/lib/prisma"
 import { authOptions } from "@/lib/auth-options"
 import { SUPER_ADMIN_ROLE } from "@/lib/auth"
 
 import { createOwnerSchema } from "./create-owner.schema"
 import type { CreateOwnerInput, CreateOwnerResult } from "./create-owner.types"
-
-// ✅ no seu projeto enums aparecem assim:
-import { MembershipRole } from "../../../generated/prisma/enums"
 
 export async function createOwner(
   storeId: string,

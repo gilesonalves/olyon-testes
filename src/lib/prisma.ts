@@ -1,15 +1,15 @@
 import { Pool } from "pg"
 import { PrismaPg } from "@prisma/adapter-pg"
-import { PrismaClient, Prisma } from "../../generated/prisma/client"
+import { PrismaClient } from "../../generated/prisma/client"
 
 const connectionString = process.env.DATABASE_URL
 
 if (!connectionString) {
-  throw new Error("DATABASE_URL não definida")
+  throw new Error("DATABASE_URL nao definida")
 }
 
 const pool = new Pool({ connectionString })
-const adapter = new PrismaPg(pool)
+const adapter = new PrismaPg(pool, { disposeExternalPool: true })
 
 function createPrismaClient() {
   return new PrismaClient({
@@ -18,15 +18,12 @@ function createPrismaClient() {
   })
 }
 
-// Temporariamente evitamos o cache global em desenvolvimento para validar
-// se o processo do Next estava reutilizando uma instância stale do client.
-export const prisma =
-  process.env.NODE_ENV === "production"
-    ? ((globalThis as unknown as { prisma?: PrismaClient }).prisma ?? createPrismaClient())
-    : createPrismaClient()
-
-if (process.env.NODE_ENV === "production") {
-  ;(globalThis as unknown as { prisma?: PrismaClient }).prisma = prisma
+const globalForPrisma = globalThis as unknown as {
+  prisma?: PrismaClient
 }
 
-export { Prisma }
+export const prisma = globalForPrisma.prisma ?? createPrismaClient()
+
+globalForPrisma.prisma = prisma
+
+export * from "../../generated/prisma/client"

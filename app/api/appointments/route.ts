@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma"
+import { AppointmentStatus, prisma } from "@/lib/prisma"
 import {
   badRequest,
   created,
@@ -18,7 +18,6 @@ import {
   createAppointmentForStore,
   MANUAL_APPOINTMENT_CONFLICT_REQUIRES_CONFIRMATION_CODE,
 } from "@/lib/appointments/create"
-import { AppointmentStatus } from "../../../generated/prisma/client"
 import {
   addDaysToDateKey,
   combineDateKeyAndTime,

@@ -196,7 +196,7 @@ export async function PUT(req: Request, { params }: Params) {
         durationMin: service.durationMin,
         timeZone,
         staffMembershipId: nextStaffMembershipId,
-        excludeAppointmentId: existing.id,
+        ignoreAppointmentId: existing.id,
         suggestionsLimit: 5,
       })
 

@@ -2343,6 +2343,7 @@ export default function AgendamentosPage() {
     if (
       response.status === 409 &&
       !json.ok &&
+      "code" in json &&
       json.code === MANUAL_APPOINTMENT_CONFLICT_REQUIRES_CONFIRMATION_CODE &&
       json.details?.requiresConfirmation
     ) {
