@@ -1,12 +1,25 @@
 import { z } from "zod"
+import { formatPhone, normalizePhone } from "@/lib/utils/maskPhone"
 
 function textField(maxLength: number) {
   return z.string().trim().max(maxLength)
 }
 
+function phoneField(label: string) {
+  return textField(30).refine(
+    (value) => {
+      const digits = normalizePhone(value)
+      return digits.length === 0 || (digits.length >= 10 && digits.length <= 11)
+    },
+    {
+      message: `${label} invalido. Informe DDD + numero.`,
+    }
+  )
+}
+
 export const storePublicInfoSchema = z.object({
-  phone: textField(30),
-  whatsappPhone: textField(30),
+  phone: phoneField("Telefone"),
+  whatsappPhone: phoneField("WhatsApp"),
   address: textField(255),
   complement: textField(120),
   neighborhood: textField(120),
@@ -79,8 +92,8 @@ export function toStorePublicInfoFormValues(
   }
 
   return {
-    phone: data.phone ?? "",
-    whatsappPhone: data.whatsappPhone ?? "",
+    phone: formatPhone(data.phone) ?? data.phone ?? "",
+    whatsappPhone: formatPhone(data.whatsappPhone) ?? data.whatsappPhone ?? "",
     address: data.address ?? "",
     complement: data.complement ?? "",
     neighborhood: data.neighborhood ?? "",
@@ -93,9 +106,12 @@ export function toStorePublicInfoFormValues(
 }
 
 export function toStorePublicInfoUpdateData(input: StorePublicInfoFormValues) {
+  const phone = normalizePhone(input.phone)
+  const whatsappPhone = normalizePhone(input.whatsappPhone)
+
   return {
-    phone: toNullableString(input.phone),
-    whatsappPhone: toNullableString(input.whatsappPhone),
+    phone: phone.length > 0 ? phone : null,
+    whatsappPhone: whatsappPhone.length > 0 ? whatsappPhone : null,
     address: toNullableString(input.address),
     complement: toNullableString(input.complement),
     neighborhood: toNullableString(input.neighborhood),

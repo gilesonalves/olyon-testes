@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto"
 import { NextRequest } from "next/server"
 import { z } from "zod"
-import { prisma, Prisma } from "@/lib/prisma"
+import { prisma, Prisma, type ConversationState } from "@/lib/prisma"
 import { badRequest, ok, serverError, unauthorized } from "@/lib/api/response"
 import {
   checkAvailabilityForSlot,
@@ -11,7 +11,10 @@ import {
   type EligibleStaffMember,
   type SuggestedSlot,
 } from "@/lib/appointments/availability"
-import { handleIncomingMessage } from "@/lib/bot/flow"
+import {
+  handleIncomingMessage,
+  isPauseChatbotTriggerText,
+} from "@/lib/bot/flow"
 import {
   getDateKeyInTimeZone,
   formatDateTimeForBot,
@@ -91,6 +94,8 @@ type StoredAppointmentOption = {
 }
 
 const TIME_SUGGESTIONS_LIMIT = 5
+const CHATBOT_PAUSED_MESSAGE =
+  "Chat pausado. Em breve um atendente continuar\u00e1 por aqui."
 
 function toJsonValue(value: unknown): Prisma.InputJsonValue {
   try {
@@ -578,7 +583,7 @@ type ProcessIncomingMessageParams = {
 type ProcessIncomingMessageResult = {
   conversationId: string
   messageId: string
-  nextState: string | null
+  nextState: ConversationState | null
   draftId: string | null
   appointmentId: string | null
   replies: string[]
@@ -595,7 +600,7 @@ type ExistingInboundMessage = {
   id: string
   conversationId: string
   conversation: {
-    state: string
+    state: ConversationState
   }
 }
 
@@ -846,13 +851,7 @@ async function processIncomingWhatsAppMessage(
         },
       })
 
-      const bot = handleIncomingMessage({
-        state: conversation.state,
-        text: incomingMessage.text,
-        context: buildBotContext(conversation.context),
-      })
-
-      let nextState: string | null = null
+      let nextState: ConversationState | null = null
       let ensuredDraftId: string | null = null
       let createdAppointmentId: string | null = null
       let parsedDateTime: ParsedDateTimeValue | null = null
@@ -918,6 +917,55 @@ async function processIncomingWhatsAppMessage(
           },
         })
       }
+
+      async function pauseConversation() {
+        nextState = "PAUSED"
+
+        await tx.conversation.update({
+          where: { id: conversation.id },
+          data: {
+            state: "PAUSED",
+            lastMessageAt: new Date(),
+          },
+        })
+
+        await appendBotReply(CHATBOT_PAUSED_MESSAGE, {
+          reason: "CHATBOT_PAUSED_BY_CUSTOMER",
+          pausedByMessageId: savedIn.id,
+        })
+      }
+
+      if (conversation.state === "PAUSED") {
+        return {
+          conversationId: conversation.id,
+          messageId: savedIn.id,
+          nextState: "PAUSED",
+          draftId: null,
+          appointmentId: null,
+          replies: outMessages,
+          replayed: false,
+        }
+      }
+
+      if (isPauseChatbotTriggerText(incomingMessage.text)) {
+        await pauseConversation()
+
+        return {
+          conversationId: conversation.id,
+          messageId: savedIn.id,
+          nextState: "PAUSED",
+          draftId: null,
+          appointmentId: null,
+          replies: outMessages,
+          replayed: false,
+        }
+      }
+
+      const bot = handleIncomingMessage({
+        state: conversation.state,
+        text: incomingMessage.text,
+        context: buildBotContext(conversation.context),
+      })
 
       async function setSuggestedTimeSlots(suggestions: SuggestedSlot[]) {
         await persistConversationContext({

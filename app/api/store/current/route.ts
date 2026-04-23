@@ -1,52 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
-import { z } from "zod"
 import { requireMembershipRole } from "@/lib/guards/require-membership-role"
 import { prisma } from "@/lib/prisma"
 import { getCurrentStoreContext } from "@/lib/store/current-store"
-import { normalizePhone } from "@/lib/utils/maskPhone"
-
-const StorePublicInfoSchema = z.object({
-  phone: z.string().max(32).optional().nullable(),
-  whatsappPhone: z.string().max(32).optional().nullable(),
-  address: z.string().max(255).optional().nullable(),
-  complement: z.string().max(255).optional().nullable(),
-  neighborhood: z.string().max(120).optional().nullable(),
-  city: z.string().max(120).optional().nullable(),
-  state: z.string().max(80).optional().nullable(),
-  zipcode: z.string().max(20).optional().nullable(),
-  businessHoursSummary: z.string().max(1000).optional().nullable(),
-  serviceObservations: z.string().max(1500).optional().nullable(),
-})
-
-function normalizeOptionalString(value: string | null | undefined) {
-  if (value === undefined) {
-    return undefined
-  }
-
-  if (value === null) {
-    return null
-  }
-
-  const trimmed = value.trim()
-  return trimmed ? trimmed : null
-}
-
-function normalizeOptionalPhone(value: string | null | undefined) {
-  if (value === undefined) {
-    return undefined
-  }
-
-  if (value === null) {
-    return null
-  }
-
-  const digits = normalizePhone(value)
-  return digits ? digits : null
-}
-
-function isValidPhone(value: string | null | undefined) {
-  return value == null || (value.length >= 10 && value.length <= 11)
-}
+import {
+  storePublicInfoSchema,
+  toStorePublicInfoUpdateData,
+} from "@/lib/store/public-info"
 
 async function getCurrentStorePublicInfo(storeId: string) {
   return prisma.store.findUnique({
@@ -84,6 +43,8 @@ export async function GET(req: NextRequest) {
         membership: context.membership,
         source: context.source,
         publicAgendaUrl: store ? `/agenda/${store.slug}` : null,
+        publicInfoSource: "STORE",
+        storeSettingsUrl: "/configuracoes/loja",
       },
     })
   } catch (error: unknown) {
@@ -104,50 +65,22 @@ export async function PATCH(req: NextRequest) {
   }
 
   try {
-    const parsed = StorePublicInfoSchema.safeParse(await req.json())
+    const parsed = storePublicInfoSchema.safeParse(await req.json())
 
     if (!parsed.success) {
       return NextResponse.json(
-        { ok: false, message: "Dados publicos da agenda invalidos." },
-        { status: 400 }
-      )
-    }
-
-    const phone = normalizeOptionalPhone(parsed.data.phone)
-    const whatsappPhone = normalizeOptionalPhone(parsed.data.whatsappPhone)
-
-    if (!isValidPhone(phone)) {
-      return NextResponse.json(
-        { ok: false, message: "Telefone invalido. Informe DDD + numero." },
-        { status: 400 }
-      )
-    }
-
-    if (!isValidPhone(whatsappPhone)) {
-      return NextResponse.json(
-        { ok: false, message: "WhatsApp invalido. Informe DDD + numero." },
+        {
+          ok: false,
+          message: "Dados publicos da loja invalidos.",
+          details: parsed.error.flatten(),
+        },
         { status: 400 }
       )
     }
 
     const updatedStore = await prisma.store.update({
       where: { id: guard.storeId },
-      data: {
-        phone,
-        whatsappPhone,
-        address: normalizeOptionalString(parsed.data.address),
-        complement: normalizeOptionalString(parsed.data.complement),
-        neighborhood: normalizeOptionalString(parsed.data.neighborhood),
-        city: normalizeOptionalString(parsed.data.city),
-        state: normalizeOptionalString(parsed.data.state),
-        zipcode: normalizeOptionalString(parsed.data.zipcode),
-        businessHoursSummary: normalizeOptionalString(
-          parsed.data.businessHoursSummary
-        ),
-        serviceObservations: normalizeOptionalString(
-          parsed.data.serviceObservations
-        ),
-      },
+      data: toStorePublicInfoUpdateData(parsed.data),
       select: {
         id: true,
         name: true,
@@ -174,8 +107,7 @@ export async function PATCH(req: NextRequest) {
     })
   } catch (error: unknown) {
     const message =
-      (error as Error)?.message ??
-      "Erro ao atualizar dados publicos da agenda."
+      (error as Error)?.message ?? "Erro ao atualizar dados publicos da loja."
 
     return NextResponse.json({ ok: false, message }, { status: 500 })
   }

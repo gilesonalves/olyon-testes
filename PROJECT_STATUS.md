@@ -1,6 +1,6 @@
 # PROJECT_STATUS.md
 
-**Data de ultima atualizacao:** 22 de abril de 2026
+**Data de ultima atualizacao:** 23 de abril de 2026
 
 ## Status geral do projeto Olyon
 
@@ -92,8 +92,9 @@
 [x] Build TypeScript liberado com narrowing seguro do conflito manual de agendamento e ajuste de `ignoreAppointmentId`
 [x] `/horarios-de-atendimento` com selects revisados para mobile, usando dropdown mais controlado e confortavel
 [x] `/agendamentos` com selects e filtros mobile alinhados ao painel discreto do campo de busca de cliente
-[x] Dados publicos da agenda online da loja com tela de edicao acessivel pelo menu lateral
+[x] Dados publicos da `Store` com `/configuracoes/loja` como tela principal e `/agenda-online` como hub do link publico
 [x] Agenda online publica com selects e data mobile ajustados para dropdown/calendario compactos
+[x] Confirmacao da agenda publica com CTAs condicionais de mapa e WhatsApp usando dados da `Store`
 [x] `/agendamentos` exibindo na grade apenas profissionais com expediente proprio configurado na data
 [x] `/agendamentos` com loading da board separado do estado vazio real
 [x] Estrutura do app autenticado: cabecalho interno padronizado nas paginas sem HeaderPage
@@ -109,6 +110,7 @@
 [x] Envio outbound real de texto via Meta Graph API usando a `WhatsAppConnection` da loja
 [x] Teste real store-scoped da conexao Meta/WhatsApp atual da loja
 [x] Check real da conexao Meta/WhatsApp alinhado ao endpoint `GET /v25.0/{phoneNumberId}` ja validado externamente
+[x] Pausa operacional do chatbot WhatsApp por palavra-chave com estado `PAUSED`
 
 ---
 
@@ -127,13 +129,16 @@ O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) poss
 - O indicador visual de desenvolvimento do Next foi desativado globalmente para nao sobrepor a sidebar e o botao de logout durante o uso local.
 - A tela `/horarios-de-atendimento` agora usa selects com dropdown controlado para o escopo do expediente e o escopo de bloqueio, com largura e interacao melhores em mobile.
 - Os selects de `/agendamentos` agora usam o mesmo padrao visual discreto do painel de busca de cliente, substituindo menus nativos pesados em filtros, formularios e bloqueios.
-- O link publico de agendamento agora tem um caminho claro de manutencao no app: os dados institucionais lidos de `Store` podem ser editados em `/agenda-online`, com atalho direto no menu lateral.
+- O link publico de agendamento continua lendo apenas a `Store`, mas a manutencao principal dos dados institucionais agora acontece em `/configuracoes/loja`; `/agenda-online` virou um hub simples do canal publico.
 - A agenda online publica deixou de depender de `select` e `input[type=date]` nativos no fluxo principal, usando dropdowns e calendario compactos para evitar overlays grandes no mobile.
+- A confirmacao da agenda publica agora pode abrir o endereco da loja no mapa e iniciar conversa no WhatsApp, sempre de forma condicional e sem alterar o fluxo principal do agendamento.
+- O CTA `Ver no mapa` da confirmacao publica agora reaproveita exatamente o endereco visivel da coluna institucional, com validacao minima de `address + city + state`, evitando divergencia entre o card da loja e a area de sucesso.
 - A grade de `/agendamentos` agora mostra apenas profissionais com expediente proprio configurado na data selecionada, sem herdar automaticamente o expediente geral da loja.
 - APIs de horarios semanais e bloqueios de agenda persistidas em Prisma.
 - O backend de horarios semanais agora valida que todo expediente de profissional cabe integralmente dentro do expediente da loja no mesmo dia.
 - Base de conversas WhatsApp com `Conversation`, `ConversationMessage`, `AppointmentDraft` e `Appointment`.
 - Fluxo de bot via WhatsApp com menu inicial hibrido, selecao de servico, resolucao de profissional, sugestao ativa de horarios, escolha de horario por numero ou texto livre, confirmacao, cancelamento, remarcacao e resposta institucional da loja na opcao `3`.
+- O fluxo WhatsApp agora tambem aceita handoff humano por palavra-chave, marca a conversa como `PAUSED`, envia uma unica mensagem de pausa e bloqueia novas automacoes enquanto o atendimento segue no app oficial do WhatsApp.
 - `Store` agora possui campos publicos para telefone, WhatsApp, endereco, observacoes e resumo textual de horario de funcionamento.
 - `WhatsAppConnection` agora separa a conexao tecnica Meta/WhatsApp dos dados publicos da loja.
 - O webhook da Meta agora aceita verificacao `GET`, parseia payload real `POST` e resolve a `Store` por `phoneNumberId`.
@@ -146,7 +151,7 @@ O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) poss
 - Foram adicionados logs diagnosticos de payload inbound, dispatch outbound e request/response/fetch failure da Graph API para rastrear a falha de entrega.
 - Foram adicionados logs diagnosticos e persistencia leve de `statusEvents` para callbacks `statuses` da Meta quando a correlacao com a `OUT` e possivel.
 - O criterio de conexao foi alinhado entre inbound e outbound, exigindo `status = CONNECTED` nos dois caminhos.
-- Admin existente de lojas agora permite editar esses campos sem criar um fluxo paralelo.
+- A propria loja autenticada agora possui uma tela store-scoped (`/configuracoes/loja`) para editar telefone, endereco, horario resumido e observacoes, enquanto o admin existente segue disponivel para suporte de `SUPER_ADMIN`.
 - A tela de detalhes da loja agora tambem permite cadastrar e manter a conexao tecnica `WhatsAppConnection` via API admin store-scoped.
 - A propria loja autenticada agora tambem consegue disparar um teste real minimo da conexao Meta salva, com chamada `POST` store-scoped para a Graph API e feedback tecnico separado da auditoria local.
 - O check real da conexao Meta/WhatsApp agora usa o mesmo endpoint validado fora do Olyon (`GET /v25.0/{phoneNumberId}`), sem campos extras, e devolve diagnostico seguro do token lido de `WhatsAppConnection.accessToken`.
@@ -212,6 +217,7 @@ O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) poss
 - [x] Estado `CHOOSING_APPOINTMENT` para selecionar agendamento futuro
 - [x] Estado `CHOOSING_APPOINTMENT_ACTION` para escolher entre desmarcar e remarcar
 - [x] Estado `CONFIRMING_APPOINTMENT_CANCELLATION`
+- [x] Estado `PAUSED` para handoff humano sem automacao
 - [x] Sugestao ativa de 3 a 5 horarios ao entrar em `CHOOSING_TIME`
 - [x] Persistencia de sugestoes em `conversation.context`
 - [x] Escolha de horario sugerido por numero

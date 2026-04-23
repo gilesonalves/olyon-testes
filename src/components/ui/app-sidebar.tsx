@@ -1,8 +1,9 @@
 "use client"
-import { signOut } from "next-auth/react"
+
 import * as React from "react"
-import { useSession } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
+import { signOut, useSession } from "next-auth/react"
+import { useRouter } from "next/navigation"
+import { LogOut } from "lucide-react"
 import {
   Sidebar,
   SidebarContent,
@@ -16,9 +17,14 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar"
-import { LogOut } from "lucide-react"
-import { Select, SelectContent, SelectGroup, SelectTrigger, SelectValue } from "./select"
-import { SelectItem } from "./select"
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./select"
 import { Store } from "../../../types/store"
 
 type SidebarNavItem = {
@@ -58,11 +64,11 @@ const data: {
           url: "/agendamentos",
         },
         {
-          title: "Dados públicos da agenda",
+          title: "Agenda online",
           url: "/agenda-online",
         },
         {
-          title: "Horários de atendimento",
+          title: "Horarios de atendimento",
           url: "/horarios-de-atendimento",
         },
       ],
@@ -78,14 +84,13 @@ const data: {
       ],
     },
     {
-      title: "Serviços",
+      title: "Servicos",
       url: "#",
       items: [
         {
-          title: "Serviços",
+          title: "Servicos",
           url: "/servicos",
         },
-
       ],
     },
     {
@@ -93,7 +98,7 @@ const data: {
       url: "#",
       items: [
         {
-          title: "Entradas/Saídas",
+          title: "Entradas/Saidas",
           url: "/entradas-saidas",
         },
         {
@@ -111,20 +116,23 @@ const data: {
       url: "#",
       items: [
         {
-          title: "Usuários",
+          title: "Usuarios",
           url: "/usuarios",
         },
         {
           title: "Clientes",
           url: "/clientes",
         },
-
       ],
     },
     {
       title: "Configuracoes",
       url: "#",
       items: [
+        {
+          title: "Dados da loja",
+          url: "/configuracoes/loja",
+        },
         {
           title: "WhatsApp Meta",
           url: "/configuracoes/whatsapp",
@@ -139,7 +147,7 @@ function handleLogout() {
 }
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
-  const [activeStoreId, setActiveStoreId] = React.useState('')
+  const [activeStoreId, setActiveStoreId] = React.useState("")
   const [stores, setStores] = React.useState<Store[]>([])
   const { data: session } = useSession()
   const router = useRouter()
@@ -152,30 +160,27 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
   React.useEffect(() => {
     async function loadStores() {
-      const res = await fetch('/api/store/list')
+      const res = await fetch("/api/store/list")
       const data = await res.json()
       setStores(data)
     }
 
-    loadStores()
+    void loadStores()
   }, [])
 
   return (
     <Sidebar {...props}>
       <SidebarHeader>
         <picture>
-          <img className="block pt-3"
-            src="/imagens/logo-login.svg"
-
-            alt=""
-          />
+          <img className="block pt-3" src="/imagens/logo-login.svg" alt="" />
         </picture>
+
         <div className="mt-4 flex-1">
           <Select
             value={activeStoreId}
             onValueChange={async (storeId) => {
-              await fetch('/api/store/switch', {
-                method: 'POST',
+              await fetch("/api/store/switch", {
+                method: "POST",
                 body: JSON.stringify({ storeId }),
               })
 
@@ -183,7 +188,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               router.refresh()
             }}
           >
-            <SelectTrigger className="mb-4 bg-white text-black w-full">
+            <SelectTrigger className="mb-4 w-full bg-white text-black">
               <SelectValue placeholder="Selecione uma loja" />
             </SelectTrigger>
             <SelectContent>
@@ -198,17 +203,17 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           </Select>
         </div>
       </SidebarHeader>
+
       <SidebarContent>
-        {/* We create a SidebarGroup for each parent. */}
         {data.navMain.map((item) => (
           <SidebarGroup key={item.title}>
             <SidebarGroupLabel>{item.title}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {item.items.map((item) => (
-                  <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton asChild isActive={item.isActive}>
-                      <a href={item.url}>{item.title}</a>
+                {item.items.map((navItem) => (
+                  <SidebarMenuItem key={navItem.title}>
+                    <SidebarMenuButton asChild isActive={navItem.isActive}>
+                      <a href={navItem.url}>{navItem.title}</a>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))}
@@ -217,16 +222,18 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           </SidebarGroup>
         ))}
       </SidebarContent>
+
       <SidebarFooter>
         <button
           type="button"
           onClick={handleLogout}
-          className="flex items-center gap-2 py-2 text-sm cursor-pointer w-full"
+          className="flex w-full cursor-pointer items-center gap-2 py-2 text-sm"
         >
           <LogOut size={20} />
           <span>Logout</span>
         </button>
       </SidebarFooter>
+
       <SidebarRail />
     </Sidebar>
   )

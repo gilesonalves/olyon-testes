@@ -1,3 +1,197 @@
+## 23 de abril de 2026 - Correcao do CTA de mapa na confirmacao da agenda publica
+
+### Objetivo
+
+Garantir que o botao `Ver no mapa` apareca na confirmacao da agenda publica sempre que a loja ja tiver os dados minimos de endereco exibidos na propria pagina.
+
+### Arquivos alterados
+
+- `app/agenda/[slug]/public-booking-page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Condicao de mapa alinhada ao endereco visivel
+
+- A verificacao do CTA de mapa passou a usar validacao minima explicita para:
+  - `address`
+  - `city`
+  - `state`
+- A URL do Google Maps agora reaproveita o mesmo endereco montado por `buildAddressLabel`, evitando diferenca entre o bloco institucional visivel e a area de confirmacao.
+
+#### 2. CTA de confirmacao mais evidente
+
+- O bloco `Acoes complementares` ganhou um destaque visual discreto com fundo suave e borda leve.
+- O CTA de WhatsApp foi preservado sem alterar o fluxo ja homologado.
+
+### Validacao executada
+
+- `yarn eslint app/agenda/[slug]/public-booking-page.tsx`
+- `yarn build`
+
+## 23 de abril de 2026 - CTAs de mapa e WhatsApp na confirmacao da agenda publica
+
+### Objetivo
+
+Adicionar acoes complementares na tela de sucesso da agenda publica para o cliente abrir o endereco da loja no mapa e falar com a loja no WhatsApp, sem alterar o fluxo principal do agendamento e mantendo a `Store` como fonte unica dos dados publicos.
+
+### Arquivos alterados
+
+- `app/agenda/[slug]/public-booking-page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. CTA condicional para mapa
+
+- A confirmacao publica agora exibe o botao `Ver no mapa` apenas quando a `Store` possui endereco suficiente para uma busca estavel.
+- O link e montado com os campos publicos ja vindos da `Store`:
+  - `address`
+  - `complement`
+  - `neighborhood`
+  - `city`
+  - `state`
+  - `zipcode`
+- A URL usa busca simples no Google Maps com query string codificada e abertura em nova aba.
+
+#### 2. CTA condicional para WhatsApp
+
+- A mesma area da confirmacao agora exibe o botao `Falar no WhatsApp` quando existe numero valido para `wa.me`.
+- A prioridade segue:
+  - `whatsappPhone`
+  - fallback para `phone`
+- O numero e normalizado para digitos e so gera link quando estiver em formato compativel.
+
+#### 3. Fluxo principal preservado
+
+- A mensagem de sucesso, o resumo do agendamento, os selects, o calendario, a disponibilidade e o submit permaneceram intactos.
+- Os novos CTAs entram apenas como acoes complementares abaixo do bloco principal de confirmacao.
+
+### Validacao executada
+
+- `yarn eslint app/agenda/[slug]/public-booking-page.tsx`
+- `yarn build`
+
+## 23 de abril de 2026 - Pausa operacional do chatbot WhatsApp com handoff humano
+
+### Objetivo
+
+Permitir que o cliente interrompa imediatamente o fluxo automatico do chatbot no proprio WhatsApp, preservando as mensagens no backend e deixando a conversa em estado operacional claro para atendimento humano fora do Olyon.
+
+### Arquivos alterados
+
+- `prisma/schema.prisma`
+- `prisma/migrations/20260423150000_add_paused_conversation_state/migration.sql`
+- `app/api/webhooks/whatsapp/route.ts`
+- `src/lib/bot/flow.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Novo estado operacional `PAUSED`
+
+- O enum `ConversationState` ganhou o valor `PAUSED`.
+- Foi adicionada uma migration SQL simples para refletir o novo estado no banco sem criar modelos novos.
+
+#### 2. Gatilhos diretos de pausa no fluxo inbound
+
+- O bot agora detecta as mensagens normalizadas:
+  - `atendente`
+  - `humano`
+  - `falar com a loja`
+  - `chatbot`
+- A deteccao acontece antes de qualquer automacao do fluxo de servico, profissional, horario, confirmacao, cancelamento ou remarcacao.
+
+#### 3. Mensagem unica de handoff humano
+
+- Quando a conversa entra em pausa, o webhook persiste a mensagem do cliente, atualiza a conversa para `PAUSED` e envia imediatamente:
+  - `Chat pausado. Em breve um atendente continuará por aqui.`
+- Novas mensagens recebidas em uma conversa ja pausada continuam sendo salvas, mas nao geram novas respostas automaticas nem repetem a mensagem de pausa.
+
+#### 4. Protecao extra no orchestrator
+
+- `handleIncomingMessage` passou a devolver zero acoes quando recebe uma conversa em `PAUSED`.
+- Com isso, mesmo que outro ponto do fluxo esqueça de curto-circuitar o webhook no futuro, a automacao continua bloqueada por seguranca.
+
+### Validacao executada
+
+- `yarn prisma generate`
+- `yarn eslint app/api/webhooks/whatsapp/route.ts src/lib/bot/flow.ts`
+
+## 23 de abril de 2026 - Agenda online como hub e `Store` como fonte unica dos dados publicos
+
+### Objetivo
+
+Remover a duplicidade de edicao institucional em `/agenda-online`, promover `Store` como fonte unica dos dados publicos da loja e criar uma tela store-scoped propria para manter telefone, endereco, resumo de horario e observacoes.
+
+### Arquivos alterados
+
+- `app/(app)/agenda-online/page.tsx`
+- `app/(app)/configuracoes/loja/page.tsx`
+- `app/api/store/current/route.ts`
+- `app/agenda/[slug]/public-booking-page.tsx`
+- `src/lib/public-booking.ts`
+- `src/lib/store/public-info.ts`
+- `src/components/ui/app-sidebar.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. `/agenda-online` simplificada para hub do link publico
+
+- A pagina deixou de editar telefone, endereco e textos institucionais.
+- Ela agora mostra apenas:
+  - nome da loja
+  - slug/link publico
+  - CTA para copiar o link
+  - CTA para abrir a agenda publica
+  - atalho para horarios de atendimento
+  - atalho para `/configuracoes/loja`
+- O texto da tela passou a deixar explicito que os dados publicos vem da `Store`.
+
+#### 2. Nova tela store-scoped em `/configuracoes/loja`
+
+- Foi criada uma pagina autenticada da propria loja para editar:
+  - `phone`
+  - `whatsappPhone`
+  - `address`
+  - `complement`
+  - `neighborhood`
+  - `city`
+  - `state`
+  - `zipcode`
+  - `businessHoursSummary`
+  - `serviceObservations`
+- A tela usa `react-hook-form` + `zodResolver(storePublicInfoSchema)`.
+- O save reaproveita `PATCH /api/store/current`, sem criar modelo novo.
+
+#### 3. Validacao e normalizacao consolidadas
+
+- `src/lib/store/public-info.ts` passou a centralizar a validacao dos campos publicos da loja.
+- Telefones agora sao validados no schema e normalizados para digitos antes de persistir.
+- `app/api/store/current/route.ts` deixou de manter um schema paralelo para esses campos e passou a reutilizar o helper compartilhado.
+
+#### 4. Agenda publica mantida com `Store` como fonte unica
+
+- `src/lib/public-booking.ts` ganhou um select explicito para os dados publicos lidos da `Store`.
+- O fluxo principal de agendamento nao foi alterado.
+- Na confirmacao publica foram deixados apenas os TODOs pequenos para:
+  - botao "Ver no mapa"
+  - botao "Falar no WhatsApp"
+
+#### 5. Navegacao ajustada
+
+- A sidebar passou a comunicar `/agenda-online` como `Hub da agenda online`.
+- Foi adicionado o item `Dados da loja` em `Configuracoes`, apontando para `/configuracoes/loja`.
+
+### Validacao executada
+
+- `yarn eslint app/(app)/agenda-online/page.tsx app/(app)/configuracoes/loja/page.tsx app/api/store/current/route.ts app/agenda/[slug]/public-booking-page.tsx src/lib/public-booking.ts src/lib/store/public-info.ts src/components/ui/app-sidebar.tsx`
+
 ## 07 de abril de 2026 - Agenda online publica com controles mobile refinados
 
 ### Objetivo

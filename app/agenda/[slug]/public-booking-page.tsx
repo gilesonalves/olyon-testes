@@ -164,6 +164,44 @@ function buildAddressLabel(data: PublicBookingPageData["store"]) {
   return parts.length > 0 ? parts.join(", ") : null
 }
 
+function hasMinimumAddressForMap(data: PublicBookingPageData["store"]) {
+  return Boolean(
+    data.address?.trim() &&
+      data.city?.trim() &&
+      data.state?.trim()
+  )
+}
+
+function buildMapHref(data: PublicBookingPageData["store"]) {
+  if (!hasMinimumAddressForMap(data)) {
+    return null
+  }
+
+  const query = buildAddressLabel(data)
+
+  return query
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`
+    : null
+}
+
+function buildWhatsAppLink(phone: string | null | undefined) {
+  const digits = normalizePhone(phone ?? "")
+
+  if (!digits) {
+    return null
+  }
+
+  if (digits.length === 10 || digits.length === 11) {
+    return `https://wa.me/55${digits}`
+  }
+
+  if ((digits.length === 12 || digits.length === 13) && digits.startsWith("55")) {
+    return `https://wa.me/${digits}`
+  }
+
+  return null
+}
+
 function formatDateLabel(dateKey: string) {
   const [year, month, day] = dateKey.split("-")
   return `${day}/${month}/${year}`
@@ -393,10 +431,15 @@ export default function PublicBookingPage({
   )
 
   const addressLabel = useMemo(() => buildAddressLabel(data.store), [data.store])
-  const whatsappHref = useMemo(() => {
-    const digits = normalizePhone(data.store.whatsappPhone ?? data.store.phone ?? "")
-    return digits ? `https://wa.me/55${digits}` : null
-  }, [data.store.phone, data.store.whatsappPhone])
+  const whatsappHref = useMemo(
+    () => buildWhatsAppLink(data.store.whatsappPhone),
+    [data.store.whatsappPhone]
+  )
+  const confirmationMapHref = useMemo(() => buildMapHref(data.store), [data.store])
+  const confirmationWhatsAppHref = useMemo(
+    () => buildWhatsAppLink(data.store.whatsappPhone ?? data.store.phone),
+    [data.store.phone, data.store.whatsappPhone]
+  )
 
   useEffect(() => {
     if (!serviceId) {
@@ -576,9 +619,9 @@ export default function PublicBookingPage({
                 </div>
               ) : null}
 
-              {data.store.whatsappPhone ? (
+              {data.store.whatsappPhone && whatsappHref ? (
                 <a
-                  href={whatsappHref ?? undefined}
+                  href={whatsappHref}
                   target="_blank"
                   rel="noreferrer"
                   className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 transition hover:border-slate-300 hover:bg-slate-50"
@@ -675,6 +718,34 @@ export default function PublicBookingPage({
                   ) : null}
                 </div>
               </div>
+
+              {confirmationMapHref || confirmationWhatsAppHref ? (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4">
+                  <p className="text-sm font-medium text-slate-900">
+                    Acoes complementares
+                  </p>
+
+                  <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+                    {confirmationMapHref ? (
+                      <Button asChild variant="outline" className="h-11 justify-center rounded-xl">
+                        <a href={confirmationMapHref} target="_blank" rel="noreferrer">
+                          <MapPin className="size-4" />
+                          Ver no mapa
+                        </a>
+                      </Button>
+                    ) : null}
+
+                    {confirmationWhatsAppHref ? (
+                      <Button asChild variant="outline" className="h-11 justify-center rounded-xl">
+                        <a href={confirmationWhatsAppHref} target="_blank" rel="noreferrer">
+                          <MessageCircle className="size-4" />
+                          Falar no WhatsApp
+                        </a>
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
 
               <Button
                 type="button"

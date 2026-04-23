@@ -1,0 +1,1 @@
+ALTER TYPE "ConversationState" ADD VALUE IF NOT EXISTS 'PAUSED';

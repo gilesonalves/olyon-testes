@@ -23,6 +23,13 @@ const APPOINTMENT_ACTION_MENU_TEXT = `O que voce deseja fazer?
 1. Desmarcar
 2. Remarcar`
 
+const CHATBOT_PAUSE_TRIGGER_SET = new Set([
+  "atendente",
+  "humano",
+  "falar com a loja",
+  "chatbot",
+])
+
 function matchesAny(text: string, expressions: string[]) {
   const normalizedText = normalizeBotText(text)
 
@@ -40,6 +47,21 @@ function matchesMenuOption(text: string, option: "1" | "2" | "3") {
 
 function isStandaloneNumericChoice(text: string) {
   return /^\d{1,2}$/.test(normalizeBotText(text))
+}
+
+function normalizePauseTriggerText(input: string) {
+  return normalizeBotText(input)
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+export function isPauseChatbotTriggerText(input: string | null | undefined) {
+  if (typeof input !== "string") {
+    return false
+  }
+
+  return CHATBOT_PAUSE_TRIGGER_SET.has(normalizePauseTriggerText(input))
 }
 
 function isSchedulingIntent(text: string) {
@@ -152,6 +174,12 @@ export function handleIncomingMessage(params: {
   text: string | null
   context?: BotConversationContext | null
 }): BotResult {
+  if (params.state === "PAUSED") {
+    return {
+      actions: [],
+    }
+  }
+
   const text = (params.text ?? "").trim()
   const mainMenuShown = params.context?.mainMenuShown === true
 

@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma"
+import { prisma, type Prisma } from "@/lib/prisma"
 import { getBotTimezone, getDateKeyInTimeZone } from "@/lib/bot/datetime"
 
 export type PublicStoreSummary = {
@@ -38,35 +38,55 @@ export type PublicBookingPageData = {
   todayDate: string
 }
 
+export const publicStoreSummarySelect = {
+  id: true,
+  slug: true,
+  name: true,
+  phone: true,
+  whatsappPhone: true,
+  address: true,
+  complement: true,
+  neighborhood: true,
+  city: true,
+  state: true,
+  zipcode: true,
+  serviceObservations: true,
+  businessHoursSummary: true,
+} satisfies Prisma.StoreSelect
+
 export async function findActiveStoreBySlug(slug: string) {
   return prisma.store.findFirst({
     where: {
       slug,
       active: true,
     },
-    select: {
-      id: true,
-      slug: true,
-      name: true,
-      phone: true,
-      whatsappPhone: true,
-      address: true,
-      complement: true,
-      neighborhood: true,
-      city: true,
-      state: true,
-      zipcode: true,
-      serviceObservations: true,
-      businessHoursSummary: true,
-    },
+    select: publicStoreSummarySelect,
   })
 }
 
-export async function getPublicBookingPageDataBySlug(slug: string) {
+export async function getPublicBookingPageDataBySlug(
+  slug: string
+): Promise<PublicBookingPageData | null> {
   const store = await findActiveStoreBySlug(slug)
 
   if (!store) {
     return null
+  }
+
+  const publicStore: PublicStoreSummary = {
+    id: store.id,
+    slug: store.slug,
+    name: store.name,
+    phone: store.phone,
+    whatsappPhone: store.whatsappPhone,
+    address: store.address,
+    complement: store.complement,
+    neighborhood: store.neighborhood,
+    city: store.city,
+    state: store.state,
+    zipcode: store.zipcode,
+    serviceObservations: store.serviceObservations,
+    businessHoursSummary: store.businessHoursSummary,
   }
 
   const [services, professionals] = await prisma.$transaction([
@@ -121,7 +141,7 @@ export async function getPublicBookingPageDataBySlug(slug: string) {
   const timeZone = getBotTimezone()
 
   return {
-    store,
+    store: publicStore,
     services,
     professionals: professionals
       .map((professional) => ({
@@ -132,5 +152,5 @@ export async function getPublicBookingPageDataBySlug(slug: string) {
       .sort((left, right) => left.name.localeCompare(right.name, "pt-BR")),
     timeZone,
     todayDate: getDateKeyInTimeZone(new Date(), timeZone),
-  } satisfies PublicBookingPageData
+  }
 }

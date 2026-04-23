@@ -435,6 +435,7 @@ enum WhatsAppProvider {
 
 enum ConversationState {
   IDLE
+  PAUSED
   COLLECTING_CUSTOMER
   CHOOSING_SERVICE
   CHOOSING_STAFF
