@@ -111,6 +111,8 @@
 [x] Teste real store-scoped da conexao Meta/WhatsApp atual da loja
 [x] Check real da conexao Meta/WhatsApp alinhado ao endpoint `GET /v25.0/{phoneNumberId}` ja validado externamente
 [x] Pausa operacional do chatbot WhatsApp por palavra-chave com estado `PAUSED`
+[x] Matcher de pausa do chatbot WhatsApp ampliado para frases naturais de handoff humano
+[x] Fluxo WhatsApp com timeout por inatividade, encerrar atendimento, voltar etapa e voltar ao menu
 
 ---
 
@@ -139,6 +141,8 @@ O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) poss
 - Base de conversas WhatsApp com `Conversation`, `ConversationMessage`, `AppointmentDraft` e `Appointment`.
 - Fluxo de bot via WhatsApp com menu inicial hibrido, selecao de servico, resolucao de profissional, sugestao ativa de horarios, escolha de horario por numero ou texto livre, confirmacao, cancelamento, remarcacao e resposta institucional da loja na opcao `3`.
 - O fluxo WhatsApp agora tambem aceita handoff humano por palavra-chave, marca a conversa como `PAUSED`, envia uma unica mensagem de pausa e bloqueia novas automacoes enquanto o atendimento segue no app oficial do WhatsApp.
+- O matcher de pausa do WhatsApp agora trabalha por intencao humana com normalizacao mais tolerante, cobrindo frases como `falar com atendente`, `quero atendimento humano` e `falar com alguem` sem depender de igualdade exata.
+- O fluxo WhatsApp agora tambem encerra atendimentos ativos por inatividade de 5 minutos e reconhece comandos de `encerrar`, `menu` e `voltar`, sempre antes da automacao principal e sem criar inbox dentro do Olyon.
 - `Store` agora possui campos publicos para telefone, WhatsApp, endereco, observacoes e resumo textual de horario de funcionamento.
 - `WhatsAppConnection` agora separa a conexao tecnica Meta/WhatsApp dos dados publicos da loja.
 - O webhook da Meta agora aceita verificacao `GET`, parseia payload real `POST` e resolve a `Store` por `phoneNumberId`.

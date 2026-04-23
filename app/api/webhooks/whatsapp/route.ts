@@ -12,7 +12,12 @@ import {
   type SuggestedSlot,
 } from "@/lib/appointments/availability"
 import {
+  getWelcomeMenuText,
+  hasConversationFlowTimedOut,
   handleIncomingMessage,
+  isBackOneStepIntent,
+  isBackToMenuIntent,
+  isEndConversationIntent,
   isPauseChatbotTriggerText,
 } from "@/lib/bot/flow"
 import {
@@ -96,6 +101,10 @@ type StoredAppointmentOption = {
 const TIME_SUGGESTIONS_LIMIT = 5
 const CHATBOT_PAUSED_MESSAGE =
   "Chat pausado. Em breve um atendente continuar\u00e1 por aqui."
+const CHATBOT_TIMEOUT_MESSAGE =
+  "Encerramos este atendimento por falta de intera\u00e7\u00e3o. Quando quiser agendar novamente, \u00e9 s\u00f3 me chamar."
+const CHATBOT_CLOSED_MESSAGE =
+  "Atendimento encerrado. Quando quiser agendar novamente, \u00e9 s\u00f3 me chamar."
 
 function toJsonValue(value: unknown): Prisma.InputJsonValue {
   try {
@@ -396,6 +405,14 @@ function buildUnavailableTimeMessage(params: {
   }
 
   return `${params.message}\nSugestoes proximas:\n${buildSuggestedSlotsText(params.suggestions)}\n\nPode responder com o numero da opcao ou me dizer outro dia e horario.`
+}
+
+function buildServiceChoicePrompt(serviceNames: string[]) {
+  if (!serviceNames.length) {
+    return "Ainda nao ha servicos cadastrados. Peca para a loja cadastrar um servico primeiro."
+  }
+
+  return `Qual servico voce quer agendar?\nTemos: ${serviceNames.join(", ")}.\nPode responder com o nome do servico.`
 }
 
 function serializeSuggestedSlots(suggestions: SuggestedSlot[]) {
@@ -851,6 +868,17 @@ async function processIncomingWhatsAppMessage(
         },
       })
 
+      const previousInteraction = await tx.conversationMessage.findFirst({
+        where: {
+          conversationId: conversation.id,
+          id: { not: savedIn.id },
+        },
+        orderBy: { createdAt: "desc" },
+        select: {
+          createdAt: true,
+        },
+      })
+
       let nextState: ConversationState | null = null
       let ensuredDraftId: string | null = null
       let createdAppointmentId: string | null = null
@@ -918,6 +946,304 @@ async function processIncomingWhatsAppMessage(
         })
       }
 
+      function buildFlowResetContext(mainMenuShown: boolean) {
+        return {
+          mainMenuShown,
+          appointmentOptions: null,
+          selectedAppointmentId: null,
+          selectedAppointmentLabel: null,
+          rescheduleAppointmentId: null,
+          timeSlotSuggestions: null,
+        } satisfies Partial<BotConversationContext>
+      }
+
+      async function abandonActiveDraft() {
+        await tx.appointmentDraft.updateMany({
+          where: {
+            storeId: currentStoreId,
+            conversationId: conversation.id,
+            status: "DRAFT",
+          },
+          data: {
+            status: "ABANDONED",
+          },
+        })
+
+        ensuredDraftId = null
+        draftCache = null
+        parsedDateTime = null
+      }
+
+      async function resetConversationFlow(params: {
+        mainMenuShown: boolean
+        abandonDraft?: boolean
+      }) {
+        if (params.abandonDraft) {
+          await abandonActiveDraft()
+        }
+
+        await persistConversationContext(buildFlowResetContext(params.mainMenuShown))
+        await updateState("IDLE")
+      }
+
+      async function closeConversation(text: string, reason: string) {
+        await resetConversationFlow({
+          mainMenuShown: false,
+          abandonDraft: true,
+        })
+        await appendBotReply(text, { reason })
+      }
+
+      async function returnToMainMenu() {
+        await resetConversationFlow({
+          mainMenuShown: true,
+          abandonDraft: true,
+        })
+        await appendBotReply(getWelcomeMenuText(), {
+          reason: "RETURN_TO_MAIN_MENU",
+        })
+      }
+
+      async function listActiveServiceNames() {
+        const services = await tx.service.findMany({
+          where: {
+            storeId: currentStoreId,
+            active: true,
+          },
+          select: {
+            name: true,
+          },
+          orderBy: {
+            name: "asc",
+          },
+        })
+
+        return services.map((service) => service.name)
+      }
+
+      async function reopenServiceSelection() {
+        await abandonActiveDraft()
+        await persistConversationContext(buildFlowResetContext(false))
+        await updateState("CHOOSING_SERVICE")
+        await appendBotReply(buildServiceChoicePrompt(await listActiveServiceNames()), {
+          reason: "BACK_ONE_STEP_TO_SERVICE",
+        })
+      }
+
+      async function reopenAppointmentSelection() {
+        const options = await getStoredOrFreshAppointmentOptions()
+
+        if (!options.length) {
+          await resetConversationFlow({
+            mainMenuShown: false,
+            abandonDraft: true,
+          })
+          await appendBotReply("Nao encontrei agendamentos futuros vinculados a este numero.", {
+            reason: "NO_FUTURE_APPOINTMENTS",
+          })
+          return
+        }
+
+        await setSuggestedTimeSlots([])
+        await persistConversationContext({
+          appointmentOptions: serializeAppointmentOptions(options),
+          selectedAppointmentId: null,
+          selectedAppointmentLabel: null,
+          rescheduleAppointmentId: null,
+        })
+        await updateState("CHOOSING_APPOINTMENT")
+        await appendBotReply(buildFutureAppointmentsMessage(options), {
+          reason: "BACK_ONE_STEP_TO_APPOINTMENT_SELECTION",
+          appointmentOptions: serializeAppointmentOptions(options),
+        })
+      }
+
+      async function reopenAppointmentAction() {
+        const selectedLabel =
+          typeof conversationContext.selectedAppointmentLabel === "string"
+            ? conversationContext.selectedAppointmentLabel
+            : null
+
+        if (!selectedLabel) {
+          await reopenAppointmentSelection()
+          return
+        }
+
+        await updateState("CHOOSING_APPOINTMENT_ACTION")
+        await appendBotReply(buildAppointmentActionMessage(selectedLabel), {
+          reason: "BACK_ONE_STEP_TO_APPOINTMENT_ACTION",
+        })
+      }
+
+      async function reopenStaffSelection() {
+        const draft = await getDraft(true)
+
+        if (!draft?.service) {
+          await reopenServiceSelection()
+          return
+        }
+
+        const eligibleStaff = await listEligibleStaffForService({
+          db: tx,
+          storeId: currentStoreId,
+          serviceId: draft.service.id,
+        })
+
+        if (eligibleStaff.length <= 1) {
+          const isRescheduleFlow =
+            typeof conversationContext.rescheduleAppointmentId === "string"
+
+          if (isRescheduleFlow) {
+            await reopenAppointmentAction()
+            return
+          }
+
+          await reopenServiceSelection()
+          return
+        }
+
+        await setDraftSelection({
+          staffMembershipId: null,
+          startAt: null,
+          endAt: null,
+        })
+        await setSuggestedTimeSlots([])
+        await updateState("CHOOSING_STAFF")
+        await appendBotReply(buildStaffChoiceMessage(draft.service.name, eligibleStaff), {
+          reason: "BACK_ONE_STEP_TO_STAFF_SELECTION",
+          serviceId: draft.service.id,
+        })
+      }
+
+      async function reopenTimeSelection() {
+        const draft = await getDraft(true)
+
+        if (!draft?.service) {
+          const isRescheduleFlow =
+            typeof conversationContext.rescheduleAppointmentId === "string"
+
+          if (isRescheduleFlow) {
+            await reopenAppointmentAction()
+            return
+          }
+
+          await reopenServiceSelection()
+          return
+        }
+
+        const eligibleStaff = await listEligibleStaffForService({
+          db: tx,
+          storeId: currentStoreId,
+          serviceId: draft.service.id,
+        })
+
+        if (eligibleStaff.length > 1 && (!draft.staffMembershipId || !draft.membership)) {
+          await reopenStaffSelection()
+          return
+        }
+
+        if (!draft.staffMembershipId || !draft.membership) {
+          const isRescheduleFlow =
+            typeof conversationContext.rescheduleAppointmentId === "string"
+
+          if (isRescheduleFlow) {
+            await reopenAppointmentAction()
+            return
+          }
+
+          await reopenServiceSelection()
+          return
+        }
+
+        await clearDraftDateTime()
+        await updateState("CHOOSING_TIME")
+        const refreshedDraft = await getDraft(true)
+        await sendTimeSuggestionsForDraft({
+          draft: refreshedDraft!,
+        })
+      }
+
+      async function handleBackOneStep() {
+        if (conversation.state === "IDLE" || conversation.state === "CHOOSING_SERVICE") {
+          await returnToMainMenu()
+          return
+        }
+
+        if (conversation.state === "CHOOSING_STAFF") {
+          const isRescheduleFlow =
+            typeof conversationContext.rescheduleAppointmentId === "string"
+
+          if (isRescheduleFlow) {
+            await reopenAppointmentAction()
+            return
+          }
+
+          await reopenServiceSelection()
+          return
+        }
+
+        if (conversation.state === "CHOOSING_TIME") {
+          const draft = await getDraft(true)
+
+          if (!draft?.service) {
+            const isRescheduleFlow =
+              typeof conversationContext.rescheduleAppointmentId === "string"
+
+            if (isRescheduleFlow) {
+              await reopenAppointmentAction()
+              return
+            }
+
+            await reopenServiceSelection()
+            return
+          }
+
+          const eligibleStaff = await listEligibleStaffForService({
+            db: tx,
+            storeId: currentStoreId,
+            serviceId: draft.service.id,
+          })
+
+          if (eligibleStaff.length > 1) {
+            await reopenStaffSelection()
+            return
+          }
+
+          const isRescheduleFlow =
+            typeof conversationContext.rescheduleAppointmentId === "string"
+
+          if (isRescheduleFlow) {
+            await reopenAppointmentAction()
+            return
+          }
+
+          await reopenServiceSelection()
+          return
+        }
+
+        if (conversation.state === "CONFIRMING") {
+          await reopenTimeSelection()
+          return
+        }
+
+        if (conversation.state === "CHOOSING_APPOINTMENT") {
+          await returnToMainMenu()
+          return
+        }
+
+        if (conversation.state === "CHOOSING_APPOINTMENT_ACTION") {
+          await reopenAppointmentSelection()
+          return
+        }
+
+        if (conversation.state === "CONFIRMING_APPOINTMENT_CANCELLATION") {
+          await reopenAppointmentAction()
+          return
+        }
+
+        await returnToMainMenu()
+      }
+
       async function pauseConversation() {
         nextState = "PAUSED"
 
@@ -956,6 +1282,68 @@ async function processIncomingWhatsAppMessage(
           nextState: "PAUSED",
           draftId: null,
           appointmentId: null,
+          replies: outMessages,
+          replayed: false,
+        }
+      }
+
+      if (
+        hasConversationFlowTimedOut({
+          state: conversation.state,
+          lastInteractionAt: previousInteraction?.createdAt,
+          now: savedIn.createdAt,
+        })
+      ) {
+        await closeConversation(CHATBOT_TIMEOUT_MESSAGE, "CHATBOT_TIMEOUT")
+
+        return {
+          conversationId: conversation.id,
+          messageId: savedIn.id,
+          nextState: nextState ?? "IDLE",
+          draftId: ensuredDraftId,
+          appointmentId: createdAppointmentId,
+          replies: outMessages,
+          replayed: false,
+        }
+      }
+
+      if (isEndConversationIntent(incomingMessage.text)) {
+        await closeConversation(CHATBOT_CLOSED_MESSAGE, "CHATBOT_CLOSED_BY_CUSTOMER")
+
+        return {
+          conversationId: conversation.id,
+          messageId: savedIn.id,
+          nextState: nextState ?? "IDLE",
+          draftId: ensuredDraftId,
+          appointmentId: createdAppointmentId,
+          replies: outMessages,
+          replayed: false,
+        }
+      }
+
+      if (isBackToMenuIntent(incomingMessage.text)) {
+        await returnToMainMenu()
+
+        return {
+          conversationId: conversation.id,
+          messageId: savedIn.id,
+          nextState: nextState ?? "IDLE",
+          draftId: ensuredDraftId,
+          appointmentId: createdAppointmentId,
+          replies: outMessages,
+          replayed: false,
+        }
+      }
+
+      if (isBackOneStepIntent(incomingMessage.text)) {
+        await handleBackOneStep()
+
+        return {
+          conversationId: conversation.id,
+          messageId: savedIn.id,
+          nextState: nextState ?? "IDLE",
+          draftId: ensuredDraftId,
+          appointmentId: createdAppointmentId,
           replies: outMessages,
           replayed: false,
         }

@@ -22,12 +22,45 @@ Pode responder com o numero ou me escrever o que voce precisa.`
 const APPOINTMENT_ACTION_MENU_TEXT = `O que voce deseja fazer?
 1. Desmarcar
 2. Remarcar`
+const BOT_INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000
 
-const CHATBOT_PAUSE_TRIGGER_SET = new Set([
-  "atendente",
-  "humano",
-  "falar com a loja",
-  "chatbot",
+const CHATBOT_PAUSE_KEYWORD_REGEX = /\b(?:atendente|humano|chatbot)\b/
+const CHATBOT_PAUSE_INTENT_PATTERNS = [
+  /\bfalar com (?:a )?loja\b/,
+  /\bfalar com (?:um |uma |o |a )?alguem\b/,
+  /\b(?:quero|preciso)(?:\s+de)?\s+falar com (?:um |uma |o |a )?(?:alguem|loja)\b/,
+  /\b(?:me\s+passa|me\s+passar|me\s+transfere|me\s+transferir|me\s+encaminha|me\s+encaminhar|passa|transfere|encaminha)(?:\s+(?:pra|para))?\s+(?:um |uma |o |a )?(?:atendente|humano|alguem|loja)\b/,
+  /\bquero atendimento humano\b/,
+]
+const END_CONVERSATION_PATTERNS = [
+  /^encerrar$/,
+  /^encerrar atendimento$/,
+  /^finalizar$/,
+  /^cancelar atendimento$/,
+  /^parar$/,
+]
+const BACK_TO_MENU_PATTERNS = [
+  /^menu$/,
+  /^menu inicial$/,
+  /^inicio$/,
+  /^voltar ao menu$/,
+  /^home$/,
+]
+const BACK_ONE_STEP_PATTERNS = [
+  /^voltar$/,
+  /^voltar etapa$/,
+  /^voltar opcao$/,
+  /^voltar uma opcao$/,
+]
+const TIMEOUT_ELIGIBLE_STATES = new Set<ConversationState>([
+  "COLLECTING_CUSTOMER",
+  "CHOOSING_SERVICE",
+  "CHOOSING_STAFF",
+  "CHOOSING_TIME",
+  "CONFIRMING",
+  "CHOOSING_APPOINTMENT",
+  "CHOOSING_APPOINTMENT_ACTION",
+  "CONFIRMING_APPOINTMENT_CANCELLATION",
 ])
 
 function matchesAny(text: string, expressions: string[]) {
@@ -49,7 +82,11 @@ function isStandaloneNumericChoice(text: string) {
   return /^\d{1,2}$/.test(normalizeBotText(text))
 }
 
-function normalizePauseTriggerText(input: string) {
+function matchesControlPatterns(text: string, patterns: RegExp[]) {
+  return patterns.some((pattern) => pattern.test(text))
+}
+
+export function normalizeConversationControlText(input: string) {
   return normalizeBotText(input)
     .replace(/[^a-z0-9\s]/g, " ")
     .replace(/\s+/g, " ")
@@ -61,7 +98,64 @@ export function isPauseChatbotTriggerText(input: string | null | undefined) {
     return false
   }
 
-  return CHATBOT_PAUSE_TRIGGER_SET.has(normalizePauseTriggerText(input))
+  const normalizedText = normalizeConversationControlText(input)
+
+  if (!normalizedText) {
+    return false
+  }
+
+  if (CHATBOT_PAUSE_KEYWORD_REGEX.test(normalizedText)) {
+    return true
+  }
+
+  return CHATBOT_PAUSE_INTENT_PATTERNS.some((pattern) => pattern.test(normalizedText))
+}
+
+export function isEndConversationIntent(input: string | null | undefined) {
+  if (typeof input !== "string") {
+    return false
+  }
+
+  const normalizedText = normalizeConversationControlText(input)
+  return normalizedText.length > 0 && matchesControlPatterns(normalizedText, END_CONVERSATION_PATTERNS)
+}
+
+export function isBackToMenuIntent(input: string | null | undefined) {
+  if (typeof input !== "string") {
+    return false
+  }
+
+  const normalizedText = normalizeConversationControlText(input)
+  return normalizedText.length > 0 && matchesControlPatterns(normalizedText, BACK_TO_MENU_PATTERNS)
+}
+
+export function isBackOneStepIntent(input: string | null | undefined) {
+  if (typeof input !== "string") {
+    return false
+  }
+
+  const normalizedText = normalizeConversationControlText(input)
+  return normalizedText.length > 0 && matchesControlPatterns(normalizedText, BACK_ONE_STEP_PATTERNS)
+}
+
+export function getWelcomeMenuText() {
+  return WELCOME_MENU_TEXT
+}
+
+export function isConversationStateEligibleForTimeout(state: ConversationState) {
+  return TIMEOUT_ELIGIBLE_STATES.has(state)
+}
+
+export function hasConversationFlowTimedOut(params: {
+  state: ConversationState
+  lastInteractionAt: Date | null | undefined
+  now: Date
+}) {
+  if (!isConversationStateEligibleForTimeout(params.state) || !params.lastInteractionAt) {
+    return false
+  }
+
+  return params.now.getTime() - params.lastInteractionAt.getTime() >= BOT_INACTIVITY_TIMEOUT_MS
 }
 
 function isSchedulingIntent(text: string) {

@@ -1,3 +1,122 @@
+## 23 de abril de 2026 - Timeout, encerrar, voltar e menu no fluxo WhatsApp
+
+### Objetivo
+
+Melhorar o fluxo conversacional do WhatsApp com controles operacionais de inatividade e navegacao, preservando a pausa humana ja existente e sem alterar o dominio principal de agendamento.
+
+### Arquivos alterados
+
+- `app/api/webhooks/whatsapp/route.ts`
+- `src/lib/bot/flow.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Timeout por inatividade
+
+- Conversas em estados ativos agora expiram apos 5 minutos sem interacao.
+- O timeout nao se aplica a:
+  - `IDLE`
+  - `PAUSED`
+- Quando expira, o bot encerra o fluxo atual, abandona o draft em andamento, limpa o contexto temporario e responde:
+  - `Encerramos este atendimento por falta de interação. Quando quiser agendar novamente, é só me chamar.`
+
+#### 2. Comando para encerrar atendimento
+
+- O fluxo agora reconhece comandos como:
+  - `encerrar`
+  - `encerrar atendimento`
+  - `finalizar`
+  - `cancelar atendimento`
+  - `parar`
+- Ao receber esses comandos, a conversa volta para estado neutro, com limpeza do draft/contexto temporario, e responde:
+  - `Atendimento encerrado. Quando quiser agendar novamente, é só me chamar.`
+
+#### 3. Comandos para voltar etapa e voltar ao menu
+
+- O fluxo agora reconhece:
+  - `menu`
+  - `menu inicial`
+  - `inicio`
+  - `voltar ao menu`
+  - `home`
+- E tambem:
+  - `voltar`
+  - `voltar etapa`
+  - `voltar opcao`
+  - `voltar uma opcao`
+- O retorno de etapa foi implementado respeitando o estado atual e o caminho real do fluxo, inclusive em desmarcar/remarcar.
+
+#### 4. Prioridade operacional preservada
+
+- O webhook agora segue esta ordem antes do fluxo automatico principal:
+  - conversa `PAUSED`
+  - gatilho de pausa humana
+  - timeout por inatividade
+  - encerrar atendimento
+  - voltar ao menu
+  - voltar uma etapa
+  - fluxo normal
+
+### Validacao executada
+
+- script local via `tsx` cobrindo timeout, pause, encerrar, menu e voltar
+- `yarn eslint src/lib/bot/flow.ts app/api/webhooks/whatsapp/route.ts`
+- `yarn build`
+
+## 23 de abril de 2026 - Correcao do matcher de pausa do chatbot WhatsApp
+
+### Objetivo
+
+Garantir que a pausa do chatbot no WhatsApp continue acontecendo antes do fluxo automatico principal, mas com reconhecimento mais robusto de pedidos reais por atendimento humano.
+
+### Arquivos alterados
+
+- `src/lib/bot/flow.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Matcher de pausa fortalecido
+
+- `isPauseChatbotTriggerText` deixou de depender apenas de igualdade exata com poucas frases fechadas.
+- A funcao agora normaliza a mensagem com:
+  - lowercase
+  - trim
+  - remocao de acentos
+  - colapso de espacos
+  - limpeza basica de pontuacao
+
+#### 2. Reconhecimento de frases naturais
+
+- A pausa agora cobre, no minimo:
+  - `atendente`
+  - `humano`
+  - `falar com a loja`
+  - `chatbot`
+- E tambem reconhece variacoes naturais como:
+  - `falar com atendente`
+  - `quero falar com atendente`
+  - `quero falar com humano`
+  - `preciso de um atendente`
+  - `me passa para um atendente`
+  - `quero atendimento humano`
+  - `falar com alguem`
+
+#### 3. Prioridade da pausa preservada
+
+- O webhook continua avaliando a pausa antes de chamar o fluxo automatico principal.
+- Conversas em `PAUSED` continuam persistindo mensagens inbound normalmente, sem novas respostas do bot.
+- A mensagem automatica de pausa permaneceu inalterada:
+  - `Chat pausado. Em breve um atendente continuará por aqui.`
+
+### Validacao executada
+
+- script local via `tsx` cobrindo os cenarios reais de pausa
+- `yarn eslint src/lib/bot/flow.ts`
+
 ## 23 de abril de 2026 - Correcao do CTA de mapa na confirmacao da agenda publica
 
 ### Objetivo
