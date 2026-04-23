@@ -1,9 +1,10 @@
 "use client"
 
 import HeaderPage from "@/components/headerPage"
+import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import { useMemo, useState } from "react"
-import { Button } from "@/components/ui/button"
+import { toast } from "sonner"
 import { Controller } from "./controllers"
 
 const PAGE_SIZE = 10
@@ -45,17 +46,31 @@ export default function ContasPagar() {
   const { state, deleteEntry } = Controller()
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
 
-  const visibleItems = useMemo(() => state.items.slice(0, visibleCount), [state.items, visibleCount])
+  const visibleItems = useMemo(
+    () => state.items.slice(0, visibleCount),
+    [state.items, visibleCount]
+  )
   const hasMoreItems = visibleItems.length < state.items.length
 
-  const handleDelete = async (id: string, category: string) => {
-    const confirmed = window.confirm(
-      `Deseja excluir a despesa \"${category}\"? Essa ação não pode ser desfeita.`
-    )
+  const handleDelete = (id: string, category: string) => {
+    if (state.deletingId === id) {
+      return
+    }
 
-    if (!confirmed) return
-
-    await deleteEntry(id)
+    toast("Excluir despesa?", {
+      description: `Deseja excluir a despesa "${category}"? Essa ação não pode ser desfeita.`,
+      duration: 10000,
+      cancel: {
+        label: "Cancelar",
+        onClick: () => undefined,
+      },
+      action: {
+        label: "Excluir",
+        onClick: () => {
+          void deleteEntry(id)
+        },
+      },
+    })
   }
 
   return (
@@ -78,103 +93,146 @@ export default function ContasPagar() {
         ) : null}
 
         <div className="py-6">
-        {state.loading ? (
-          <div className="rounded-lg border border-gray-200 bg-white px-4 py-6 text-sm text-gray-600">
-            Carregando despesas...
-          </div>
-        ) : state.items.length === 0 ? (
-          <div className="rounded-lg border border-gray-200 bg-white px-4 py-6 text-sm text-gray-600">
-            Nenhuma conta a pagar cadastrada ainda.
-          </div>
-        ) : (
-          <>
-            <table className="min-w-full table-auto rounded-lg border border-gray-200">
-              <thead className="hidden w-full border-b border-gray-300 bg-gray-50 text-left text-sm text-gray-600 lg:table-header-group">
-                <tr>
-                  <th className="whitespace-nowrap px-6 py-3 text-left text-sm font-semibold">Valor</th>
-                  <th className="whitespace-nowrap px-3 py-3 text-left text-sm font-semibold">Data</th>
-                  <th className="whitespace-nowrap px-3 py-3 text-left text-sm font-semibold">Vencimento</th>
-                  <th className="whitespace-nowrap px-3 py-3 text-left text-sm font-semibold">Categoria</th>
-                  <th className="whitespace-nowrap px-3 py-3 text-left text-sm font-semibold">Status</th>
-                  <th className="whitespace-nowrap px-3 py-3 text-left text-sm font-semibold">Descrição</th>
-                  <th></th>
-                </tr>
-              </thead>
-
-              <tbody className="text-sm text-gray-700">
-                {visibleItems.map((item) => (
-                  <tr key={item.id} className="border-b-2 border-gray-200 lg:border-b">
-                    <td className="block whitespace-nowrap border-b p-0 text-sm lg:table-cell lg:border-b-0 lg:px-6 lg:py-4">
-                      <div className="flex items-center lg:justify-between">
-                        <div className="w-3/5 bg-gray-50 p-4 text-left text-sm font-semibold lg:hidden">Valor</div>
-                        <div className="p-4 text-sm font-medium lg:p-0">{formatCurrency(item.amount)}</div>
-                      </div>
-                    </td>
-
-                    <td className="block whitespace-nowrap border-b p-0 text-sm lg:table-cell lg:border-b-0 lg:px-3 lg:py-4">
-                      <div className="flex items-center lg:justify-between">
-                        <div className="w-3/5 bg-gray-50 p-4 text-left text-sm font-semibold lg:hidden">Data</div>
-                        <div className="p-4 text-sm lg:p-0">{formatDate(item.transactionDate)}</div>
-                      </div>
-                    </td>
-
-                    <td className="block whitespace-nowrap border-b p-0 text-sm lg:table-cell lg:border-b-0 lg:px-3 lg:py-4">
-                      <div className="flex items-center lg:justify-between">
-                        <div className="w-3/5 bg-gray-50 p-4 text-left text-sm font-semibold lg:hidden">Vencimento</div>
-                        <div className="p-4 text-sm lg:p-0">{formatDate(item.dueDate)}</div>
-                      </div>
-                    </td>
-
-                    <td className="block border-b p-0 text-sm lg:table-cell lg:border-b-0 lg:px-3 lg:py-4">
-                      <div className="flex items-center lg:justify-between">
-                        <div className="w-3/5 bg-gray-50 p-4 text-left text-sm font-semibold lg:hidden">Categoria</div>
-                        <div className="p-4 text-sm lg:p-0">{item.category}</div>
-                      </div>
-                    </td>
-
-                    <td className="block border-b p-0 text-sm lg:table-cell lg:border-b-0 lg:px-3 lg:py-4">
-                      <div className="flex items-center lg:justify-between">
-                        <div className="w-3/5 bg-gray-50 p-4 text-left text-sm font-semibold lg:hidden">Status</div>
-                        <div className="p-4 lg:p-0">
-                          <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${getStatusClassName(item.status)}`}>
-                            {getStatusLabel(item.status)}
-                          </span>
-                        </div>
-                      </div>
-                    </td>
-
-                    <td className="block border-b p-0 text-sm lg:table-cell lg:border-b-0 lg:px-3 lg:py-4">
-                      <div className="flex items-center lg:justify-between">
-                        <div className="w-3/5 bg-gray-50 p-4 text-left text-sm font-semibold lg:hidden">Descrição</div>
-                        <div className="p-4 text-sm lg:p-0">{item.description || "—"}</div>
-                      </div>
-                    </td>
-
-                    <td className="whitespace-nowrap px-4 py-4 text-right text-sm font-medium lg:pr-6">
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => handleDelete(item.id, item.category)}
-                        disabled={state.deletingId === item.id}
-                      >
-                        {state.deletingId === item.id ? "Excluindo..." : "Excluir"}
-                      </Button>
-                    </td>
+          {state.loading ? (
+            <div className="rounded-lg border border-gray-200 bg-white px-4 py-6 text-sm text-gray-600">
+              Carregando despesas...
+            </div>
+          ) : state.items.length === 0 ? (
+            <div className="rounded-lg border border-gray-200 bg-white px-4 py-6 text-sm text-gray-600">
+              Nenhuma conta a pagar cadastrada ainda.
+            </div>
+          ) : (
+            <>
+              <table className="min-w-full table-auto rounded-lg border border-gray-200">
+                <thead className="hidden w-full border-b border-gray-300 bg-gray-50 text-left text-sm text-gray-600 lg:table-header-group">
+                  <tr>
+                    <th className="whitespace-nowrap px-6 py-3 text-left text-sm font-semibold">
+                      Valor
+                    </th>
+                    <th className="whitespace-nowrap px-3 py-3 text-left text-sm font-semibold">
+                      Data
+                    </th>
+                    <th className="whitespace-nowrap px-3 py-3 text-left text-sm font-semibold">
+                      Vencimento
+                    </th>
+                    <th className="whitespace-nowrap px-3 py-3 text-left text-sm font-semibold">
+                      Categoria
+                    </th>
+                    <th className="whitespace-nowrap px-3 py-3 text-left text-sm font-semibold">
+                      Status
+                    </th>
+                    <th className="whitespace-nowrap px-3 py-3 text-left text-sm font-semibold">
+                      Descrição
+                    </th>
+                    <th></th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
 
-            {hasMoreItems ? (
-              <div className="mt-4 flex justify-center">
-                <Button type="button" variant="outline" onClick={() => setVisibleCount((prev) => prev + PAGE_SIZE)}>
-                  Carregar mais
-                </Button>
-              </div>
-            ) : null}
-          </>
-        )}
+                <tbody className="text-sm text-gray-700">
+                  {visibleItems.map((item) => (
+                    <tr
+                      key={item.id}
+                      className="border-b-2 border-gray-200 lg:border-b"
+                    >
+                      <td className="block whitespace-nowrap border-b p-0 text-sm lg:table-cell lg:border-b-0 lg:px-6 lg:py-4">
+                        <div className="flex items-center lg:justify-between">
+                          <div className="w-3/5 bg-gray-50 p-4 text-left text-sm font-semibold lg:hidden">
+                            Valor
+                          </div>
+                          <div className="p-4 text-sm font-medium lg:p-0">
+                            {formatCurrency(item.amount)}
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="block whitespace-nowrap border-b p-0 text-sm lg:table-cell lg:border-b-0 lg:px-3 lg:py-4">
+                        <div className="flex items-center lg:justify-between">
+                          <div className="w-3/5 bg-gray-50 p-4 text-left text-sm font-semibold lg:hidden">
+                            Data
+                          </div>
+                          <div className="p-4 text-sm lg:p-0">
+                            {formatDate(item.transactionDate)}
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="block whitespace-nowrap border-b p-0 text-sm lg:table-cell lg:border-b-0 lg:px-3 lg:py-4">
+                        <div className="flex items-center lg:justify-between">
+                          <div className="w-3/5 bg-gray-50 p-4 text-left text-sm font-semibold lg:hidden">
+                            Vencimento
+                          </div>
+                          <div className="p-4 text-sm lg:p-0">
+                            {formatDate(item.dueDate)}
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="block border-b p-0 text-sm lg:table-cell lg:border-b-0 lg:px-3 lg:py-4">
+                        <div className="flex items-center lg:justify-between">
+                          <div className="w-3/5 bg-gray-50 p-4 text-left text-sm font-semibold lg:hidden">
+                            Categoria
+                          </div>
+                          <div className="p-4 text-sm lg:p-0">{item.category}</div>
+                        </div>
+                      </td>
+
+                      <td className="block border-b p-0 text-sm lg:table-cell lg:border-b-0 lg:px-3 lg:py-4">
+                        <div className="flex items-center lg:justify-between">
+                          <div className="w-3/5 bg-gray-50 p-4 text-left text-sm font-semibold lg:hidden">
+                            Status
+                          </div>
+                          <div className="p-4 lg:p-0">
+                            <span
+                              className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${getStatusClassName(item.status)}`}
+                            >
+                              {getStatusLabel(item.status)}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="block border-b p-0 text-sm lg:table-cell lg:border-b-0 lg:px-3 lg:py-4">
+                        <div className="flex items-center lg:justify-between">
+                          <div className="w-3/5 bg-gray-50 p-4 text-left text-sm font-semibold lg:hidden">
+                            Descrição
+                          </div>
+                          <div className="p-4 text-sm lg:p-0">
+                            {item.description || "—"}
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="whitespace-nowrap px-4 py-4 text-right text-sm font-medium lg:pr-6">
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => handleDelete(item.id, item.category)}
+                          disabled={state.deletingId === item.id}
+                        >
+                          {state.deletingId === item.id
+                            ? "Excluindo..."
+                            : "Excluir"}
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {hasMoreItems ? (
+                <div className="mt-4 flex justify-center">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setVisibleCount((prev) => prev + PAGE_SIZE)}
+                  >
+                    Carregar mais
+                  </Button>
+                </div>
+              ) : null}
+            </>
+          )}
         </div>
       </div>
     </>

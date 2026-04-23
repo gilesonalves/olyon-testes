@@ -161,3 +161,11 @@ body {
   }
 }
 
+[data-sonner-toast],
+[data-sonner-toast] [data-content],
+[data-sonner-toast] [data-title],
+[data-sonner-toast] [data-description] {
+  overflow-wrap: break-word !important;
+  word-break: normal !important;
+}
+

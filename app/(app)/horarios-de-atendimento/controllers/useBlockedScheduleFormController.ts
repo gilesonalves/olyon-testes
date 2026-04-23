@@ -49,7 +49,9 @@ type BlockedScheduleCreateError = {
 }
 
 const formSchema = z.object({
-  dates: z.array(z.string().min(10)).min(1), // YYYY-MM-DD
+  dates: z
+    .array(z.string().min(10))
+    .min(1, "Selecione pelo menos uma data para o bloqueio."), // YYYY-MM-DD
   membershipId: z.string().nullable().optional(),
   allDay: z.boolean(),
   startTime: z.string().optional(),
@@ -157,11 +159,11 @@ export function useBlockedScheduleFormController(options?: Options) {
     try {
       if (!values.allDay) {
         if (!values.startTime || !values.endTime) {
-          toast.error("Informe horÃ¡rio inicial e final ou marque dia todo.")
+          toast.error("Informe horário inicial e final ou marque dia todo.")
           return
         }
         if (values.startTime >= values.endTime) {
-          toast.error("HorÃ¡rio final deve ser maior que o inicial.")
+          toast.error("Horário final deve ser maior que o inicial.")
           return
         }
       }
@@ -183,7 +185,7 @@ export function useBlockedScheduleFormController(options?: Options) {
           throw new Error(json?.message ?? json?.error ?? "Falha ao atualizar bloqueio")
         }
 
-        toast.success("HorÃ¡rio bloqueado atualizado com sucesso")
+        toast.success("Horário bloqueado atualizado com sucesso")
       } else {
         const result = await submitCreatePayload({
           dates: values.dates,
@@ -197,7 +199,7 @@ export function useBlockedScheduleFormController(options?: Options) {
           return
         }
 
-        toast.success("HorÃ¡rio bloqueado com sucesso")
+        toast.success("Horário bloqueado com sucesso")
       }
 
       await options?.onSuccess?.()
@@ -227,7 +229,7 @@ export function useBlockedScheduleFormController(options?: Options) {
         return
       }
 
-      toast.success("HorÃ¡rio bloqueado com sucesso")
+      toast.success("Horário bloqueado com sucesso")
       await options?.onSuccess?.()
       resetForm()
       setEditingItem(null)

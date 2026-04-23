@@ -9,7 +9,9 @@ export const formSchema = z.object({
 
 export const blockedScheduleSchema = z
   .object({
-    dates: z.array(z.string()).min(1, "Selecione pelo menos uma data"),
+    dates: z
+      .array(z.string())
+      .min(1, "Selecione pelo menos uma data para o bloqueio."),
     allDay: z.boolean(),
     startTime: z.string().optional(),
     endTime: z.string().optional(),
