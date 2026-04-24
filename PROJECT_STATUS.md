@@ -119,6 +119,7 @@
 [x] Servicos com preco real persistido em `Decimal?`, CRUD de `/servicos` atualizado e migration segura sem backfill fake
 [x] Menu inicial do WhatsApp com `Agendar horário`, `Meus agendamentos`, `Preços` e `Informações`
 [x] Opção `Preços` no WhatsApp usando serviços ativos reais com preço em BRL e paginação simples
+[x] Regressão do bot silencioso no WhatsApp corrigida com logs temporários de actions, normalização por `selectedOptionId` e fallback de outbound em branches vazias
 
 ---
 
@@ -1062,6 +1063,7 @@ Proximo passo sugerido:
 
 | Data | Mudanca |
 |------|---------|
+| 24/04/2026 | WhatsApp: corrigida a regressão do bot silencioso após o patch do novo menu; o webhook agora loga estado/texto/`selectedOptionId`/actions/dispatch, usa `selectedOptionId` como fallback canônico para intents interativas e adiciona resposta de segurança quando um branch termina sem `appendBotReply` |
 | 24/04/2026 | WhatsApp: menu inicial atualizado para `Agendar horário`, `Meus agendamentos`, `Preços` e `Informações`; `Meus agendamentos` passou a reaproveitar explicitamente a listagem real de futuros por telefone, e `Preços` agora lista serviços ativos reais com `price` preenchido em BRL, com navegação para mais preços, agendar ou voltar ao menu |
 | 24/04/2026 | Servicos: adicionado `price Decimal? @db.Decimal(12, 2)` no Prisma, migration segura aplicada sem backfill fake, validators/API/UI do CRUD atualizados para exigir preco no create, aceitar no update e exibir valor em BRL |
 | 24/04/2026 | Fluxo WhatsApp refinado em UX textual: menu e etapas sem indicadores visuais, lista de datas sem "primeiro horário", labels/títulos revisados em PT-BR e navegação preservada sem mexer na lógica real de `Appointment` |

@@ -148,6 +148,7 @@ function isSchedulingIntent(text: string) {
   return (
     matchesMenuOption(text, "1") ||
     matchesAny(text, [
+      "agenda",
       "quero agendar",
       "agendar",
       "agendamento",

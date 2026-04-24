@@ -544,6 +544,36 @@ function slicePage<T>(items: T[], page: number, pageSize: number) {
   return items.slice(start, start + pageSize)
 }
 
+function getEffectiveInboundText(text: string | null, selectedOptionId: string | null) {
+  switch (selectedOptionId) {
+    case MAIN_MENU_SCHEDULE_OPTION_ID:
+      return "agendar"
+    case MAIN_MENU_APPOINTMENTS_OPTION_ID:
+      return "meus agendamentos"
+    case MAIN_MENU_PRICES_OPTION_ID:
+      return "precos"
+    case MAIN_MENU_INFO_OPTION_ID:
+      return "informacoes"
+    case NAV_MENU_OPTION_ID:
+      return "menu"
+    case NAV_BACK_OPTION_ID:
+      return "voltar"
+    case NAV_END_OPTION_ID:
+      return "encerrar"
+    case MORE_PRICES_OPTION_ID:
+      return "mais precos"
+    case BOOKING_CONFIRM_OPTION_ID:
+    case CANCEL_CONFIRM_OPTION_ID:
+      return "confirmar"
+    case APPOINTMENT_CANCEL_OPTION_ID:
+      return "desmarcar"
+    case APPOINTMENT_RESCHEDULE_OPTION_ID:
+      return "remarcar"
+    default:
+      return text?.trim() || null
+  }
+}
+
 function formatPriceForWhatsApp(price: Prisma.Decimal) {
   return brlCurrencyFormatter.format(Number(price.toFixed(2)))
 }
@@ -1203,6 +1233,10 @@ async function processIncomingWhatsAppMessage(
 
       const timeZone = resolveConversationTimezone(conversation.context)
       let conversationContext = getConversationContextRecord(conversation.context)
+      const effectiveIncomingText = getEffectiveInboundText(
+        incomingMessage.text,
+        incomingMessage.selectedOptionId
+      )
 
       const savedIn = await tx.conversationMessage.create({
         data: {
@@ -1232,6 +1266,29 @@ async function processIncomingWhatsAppMessage(
       let parsedDateTime: ParsedDateTimeValue | null = null
       let draftCache: DraftWithRelations | null = null
       let shouldStop = false
+
+      console.info("whatsapp bot inbound routing", {
+        storeId: currentStoreId,
+        conversationId: conversation.id,
+        state: conversation.state,
+        text: incomingMessage.text,
+        effectiveText: effectiveIncomingText,
+        selectedOptionId: incomingMessage.selectedOptionId,
+        mainMenuShown: conversationContext.mainMenuShown === true,
+        priceListPage:
+          typeof conversationContext.priceListPage === "number"
+            ? conversationContext.priceListPage
+            : null,
+        appointmentOptionsCount: Array.isArray(conversationContext.appointmentOptions)
+          ? conversationContext.appointmentOptions.length
+          : 0,
+        timeSelectionStage:
+          conversationContext.timeSelectionStage === "DAY" ||
+          conversationContext.timeSelectionStage === "TIME"
+            ? conversationContext.timeSelectionStage
+            : null,
+      })
+
       async function updateState(
         state:
           | "IDLE"
@@ -2073,7 +2130,7 @@ async function processIncomingWhatsAppMessage(
         }
       }
 
-      if (isPauseChatbotTriggerText(incomingMessage.text)) {
+      if (isPauseChatbotTriggerText(effectiveIncomingText)) {
         await pauseConversation()
 
         return {
@@ -2107,7 +2164,7 @@ async function processIncomingWhatsAppMessage(
         }
       }
 
-      if (isEndConversationIntent(incomingMessage.text)) {
+      if (isEndConversationIntent(effectiveIncomingText)) {
         await closeConversation(CHATBOT_CLOSED_MESSAGE, "CHATBOT_CLOSED_BY_CUSTOMER")
 
         return {
@@ -2121,7 +2178,7 @@ async function processIncomingWhatsAppMessage(
         }
       }
 
-      if (isBackToMenuIntent(incomingMessage.text)) {
+      if (isBackToMenuIntent(effectiveIncomingText)) {
         await returnToMainMenu()
 
         return {
@@ -2135,7 +2192,7 @@ async function processIncomingWhatsAppMessage(
         }
       }
 
-      if (isBackOneStepIntent(incomingMessage.text)) {
+      if (isBackOneStepIntent(effectiveIncomingText)) {
         await handleBackOneStep()
 
         return {
@@ -2151,8 +2208,19 @@ async function processIncomingWhatsAppMessage(
 
       const bot = handleIncomingMessage({
         state: conversation.state,
-        text: incomingMessage.text,
+        text: effectiveIncomingText,
         context: buildBotContext(conversation.context),
+      })
+
+      console.info("whatsapp bot actions resolved", {
+        storeId: currentStoreId,
+        conversationId: conversation.id,
+        state: conversation.state,
+        text: incomingMessage.text,
+        effectiveText: effectiveIncomingText,
+        selectedOptionId: incomingMessage.selectedOptionId,
+        actionTypes: bot.actions.map((action) => action.type),
+        actionsCount: bot.actions.length,
       })
 
       async function ensureDraft() {
@@ -2450,6 +2518,15 @@ async function processIncomingWhatsAppMessage(
         if (shouldStop) {
           break
         }
+
+        console.info("whatsapp bot action execute", {
+          storeId: currentStoreId,
+          conversationId: conversation.id,
+          actionType: action.type,
+          state: nextState ?? conversation.state,
+          repliesCount: outMessages.length,
+          persistedOutboundMessagesCount: persistedOutboundMessages.length,
+        })
 
         if (action.type === "SET_STATE") {
           await updateState(action.state)
@@ -3470,7 +3547,64 @@ async function processIncomingWhatsAppMessage(
 
         if (action.type === "REPLY_TEXT") {
           await appendBotReply(action.text)
+          continue
         }
+
+        console.warn("whatsapp bot action without dispatcher handler", {
+          storeId: currentStoreId,
+          conversationId: conversation.id,
+          actionType: (action as { type: string }).type,
+        })
+      }
+
+      console.info("whatsapp bot action loop finished", {
+        storeId: currentStoreId,
+        conversationId: conversation.id,
+        state: nextState ?? conversation.state,
+        text: incomingMessage.text,
+        effectiveText: effectiveIncomingText,
+        selectedOptionId: incomingMessage.selectedOptionId,
+        actionsCount: bot.actions.length,
+        persistedOutboundMessagesCount: persistedOutboundMessages.length,
+        repliesCount: outMessages.length,
+        shouldStop,
+      })
+
+      if (!shouldStop && persistedOutboundMessages.length === 0) {
+        console.warn("whatsapp bot no outbound generated after actions", {
+          storeId: currentStoreId,
+          conversationId: conversation.id,
+          state: nextState ?? conversation.state,
+          text: incomingMessage.text,
+          effectiveText: effectiveIncomingText,
+          selectedOptionId: incomingMessage.selectedOptionId,
+          actionTypes: bot.actions.map((action) => action.type),
+        })
+
+        if ((nextState ?? conversation.state) === "IDLE") {
+          await persistConversationContext({
+            mainMenuShown: true,
+            priceListPage: null,
+          })
+          await appendBotReply(buildMainMenuMessage(), {
+            reason: "EMPTY_OUTBOUND_FALLBACK_MAIN_MENU",
+          })
+        } else {
+          await appendBotReply(
+            "Não consegui continuar por aqui. Me envie 'menu' para recomeçar.",
+            {
+              reason: "EMPTY_OUTBOUND_FALLBACK_REPLY",
+              state: nextState ?? conversation.state,
+            }
+          )
+        }
+
+        console.info("whatsapp bot fallback outbound appended", {
+          storeId: currentStoreId,
+          conversationId: conversation.id,
+          persistedOutboundMessagesCount: persistedOutboundMessages.length,
+          repliesCount: outMessages.length,
+        })
       }
 
       return {
@@ -3499,6 +3633,15 @@ async function processIncomingWhatsAppMessage(
   }
 
   // Outbound real acontece apos o commit para nunca perder a mensagem local se a Meta falhar.
+  console.info("whatsapp outbound dispatch decision", {
+    storeId: currentStoreId,
+    conversationId: transactionResult.conversationId,
+    replayed: transactionResult.replayed,
+    shouldAttemptOutboundDelivery,
+    persistedOutboundMessagesCount: persistedOutboundMessages.length,
+    to: incomingMessage.from,
+  })
+
   if (
     !transactionResult.replayed &&
     shouldAttemptOutboundDelivery &&

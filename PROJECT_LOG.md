@@ -1,3 +1,61 @@
+## 24 de abril de 2026 - Correção da regressão do bot silencioso no WhatsApp
+
+### Objetivo
+
+Restabelecer a resposta do bot no canal WhatsApp após a regressão introduzida no patch do novo menu com `Meus agendamentos` e `Preços`, priorizando o diagnóstico do webhook e a eliminação de branches que terminavam sem outbound.
+
+### Arquivos alterados
+
+- `app/api/webhooks/whatsapp/route.ts`
+- `src/lib/bot/flow.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Logs temporários de diagnóstico no webhook
+
+- `processIncomingWhatsAppMessage` agora registra:
+  - estado atual da conversa
+  - texto inbound bruto
+  - texto inbound efetivo
+  - `selectedOptionId`
+  - actions resolvidas por `handleIncomingMessage`
+  - cada `action.type` executada
+  - decisão final de dispatch outbound
+  - quantidade de mensagens outbound persistidas
+
+#### 2. Normalização robusta de intents interativas
+
+- O webhook passou a converter `selectedOptionId` em texto canônico para o roteamento interno do bot.
+- Isso cobre principalmente os novos itens interativos do menu e navegação:
+  - `Agendar horário`
+  - `Meus agendamentos`
+  - `Preços`
+  - `Informações`
+  - `Menu`
+  - `Voltar`
+  - `Encerrar`
+  - `Mais preços`
+
+#### 3. Proteção contra branch silenciosa
+
+- Foi adicionado um fallback operacional quando o loop de actions termina sem nenhuma `ConversationMessage OUT`.
+- Em `IDLE`, o bot responde com o menu principal.
+- Fora de `IDLE`, o bot responde com uma mensagem curta orientando a usar `menu`.
+- O matcher de agendamento também passou a aceitar explicitamente `agenda`.
+
+### Causa raiz
+
+- O fluxo não tinha proteção para branches que mutavam apenas estado/contexto sem persistir nenhuma resposta.
+- Como o dispatch real para a Meta só acontece quando `persistedOutboundMessages.length > 0`, o webhook podia responder `200` e ainda assim não disparar outbound.
+- Além disso, o roteamento dependia principalmente do texto humanizado da resposta interativa; agora o `selectedOptionId` também é tratado como fonte canônica.
+
+### Validação executada
+
+- `yarn lint`
+- `yarn build`
+
 ## 24 de abril de 2026 - Preços e meus agendamentos no menu principal do WhatsApp
 
 ### Objetivo
