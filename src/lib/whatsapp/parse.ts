@@ -1,8 +1,16 @@
+export type ParsedIncomingInteractiveReply = {
+  type: "button_reply" | "list_reply"
+  id: string
+  title: string
+  description: string | null
+}
+
 export type ParsedIncomingWhatsAppMessage = {
   source: "meta" | "test"
   providerMessageId: string
   from: string
   text: string | null
+  interactiveReply: ParsedIncomingInteractiveReply | null
   phoneNumberId: string | null
   displayPhoneNumber: string | null
   businessAccountId: string | null
@@ -21,6 +29,9 @@ type TestPayload = {
   providerMessageId?: unknown
   from?: unknown
   text?: unknown
+  selectedOptionId?: unknown
+  selectedOptionTitle?: unknown
+  selectedOptionDescription?: unknown
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -29,6 +40,48 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function toOptionalString(value: unknown) {
   return typeof value === "string" && value.length > 0 ? value : null
+}
+
+function parseInteractiveReply(payload: unknown): ParsedIncomingInteractiveReply | null {
+  if (!isObject(payload)) {
+    return null
+  }
+
+  const type = toOptionalString(payload.type)
+
+  if (type === "button_reply" && isObject(payload.button_reply)) {
+    const id = toOptionalString(payload.button_reply.id)
+    const title = toOptionalString(payload.button_reply.title)
+
+    if (!id || !title) {
+      return null
+    }
+
+    return {
+      type,
+      id,
+      title,
+      description: null,
+    }
+  }
+
+  if (type === "list_reply" && isObject(payload.list_reply)) {
+    const id = toOptionalString(payload.list_reply.id)
+    const title = toOptionalString(payload.list_reply.title)
+
+    if (!id || !title) {
+      return null
+    }
+
+    return {
+      type,
+      id,
+      title,
+      description: toOptionalString(payload.list_reply.description),
+    }
+  }
+
+  return null
 }
 
 function parseLegacyTestPayload(payload: unknown): ParsedWhatsAppWebhookPayload | null {
@@ -50,7 +103,24 @@ function parseLegacyTestPayload(payload: unknown): ParsedWhatsAppWebhookPayload 
         source: "test",
         providerMessageId: p.providerMessageId,
         from: p.from,
-        text: typeof p.text === "string" ? p.text : null,
+        text:
+          typeof p.text === "string"
+            ? p.text
+            : typeof p.selectedOptionTitle === "string"
+              ? p.selectedOptionTitle
+              : null,
+        interactiveReply:
+          typeof p.selectedOptionId === "string" && typeof p.selectedOptionTitle === "string"
+            ? {
+                type: "list_reply",
+                id: p.selectedOptionId,
+                title: p.selectedOptionTitle,
+                description:
+                  typeof p.selectedOptionDescription === "string"
+                    ? p.selectedOptionDescription
+                    : null,
+              }
+            : null,
         phoneNumberId: null,
         displayPhoneNumber: null,
         businessAccountId: null,
@@ -103,16 +173,21 @@ function parseMetaWebhookPayload(payload: unknown): ParsedWhatsAppWebhookPayload
         }
 
         const messageType = toOptionalString(providerMessage.type) ?? "unknown"
+        const interactiveReply =
+          messageType === "interactive"
+            ? parseInteractiveReply(providerMessage.interactive)
+            : null
         const text =
           messageType === "text" && isObject(providerMessage.text)
             ? toOptionalString(providerMessage.text.body)
-            : null
+            : interactiveReply?.title ?? null
 
         messages.push({
           source: "meta",
           providerMessageId,
           from,
           text,
+          interactiveReply,
           phoneNumberId,
           displayPhoneNumber,
           businessAccountId,

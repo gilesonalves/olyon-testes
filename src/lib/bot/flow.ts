@@ -3,25 +3,15 @@ import type { ConversationState } from "@/lib/prisma"
 import { normalizeBotText } from "./datetime"
 import type { BotAction, BotConversationContext, BotResult } from "./types"
 
-const WELCOME_MENU_TEXT = `Ola! Seja bem-vindo(a).
-Como posso te ajudar hoje?
+const COMMANDS_FOOTER = "Comandos: voltar | menu | atendente | encerrar"
+const WELCOME_MENU_TEXT = `Ola! Vou te ajudar por etapas.
+Escolha uma opcao:
 
 1. Agendar horario
 2. Desmarcar ou remarcar
 3. Informacoes de atendimento
 
-Pode responder com o numero ou me escrever o que voce precisa.`
-
-const IDLE_FALLBACK_TEXT = `Posso te ajudar com:
-1. Agendar horario
-2. Desmarcar ou remarcar
-3. Informacoes de atendimento
-
-Pode responder com o numero ou me escrever o que voce precisa.`
-
-const APPOINTMENT_ACTION_MENU_TEXT = `O que voce deseja fazer?
-1. Desmarcar
-2. Remarcar`
+${COMMANDS_FOOTER}`
 const BOT_INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000
 
 const CHATBOT_PAUSE_KEYWORD_REGEX = /\b(?:atendente|humano|chatbot)\b/
@@ -76,10 +66,6 @@ function matchesAny(text: string, expressions: string[]) {
 function matchesMenuOption(text: string, option: "1" | "2" | "3") {
   const normalizedText = normalizeBotText(text)
   return new RegExp(`(^|\\b)${option}(\\b|$)`).test(normalizedText)
-}
-
-function isStandaloneNumericChoice(text: string) {
-  return /^\d{1,2}$/.test(normalizeBotText(text))
 }
 
 function matchesControlPatterns(text: string, patterns: RegExp[]) {
@@ -244,23 +230,18 @@ function buildStartSchedulingActions(): BotAction[] {
         selectedAppointmentLabel: null,
         rescheduleAppointmentId: null,
         timeSlotSuggestions: null,
+        dateOptions: null,
+        selectedDateKey: null,
+        selectedDateLabel: null,
+        timeSelectionStage: null,
+        dateOptionPage: null,
+        timeSlotPage: null,
       },
     },
     { type: "ENSURE_DRAFT" },
     { type: "SET_STATE", state: "CHOOSING_SERVICE" },
-    {
-      type: "REPLY_TEXT",
-      text: "Perfeito! Qual servico voce quer agendar? (ex: unha, cabelo e barba)",
-    },
+    { type: "SHOW_SERVICE_SELECTION" },
   ]
-}
-
-function buildAppointmentActionPrompt(label?: string | null) {
-  if (!label) {
-    return APPOINTMENT_ACTION_MENU_TEXT
-  }
-
-  return `Agendamento selecionado:\n${label}\n\n${APPOINTMENT_ACTION_MENU_TEXT}`
 }
 
 export function handleIncomingMessage(params: {
@@ -309,12 +290,7 @@ export function handleIncomingMessage(params: {
       return {
         actions: [
           { type: "SET_STATE", state: "CONFIRMING_APPOINTMENT_CANCELLATION" },
-          {
-            type: "REPLY_TEXT",
-            text: params.context?.selectedAppointmentLabel
-              ? `Tem certeza que deseja desmarcar ${params.context.selectedAppointmentLabel}? Responda SIM para confirmar ou NAO para voltar.`
-              : "Tem certeza que deseja desmarcar este agendamento? Responda SIM para confirmar ou NAO para voltar.",
-          },
+          { type: "SHOW_APPOINTMENT_CANCELLATION_CONFIRMATION" },
         ],
       }
     }
@@ -329,12 +305,7 @@ export function handleIncomingMessage(params: {
     }
 
     return {
-      actions: [
-        {
-          type: "REPLY_TEXT",
-          text: buildAppointmentActionPrompt(params.context?.selectedAppointmentLabel),
-        },
-      ],
+      actions: [{ type: "SHOW_APPOINTMENT_ACTION" }],
     }
   }
 
@@ -348,14 +319,11 @@ export function handleIncomingMessage(params: {
   }
 
   if (params.state === "CHOOSING_TIME") {
-    if (isStandaloneNumericChoice(text)) {
+    if (params.context?.timeSelectionStage === "DAY") {
       return {
         actions: [
           { type: "ENSURE_DRAFT" },
-          { type: "SELECT_SUGGESTED_SLOT", text },
-          { type: "CHECK_AVAILABILITY_FOR_DRAFT" },
-          { type: "SAVE_DRAFT_DATETIME" },
-          { type: "SET_STATE", state: "CONFIRMING" },
+          { type: "SELECT_DAY_FROM_TEXT", text },
         ],
       }
     }
@@ -363,10 +331,7 @@ export function handleIncomingMessage(params: {
     return {
       actions: [
         { type: "ENSURE_DRAFT" },
-        { type: "PARSE_DATETIME_FROM_TEXT", text },
-        { type: "CHECK_AVAILABILITY_FOR_DRAFT" },
-        { type: "SAVE_DRAFT_DATETIME" },
-        { type: "SET_STATE", state: "CONFIRMING" },
+        { type: "SELECT_TIME_INPUT", text },
       ],
     }
   }
@@ -389,20 +354,21 @@ export function handleIncomingMessage(params: {
         actions: [
           { type: "ENSURE_DRAFT" },
           { type: "CLEAR_DRAFT_DATETIME" },
+          {
+            type: "PATCH_CONTEXT",
+            context: {
+              timeSelectionStage: "TIME",
+              timeSlotPage: 0,
+            },
+          },
           { type: "SET_STATE", state: "CHOOSING_TIME" },
-          { type: "REPLY_TEXT", text: "Sem problema. Vou manter o profissional escolhido." },
-          { type: "SUGGEST_TIME_SLOTS" },
+          { type: "SHOW_TIME_SELECTION" },
         ],
       }
     }
 
     return {
-      actions: [
-        {
-          type: "REPLY_TEXT",
-          text: "Responda SIM para confirmar ou NAO para escolher outro horario.",
-        },
-      ],
+      actions: [{ type: "SHOW_BOOKING_CONFIRMATION" }],
     }
   }
 
@@ -420,21 +386,13 @@ export function handleIncomingMessage(params: {
       return {
         actions: [
           { type: "SET_STATE", state: "CHOOSING_APPOINTMENT_ACTION" },
-          {
-            type: "REPLY_TEXT",
-            text: buildAppointmentActionPrompt(params.context?.selectedAppointmentLabel),
-          },
+          { type: "SHOW_APPOINTMENT_ACTION" },
         ],
       }
     }
 
     return {
-      actions: [
-        {
-          type: "REPLY_TEXT",
-          text: "Responda SIM para confirmar o cancelamento ou NAO para voltar.",
-        },
-      ],
+      actions: [{ type: "SHOW_APPOINTMENT_CANCELLATION_CONFIRMATION" }],
     }
   }
 
@@ -456,6 +414,12 @@ export function handleIncomingMessage(params: {
             selectedAppointmentLabel: null,
             rescheduleAppointmentId: null,
             timeSlotSuggestions: null,
+            dateOptions: null,
+            selectedDateKey: null,
+            selectedDateLabel: null,
+            timeSelectionStage: null,
+            dateOptionPage: null,
+            timeSlotPage: null,
           },
         },
         { type: "LIST_FUTURE_APPOINTMENTS" },
@@ -476,18 +440,18 @@ export function handleIncomingMessage(params: {
     return {
       actions: [
         { type: "PATCH_CONTEXT", context: { mainMenuShown: true } },
-        { type: "REPLY_TEXT", text: WELCOME_MENU_TEXT },
+        { type: "SHOW_MAIN_MENU" },
       ],
     }
   }
 
   if (isGreeting(text)) {
     return {
-      actions: [{ type: "REPLY_TEXT", text: IDLE_FALLBACK_TEXT }],
+      actions: [{ type: "SHOW_MAIN_MENU" }],
     }
   }
 
   return {
-    actions: [{ type: "REPLY_TEXT", text: IDLE_FALLBACK_TEXT }],
+    actions: [{ type: "SHOW_MAIN_MENU" }],
   }
 }

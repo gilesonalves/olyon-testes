@@ -1,3 +1,58 @@
+## 24 de abril de 2026 - Fluxo WhatsApp guiado por etapas com mensagens interativas
+
+### Objetivo
+
+Refatorar o fluxo real de WhatsApp do Olyon para uma UX mais guiada, curta e operacional, usando mensagens interativas oficiais da Meta quando fizer sentido, sem quebrar a disponibilidade real nem o create real de `Appointment`.
+
+### Arquivos alterados
+
+- `app/api/webhooks/whatsapp/route.ts`
+- `src/lib/appointments/availability.ts`
+- `src/lib/bot/datetime.ts`
+- `src/lib/bot/flow.ts`
+- `src/lib/bot/types.ts`
+- `src/lib/whatsapp/meta-outbound.ts`
+- `src/lib/whatsapp/parse.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Entrada e saida interativa oficiais da Meta
+
+- O parser inbound agora entende respostas `interactive` da Meta (`button_reply` e `list_reply`) e preserva o `id` selecionado para o backend.
+- O outbound passou a suportar `reply buttons` e `list messages` alem do texto simples, mantendo um preview textual persistido nas `ConversationMessage OUT`.
+- Quando uma etapa nao cabe bem em interativa, o bot continua respondendo com texto curto e orientado.
+
+#### 2. Fluxo de agendamento reorganizado por etapa
+
+- O agendamento agora segue a sequencia guiada:
+  - menu inicial
+  - servico
+  - profissional
+  - dia
+  - horario
+  - confirmacao
+- `CHOOSING_TIME` passou a distinguir internamente as subetapas de dia e horario via contexto conversacional, sem exigir mudanca de schema Prisma.
+- Quando existe apenas um profissional elegivel, o bot continua auto-selecionando e avanca direto para a escolha de dia.
+
+#### 3. Disponibilidade e create real preservados
+
+- A escolha de dia usa a engine real de disponibilidade para descobrir proximos dias com vagas.
+- A escolha de horario usa a disponibilidade real por dia/profissional/servico antes de salvar o draft.
+- O create real de `Appointment` e a remarcacao real continuam acontecendo no mesmo fluxo transacional do webhook, com as mesmas validacoes finais de disponibilidade.
+
+#### 4. Navegacao, fallback e compatibilidade
+
+- `menu`, `voltar`, `encerrar`, `atendente`/`humano`/`chatbot`, `PAUSED` e timeout por inatividade foram preservados.
+- O bot aceita clique interativo, numero e texto livre nas etapas guiadas.
+- Cancelamento e remarcacao continuam funcionando sem inbox interna e sem mover a logica principal para fora do sistema.
+
+### Validacao executada
+
+- `yarn lint`
+- `yarn build`
+
 ## 23 de abril de 2026 - Timeout, encerrar, voltar e menu no fluxo WhatsApp
 
 ### Objetivo

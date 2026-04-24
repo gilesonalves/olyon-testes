@@ -13,6 +13,8 @@ type FlowState = Extract<
   | "CONFIRMING_APPOINTMENT_CANCELLATION"
 >
 
+export type TimeSelectionStage = "DAY" | "TIME"
+
 export type BotConversationContext = {
   timezone?: string | null
   mainMenuShown?: boolean | null
@@ -32,11 +34,31 @@ export type BotConversationContext = {
         label: string
       }>
     | null
+  dateOptions?:
+    | Array<{
+        dateKey: string
+        label: string
+        firstStartAt: string
+      }>
+    | null
+  selectedDateKey?: string | null
+  selectedDateLabel?: string | null
+  timeSelectionStage?: TimeSelectionStage | null
+  dateOptionPage?: number | null
+  timeSlotPage?: number | null
 }
 
 export type BotAction =
   | { type: "REPLY_TEXT"; text: string }
   | { type: "REPLY_STORE_INFO" }
+  | { type: "SHOW_MAIN_MENU" }
+  | { type: "SHOW_SERVICE_SELECTION" }
+  | { type: "SHOW_STAFF_SELECTION" }
+  | { type: "SHOW_DAY_SELECTION" }
+  | { type: "SHOW_TIME_SELECTION" }
+  | { type: "SHOW_BOOKING_CONFIRMATION" }
+  | { type: "SHOW_APPOINTMENT_ACTION" }
+  | { type: "SHOW_APPOINTMENT_CANCELLATION_CONFIRMATION" }
   | { type: "SET_STATE"; state: FlowState }
   | { type: "PATCH_CONTEXT"; context: Partial<BotConversationContext> }
   | { type: "ENSURE_DRAFT" }
@@ -47,11 +69,8 @@ export type BotAction =
   | { type: "SELECT_SERVICE_FROM_TEXT"; text: string }
   | { type: "RESOLVE_STAFF_FOR_DRAFT" }
   | { type: "SELECT_STAFF_FROM_TEXT"; text: string }
-  | { type: "SUGGEST_TIME_SLOTS" }
-  | { type: "SELECT_SUGGESTED_SLOT"; text: string }
-  | { type: "PARSE_DATETIME_FROM_TEXT"; text: string }
-  | { type: "CHECK_AVAILABILITY_FOR_DRAFT" }
-  | { type: "SAVE_DRAFT_DATETIME" }
+  | { type: "SELECT_DAY_FROM_TEXT"; text: string }
+  | { type: "SELECT_TIME_INPUT"; text: string }
   | { type: "CLEAR_DRAFT_DATETIME" }
   | { type: "CREATE_APPOINTMENT_FROM_DRAFT" }
   | { type: "RESCHEDULE_APPOINTMENT_FROM_DRAFT" }

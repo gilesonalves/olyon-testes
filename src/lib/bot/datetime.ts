@@ -57,6 +57,37 @@ export type ParsedDateTimeResult =
       error: string
     }
 
+export type ParsedDateValue = {
+  dateKey: string
+  weekday: Weekday
+  label: string
+}
+
+export type ParsedDateResult =
+  | {
+      ok: true
+      value: ParsedDateValue
+    }
+  | {
+      ok: false
+      error: string
+    }
+
+export type ParsedTimeValue = {
+  timeKey: string
+  label: string
+}
+
+export type ParsedTimeResult =
+  | {
+      ok: true
+      value: ParsedTimeValue
+    }
+  | {
+      ok: false
+      error: string
+    }
+
 export function getBotTimezone() {
   return process.env.WHATSAPP_SCHEDULING_TIMEZONE ?? process.env.APP_TIMEZONE ?? "America/Sao_Paulo"
 }
@@ -122,10 +153,14 @@ export function getTimeKeyInTimeZone(date: Date, timeZone: string) {
 export function formatDateTimeForBot(date: Date, timeZone: string) {
   const dateKey = getDateKeyInTimeZone(date, timeZone)
   const timeKey = getTimeKeyInTimeZone(date, timeZone)
+  return `${formatDateKeyForBot(dateKey)} as ${timeKey}`
+}
+
+export function formatDateKeyForBot(dateKey: string) {
   const weekday = getWeekdayFromDateKey(dateKey)
   const [, , month, day] = dateKey.match(/^(\d{4})-(\d{2})-(\d{2})$/) ?? []
 
-  return `${weekdayLabels[weekday]} ${day}/${month} as ${timeKey}`
+  return `${weekdayLabels[weekday]} ${day}/${month}`
 }
 
 export function combineDateKeyAndTime(dateKey: string, timeKey: string, timeZone: string) {
@@ -187,6 +222,59 @@ export function parseDateTimeFromText(params: {
       timeKey,
       weekday: getWeekdayFromDateKey(dateKey),
       label: formatDateTimeForBot(startAt, timeZone),
+    },
+  }
+}
+
+export function parseDateFromText(params: {
+  text: string
+  now?: Date
+  timeZone?: string
+}): ParsedDateResult {
+  const now = params.now ?? new Date()
+  const timeZone = params.timeZone ?? getBotTimezone()
+  const normalized = normalizeBotText(params.text)
+  const nowLocal = getLocalDateTimeParts(now, timeZone)
+  const dateKey = resolveDateKey(normalized, nowLocal, {
+    hour: 23,
+    minute: 59,
+  })
+
+  if (!dateKey) {
+    return {
+      ok: false,
+      error: "Nao entendi o dia. Ex.: amanha, segunda ou 24/04.",
+    }
+  }
+
+  return {
+    ok: true,
+    value: {
+      dateKey,
+      weekday: getWeekdayFromDateKey(dateKey),
+      label: formatDateKeyForBot(dateKey),
+    },
+  }
+}
+
+export function parseTimeFromText(params: { text: string }): ParsedTimeResult {
+  const normalized = normalizeBotText(params.text)
+  const parsedTime = extractTime(normalized)
+
+  if (!parsedTime) {
+    return {
+      ok: false,
+      error: "Nao entendi o horario. Ex.: 14h ou 14:30.",
+    }
+  }
+
+  const timeKey = `${String(parsedTime.hour).padStart(2, "0")}:${String(parsedTime.minute).padStart(2, "0")}`
+
+  return {
+    ok: true,
+    value: {
+      timeKey,
+      label: timeKey,
     },
   }
 }

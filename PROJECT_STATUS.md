@@ -1,6 +1,6 @@
 # PROJECT_STATUS.md
 
-**Data de ultima atualizacao:** 23 de abril de 2026
+**Data de ultima atualizacao:** 24 de abril de 2026
 
 ## Status geral do projeto Olyon
 
@@ -113,6 +113,8 @@
 [x] Pausa operacional do chatbot WhatsApp por palavra-chave com estado `PAUSED`
 [x] Matcher de pausa do chatbot WhatsApp ampliado para frases naturais de handoff humano
 [x] Fluxo WhatsApp com timeout por inatividade, encerrar atendimento, voltar etapa e voltar ao menu
+[x] Fluxo WhatsApp guiado por etapas com menu, servico, profissional, dia, horario e confirmacao
+[x] Mensagens interativas oficiais da Meta no WhatsApp com fallback por texto livre e numero
 
 ---
 
@@ -1056,6 +1058,7 @@ Proximo passo sugerido:
 
 | Data | Mudanca |
 |------|---------|
+| 24/04/2026 | WhatsApp UX guiada por etapas: webhook passou a aceitar replies interativas da Meta, outbound suporta reply buttons/list messages com fallback textual, e o fluxo real foi reorganizado em menu > servico > profissional > dia > horario > confirmacao sem quebrar create/remarcacao/cancelamento de `Appointment` |
 | 22/04/2026 | Build TypeScript: corrigido narrowing de `json.code` no create de agendamento e alinhado `ignoreAppointmentId` nos callers de disponibilidade; `yarn build` voltou a concluir |
 | 22/04/2026 | Build Vercel/Prisma: imports diretos para `generated/prisma/client` foram centralizados em `src/lib/prisma` e o script `build` passou a executar `prisma generate` antes do `next build` |
 | 22/04/2026 | WhatsAppConnection check real: endpoint corrigido para `GET /v25.0/{phoneNumberId}` sem `fields`, parser reforcado, diagnostico seguro do token lido e comparacao de telefone tolerante a formatacao |

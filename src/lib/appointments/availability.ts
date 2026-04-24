@@ -34,6 +34,11 @@ export type SuggestedSlot = {
   label: string
 }
 
+export type AvailableDateOption = {
+  dateKey: string
+  firstStartAt: Date
+}
+
 export type AvailabilityConflictingAppointment = {
   id: string
   customerName: string
@@ -323,6 +328,60 @@ export async function listAvailableSlotsForDate(params: {
     dateKey: params.dateKey,
     notBefore: params.notBefore ?? null,
   })
+}
+
+export async function listNextAvailableDates(params: {
+  db: AvailabilityDbClient
+  storeId: string
+  durationMin: number
+  timeZone: string
+  staffMembershipId?: string | null
+  ignoreAppointmentId?: string | null
+  searchStartAt?: Date
+  limit?: number
+  searchDays?: number
+  stepMin?: number
+}) {
+  const limit = params.limit ?? 8
+  const searchDays = params.searchDays ?? 30
+  const stepMin = params.stepMin ?? 15
+  const searchStartAt = params.searchStartAt ?? new Date()
+  const requestedDateKey = getDateKeyInTimeZone(searchStartAt, params.timeZone)
+
+  const context = await buildAvailabilityContext({
+    db: params.db,
+    storeId: params.storeId,
+    timeZone: params.timeZone,
+    requestedDateKey,
+    durationMin: params.durationMin,
+    searchDays,
+    stepMin,
+    staffMembershipId: params.staffMembershipId ?? null,
+    ignoreAppointmentId: params.ignoreAppointmentId ?? null,
+  })
+
+  const options: AvailableDateOption[] = []
+
+  for (let offset = 0; offset < context.searchDays && options.length < limit; offset += 1) {
+    const dateKey = addDaysToDateKey(context.requestedDateKey, offset)
+    const slots = findAvailableSlotsForDate({
+      context,
+      dateKey,
+      notBefore: offset === 0 ? searchStartAt : null,
+      limit: 1,
+    })
+
+    if (!slots[0]) {
+      continue
+    }
+
+    options.push({
+      dateKey,
+      firstStartAt: slots[0].startAt,
+    })
+  }
+
+  return options
 }
 
 async function buildAvailabilityContext(params: {

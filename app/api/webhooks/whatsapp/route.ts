@@ -5,14 +5,15 @@ import { prisma, Prisma, type ConversationState } from "@/lib/prisma"
 import { badRequest, ok, serverError, unauthorized } from "@/lib/api/response"
 import {
   checkAvailabilityForSlot,
+  listAvailableSlotsForDate,
   listEligibleStaffForService,
-  listNextAvailableSlots,
+  listNextAvailableDates,
   resolveEligibleStaffChoice,
+  type AvailableDateOption,
   type EligibleStaffMember,
   type SuggestedSlot,
 } from "@/lib/appointments/availability"
 import {
-  getWelcomeMenuText,
   hasConversationFlowTimedOut,
   handleIncomingMessage,
   isBackOneStepIntent,
@@ -21,13 +22,17 @@ import {
   isPauseChatbotTriggerText,
 } from "@/lib/bot/flow"
 import {
+  combineDateKeyAndTime,
+  formatDateKeyForBot,
   getDateKeyInTimeZone,
   formatDateTimeForBot,
   getBotTimezone,
   getTimeKeyInTimeZone,
   getWeekdayFromDateKey,
   normalizeBotText,
+  parseDateFromText,
   parseDateTimeFromText,
+  parseTimeFromText,
   type ParsedDateTimeValue,
 } from "@/lib/bot/datetime"
 import type { BotConversationContext } from "@/lib/bot/types"
@@ -43,8 +48,9 @@ import {
   findActiveWhatsAppConnectionForInboundMessage,
 } from "@/lib/whatsapp/connection"
 import {
-  sendMetaTextMessage,
-  type MetaTextOutboundResult,
+  sendMetaOutboundMessage,
+  type MetaOutboundResult,
+  type WhatsAppOutboundMessage,
 } from "@/lib/whatsapp/meta-outbound"
 
 export const runtime = "nodejs"
@@ -98,7 +104,41 @@ type StoredAppointmentOption = {
   label: string
 }
 
+type StoredDateOption = {
+  dateKey: string
+  label: string
+  firstStartAt: string
+}
+
+type BotOutboundMessage = {
+  textPreview: string
+  outbound: WhatsAppOutboundMessage
+}
+
 const TIME_SUGGESTIONS_LIMIT = 5
+const DAY_OPTIONS_LIMIT = 18
+const DAY_OPTIONS_SEARCH_DAYS = 45
+const DAY_OPTIONS_PAGE_SIZE = 6
+const TIME_OPTIONS_PAGE_SIZE = 7
+const COMMANDS_FOOTER_TEXT = "Comandos: voltar | menu | atendente | encerrar"
+const MAIN_MENU_SCHEDULE_OPTION_ID = "menu:schedule"
+const MAIN_MENU_MANAGE_OPTION_ID = "menu:manage"
+const MAIN_MENU_INFO_OPTION_ID = "menu:info"
+const NAV_BACK_OPTION_ID = "nav:back"
+const NAV_END_OPTION_ID = "nav:end"
+const MORE_DATES_OPTION_ID = "date:more"
+const MORE_TIMES_OPTION_ID = "time:more"
+const SERVICE_OPTION_ID_PREFIX = "service:"
+const STAFF_OPTION_ID_PREFIX = "staff:"
+const DATE_OPTION_ID_PREFIX = "date:"
+const TIME_OPTION_ID_PREFIX = "time:"
+const APPOINTMENT_OPTION_ID_PREFIX = "appointment:"
+const BOOKING_CONFIRM_OPTION_ID = "booking:confirm"
+const BOOKING_BACK_OPTION_ID = NAV_BACK_OPTION_ID
+const BOOKING_END_OPTION_ID = NAV_END_OPTION_ID
+const APPOINTMENT_CANCEL_OPTION_ID = "appointment-action:cancel"
+const APPOINTMENT_RESCHEDULE_OPTION_ID = "appointment-action:reschedule"
+const CANCEL_CONFIRM_OPTION_ID = "appointment-cancel:confirm"
 const CHATBOT_PAUSED_MESSAGE =
   "Chat pausado. Em breve um atendente continuar\u00e1 por aqui."
 const CHATBOT_TIMEOUT_MESSAGE =
@@ -189,7 +229,7 @@ function hasSuccessfulOutboundDelivery(payload: Record<string, unknown>) {
   )
 }
 
-function buildMetaDeliveryPayload(result: MetaTextOutboundResult) {
+function buildMetaDeliveryPayload(result: MetaOutboundResult) {
   const basePayload = {
     provider: result.provider,
     whatsappConnectionId: result.whatsappConnectionId,
@@ -358,8 +398,175 @@ function buildStaffOptionsText(staffMembers: EligibleStaffMember[]) {
   return staffMembers.map((staff, index) => `${index + 1}. ${staff.name}`).join("\n")
 }
 
+function createTextBotMessage(text: string): BotOutboundMessage {
+  const trimmedText = text.trim()
+
+  return {
+    textPreview: trimmedText,
+    outbound: {
+      kind: "text",
+      text: trimmedText,
+    },
+  }
+}
+
+function buildNumberedOptionsText(
+  options: Array<{
+    title: string
+    description?: string | null
+  }>
+) {
+  return options
+    .map((option, index) =>
+      option.description?.trim()
+        ? `${index + 1}. ${option.title} - ${option.description.trim()}`
+        : `${index + 1}. ${option.title}`
+    )
+    .join("\n")
+}
+
+function buildButtonsBotMessage(params: {
+  bodyText: string
+  footerText?: string
+  buttons: Array<{
+    id: string
+    title: string
+  }>
+}) {
+  const footerText = params.footerText?.trim() || COMMANDS_FOOTER_TEXT
+  const fallbackText = `${params.bodyText.trim()}\n\n${params.buttons
+    .map((button, index) => `${index + 1}. ${button.title}`)
+    .join("\n")}\n\n${footerText}`
+
+  return {
+    textPreview: fallbackText,
+    outbound: {
+      kind: "interactive_buttons",
+      bodyText: params.bodyText.trim(),
+      footerText,
+      buttons: params.buttons,
+    },
+  } satisfies BotOutboundMessage
+}
+
+function buildListBotMessage(params: {
+  bodyText: string
+  buttonText: string
+  options: Array<{
+    id: string
+    title: string
+    description?: string | null
+  }>
+  headerText?: string
+  footerText?: string
+  extraInteractiveRows?: Array<{
+    id: string
+    title: string
+    description?: string | null
+  }>
+}) {
+  const footerText = params.footerText?.trim() || COMMANDS_FOOTER_TEXT
+  const textPreview = `${params.bodyText.trim()}\n\n${buildNumberedOptionsText(
+    params.options
+  )}\n\n${footerText}`
+  const rows = [...params.options, ...(params.extraInteractiveRows ?? [])]
+
+  if (rows.length === 0 || rows.length > 10) {
+    return createTextBotMessage(textPreview)
+  }
+
+  return {
+    textPreview,
+    outbound: {
+      kind: "interactive_list",
+      headerText: params.headerText?.trim() || null,
+      bodyText: params.bodyText.trim(),
+      footerText,
+      buttonText: params.buttonText.trim(),
+      sections: [
+        {
+          rows,
+        },
+      ],
+    },
+  } satisfies BotOutboundMessage
+}
+
+function getServiceOptionId(serviceId: string) {
+  return `${SERVICE_OPTION_ID_PREFIX}${serviceId}`
+}
+
+function getStaffOptionId(membershipId: string) {
+  return `${STAFF_OPTION_ID_PREFIX}${membershipId}`
+}
+
+function getDateOptionId(dateKey: string) {
+  return `${DATE_OPTION_ID_PREFIX}${dateKey}`
+}
+
+function getTimeOptionId(startAt: Date) {
+  return `${TIME_OPTION_ID_PREFIX}${startAt.toISOString()}`
+}
+
+function getAppointmentOptionId(appointmentId: string) {
+  return `${APPOINTMENT_OPTION_ID_PREFIX}${appointmentId}`
+}
+
+function getValueFromOptionId(selectedId: string | null | undefined, prefix: string) {
+  if (!selectedId?.startsWith(prefix)) {
+    return null
+  }
+
+  return selectedId.slice(prefix.length)
+}
+
+function getNumericChoice(text: string) {
+  const match = normalizeBotText(text).match(/^(\d{1,2})$/)
+
+  if (!match) {
+    return null
+  }
+
+  return Number(match[1]) - 1
+}
+
+function slicePage<T>(items: T[], page: number, pageSize: number) {
+  const safePage = Math.max(0, page)
+  const start = safePage * pageSize
+  return items.slice(start, start + pageSize)
+}
+
+function buildMainMenuMessage() {
+  return buildButtonsBotMessage({
+    bodyText: "Ola! Vou te ajudar por etapas. Escolha uma opcao:",
+    buttons: [
+      { id: MAIN_MENU_SCHEDULE_OPTION_ID, title: "Agendar horario" },
+      { id: MAIN_MENU_MANAGE_OPTION_ID, title: "Desmarcar ou remarcar" },
+      { id: MAIN_MENU_INFO_OPTION_ID, title: "Informacoes" },
+    ],
+  })
+}
+
 function buildStaffChoiceMessage(serviceName: string, staffMembers: EligibleStaffMember[]) {
-  return `Perfeito! Qual profissional voce prefere para ${serviceName}?\n${buildStaffOptionsText(staffMembers)}\nResponda com o numero ou com o nome.`
+  const options = staffMembers.map((staff) => ({
+    id: getStaffOptionId(staff.membershipId),
+    title: staff.name,
+  }))
+
+  if (staffMembers.length <= 9) {
+    return buildListBotMessage({
+      bodyText: `Etapa 2 de 5: escolha o profissional para ${serviceName}.`,
+      buttonText: "Ver profissionais",
+      options,
+      extraInteractiveRows: [{ id: NAV_BACK_OPTION_ID, title: "Voltar" }],
+    })
+  }
+
+  return createTextBotMessage(
+    `Etapa 2 de 5: escolha o profissional para ${serviceName}.\n\n${buildStaffOptionsText(
+      staffMembers
+    )}\n\n${COMMANDS_FOOTER_TEXT}`
+  )
 }
 
 function buildAppointmentLabel(appointment: AppointmentWithRelations, timeZone: string) {
@@ -374,45 +581,70 @@ function buildAppointmentOptionsText(options: StoredAppointmentOption[]) {
 }
 
 function buildFutureAppointmentsMessage(options: StoredAppointmentOption[]) {
-  return `Encontrei estes agendamentos futuros:\n${buildAppointmentOptionsText(options)}\n\nResponda com o numero do agendamento que deseja alterar.`
+  return `Escolha o agendamento que deseja alterar.\n\n${buildAppointmentOptionsText(options)}\n\n${COMMANDS_FOOTER_TEXT}`
 }
 
-function buildAppointmentActionMessage(label: string) {
-  return `Agendamento selecionado:\n${label}\n\nO que voce deseja fazer?\n1. Desmarcar\n2. Remarcar`
-}
+function buildServiceChoicePrompt(services: Array<{ id: string; name: string; durationMin: number }>) {
+  if (!services.length) {
+    return createTextBotMessage(
+      "Ainda nao ha servicos ativos cadastrados. Peca para a loja revisar o cadastro."
+    )
+  }
 
-function buildSuggestedSlotsText(suggestions: SuggestedSlot[]) {
-  return suggestions.map((slot, index) => `${index + 1}. ${slot.label}`).join("\n")
-}
+  const options = services.map((service) => ({
+    id: getServiceOptionId(service.id),
+    title: service.name,
+    description: `${service.durationMin} min`,
+  }))
 
-function buildTimeSuggestionsMessage(params: {
-  intro?: string
-  suggestions: SuggestedSlot[]
+  if (services.length <= 9) {
+    return buildListBotMessage({
+      bodyText: "Etapa 1 de 5: escolha o servico.",
+      buttonText: "Ver servicos",
+      options,
+      extraInteractiveRows: [{ id: NAV_BACK_OPTION_ID, title: "Voltar" }],
+    })
+  }
+
+  return createTextBotMessage(
+    `Etapa 1 de 5: escolha o servico.\n\n${buildNumberedOptionsText(options)}\n\n${COMMANDS_FOOTER_TEXT}`
+  )
+}
+function buildBookingConfirmationMessage(params: {
+  serviceName: string
+  staffName: string
+  dateLabel: string
+  timeLabel: string
 }) {
-  if (!params.suggestions.length) {
-    return `${params.intro ? `${params.intro}\n` : ""}Nao encontrei horarios proximos disponiveis agora. Pode me dizer outro dia ou periodo para eu buscar disponibilidade.`
-  }
-
-  return `${params.intro ? `${params.intro}\n` : ""}Aqui estao alguns horarios disponiveis:\n${buildSuggestedSlotsText(params.suggestions)}\n\nPode responder com o numero da opcao ou me dizer outro dia e horario.`
+  return buildButtonsBotMessage({
+    bodyText: `Etapa 5 de 5: confirme seu agendamento.\n\nServico: ${params.serviceName}\nProfissional: ${params.staffName}\nDia: ${params.dateLabel}\nHorario: ${params.timeLabel}`,
+    buttons: [
+      { id: BOOKING_CONFIRM_OPTION_ID, title: "Confirmar" },
+      { id: BOOKING_BACK_OPTION_ID, title: "Voltar" },
+      { id: BOOKING_END_OPTION_ID, title: "Encerrar" },
+    ],
+  })
 }
 
-function buildUnavailableTimeMessage(params: {
-  message: string
-  suggestions: SuggestedSlot[]
-}) {
-  if (!params.suggestions.length) {
-    return `${params.message} Pode me dizer outro dia ou periodo para eu buscar disponibilidade.`
-  }
-
-  return `${params.message}\nSugestoes proximas:\n${buildSuggestedSlotsText(params.suggestions)}\n\nPode responder com o numero da opcao ou me dizer outro dia e horario.`
+function buildAppointmentActionPrompt(label: string) {
+  return buildButtonsBotMessage({
+    bodyText: `Agendamento selecionado:\n${label}\n\nO que voce deseja fazer?`,
+    buttons: [
+      { id: APPOINTMENT_CANCEL_OPTION_ID, title: "Desmarcar" },
+      { id: APPOINTMENT_RESCHEDULE_OPTION_ID, title: "Remarcar" },
+      { id: NAV_BACK_OPTION_ID, title: "Voltar" },
+    ],
+  })
 }
 
-function buildServiceChoicePrompt(serviceNames: string[]) {
-  if (!serviceNames.length) {
-    return "Ainda nao ha servicos cadastrados. Peca para a loja cadastrar um servico primeiro."
-  }
-
-  return `Qual servico voce quer agendar?\nTemos: ${serviceNames.join(", ")}.\nPode responder com o nome do servico.`
+function buildAppointmentCancellationPrompt(label: string) {
+  return buildButtonsBotMessage({
+    bodyText: `Confirma o cancelamento deste agendamento?\n\n${label}`,
+    buttons: [
+      { id: CANCEL_CONFIRM_OPTION_ID, title: "Confirmar" },
+      { id: NAV_BACK_OPTION_ID, title: "Voltar" },
+    ],
+  })
 }
 
 function serializeSuggestedSlots(suggestions: SuggestedSlot[]) {
@@ -420,6 +652,14 @@ function serializeSuggestedSlots(suggestions: SuggestedSlot[]) {
     startAt: slot.startAt.toISOString(),
     endAt: slot.endAt.toISOString(),
     label: slot.label,
+  }))
+}
+
+function serializeDateOptions(options: AvailableDateOption[]) {
+  return options.map((option) => ({
+    dateKey: option.dateKey,
+    label: formatDateKeyForBot(option.dateKey),
+    firstStartAt: option.firstStartAt.toISOString(),
   }))
 }
 
@@ -466,6 +706,31 @@ function getStoredSuggestedSlots(context: Record<string, unknown>) {
   })
 }
 
+function getStoredDateOptions(context: Record<string, unknown>) {
+  const raw = context.dateOptions
+
+  if (!Array.isArray(raw)) {
+    return []
+  }
+
+  return raw.flatMap((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      return []
+    }
+
+    const dateKey = typeof entry.dateKey === "string" ? entry.dateKey : null
+    const label = typeof entry.label === "string" ? entry.label : null
+    const firstStartAt =
+      typeof entry.firstStartAt === "string" ? entry.firstStartAt : null
+
+    if (!dateKey || !label || !firstStartAt) {
+      return []
+    }
+
+    return [{ dateKey, label, firstStartAt } satisfies StoredDateOption]
+  })
+}
+
 function getStoredAppointmentOptions(context: Record<string, unknown>) {
   const raw = context.appointmentOptions
   if (!Array.isArray(raw)) {
@@ -489,21 +754,44 @@ function getStoredAppointmentOptions(context: Record<string, unknown>) {
 }
 
 function resolveSuggestedSlotChoice(text: string, suggestions: SuggestedSlot[]) {
-  const match = normalizeBotText(text).match(/^(\d{1,2})$/)
-  if (!match) {
+  const index = getNumericChoice(text)
+
+  if (index === null) {
     return null
   }
 
-  return suggestions[Number(match[1]) - 1] ?? null
+  return suggestions[index] ?? null
 }
 
 function resolveStoredAppointmentChoice(text: string, options: StoredAppointmentOption[]) {
-  const match = normalizeBotText(text).match(/^(\d{1,2})$/)
-  if (!match) {
+  const index = getNumericChoice(text)
+
+  if (index === null) {
     return null
   }
 
-  return options[Number(match[1]) - 1] ?? null
+  return options[index] ?? null
+}
+
+function getStoredDateOptionChoice(text: string, options: StoredDateOption[]) {
+  const index = getNumericChoice(text)
+
+  if (index === null) {
+    return null
+  }
+
+  return options[index] ?? null
+}
+
+function getStoredNumberValue(context: Record<string, unknown>, key: "dateOptionPage" | "timeSlotPage") {
+  const value = context[key]
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : 0
+}
+
+function getTimeSelectionStage(context: Record<string, unknown>) {
+  return context.timeSelectionStage === "DAY" || context.timeSelectionStage === "TIME"
+    ? context.timeSelectionStage
+    : null
 }
 
 function toParsedDateTimeValue(startAt: Date, timeZone: string): ParsedDateTimeValue {
@@ -545,6 +833,11 @@ function buildBotContext(context: Prisma.JsonValue | null | undefined): BotConve
     timezone: typeof record.timezone === "string" ? record.timezone : null,
     mainMenuShown: record.mainMenuShown === true,
     appointmentOptions: serializeAppointmentOptions(getStoredAppointmentOptions(record)),
+    dateOptions: getStoredDateOptions(record),
+    selectedDateKey:
+      typeof record.selectedDateKey === "string" ? record.selectedDateKey : null,
+    selectedDateLabel:
+      typeof record.selectedDateLabel === "string" ? record.selectedDateLabel : null,
     selectedAppointmentId:
       typeof record.selectedAppointmentId === "string" ? record.selectedAppointmentId : null,
     selectedAppointmentLabel:
@@ -552,6 +845,9 @@ function buildBotContext(context: Prisma.JsonValue | null | undefined): BotConve
     rescheduleAppointmentId:
       typeof record.rescheduleAppointmentId === "string" ? record.rescheduleAppointmentId : null,
     timeSlotSuggestions: serializeSuggestedSlots(getStoredSuggestedSlots(record)),
+    timeSelectionStage: getTimeSelectionStage(record),
+    dateOptionPage: getStoredNumberValue(record, "dateOptionPage"),
+    timeSlotPage: getStoredNumberValue(record, "timeSlotPage"),
   }
 }
 
@@ -593,6 +889,7 @@ type ProcessIncomingMessageParams = {
     providerMessageId: string
     from: string
     text: string | null
+    selectedOptionId: string | null
     raw: unknown
   }
 }
@@ -611,6 +908,7 @@ type PersistedOutboundMessage = {
   id: string
   text: string
   payload: Record<string, unknown>
+  outbound: WhatsAppOutboundMessage
 }
 
 type ExistingInboundMessage = {
@@ -710,10 +1008,10 @@ async function deliverPersistedOutboundMessages(params: {
     }
 
     try {
-      const deliveryResult = await sendMetaTextMessage({
+      const deliveryResult = await sendMetaOutboundMessage({
         storeId: params.storeId,
         to: params.to,
-        text: message.text,
+        message: message.outbound,
       })
 
       try {
@@ -903,18 +1201,25 @@ async function processIncomingWhatsAppMessage(
         })
       }
 
-      async function appendBotReply(text: string, extraPayload?: Record<string, unknown>) {
-        outMessages.push(text)
+      async function appendBotReply(
+        message: string | BotOutboundMessage,
+        extraPayload?: Record<string, unknown>
+      ) {
+        const preparedMessage =
+          typeof message === "string" ? createTextBotMessage(message) : message
+
+        outMessages.push(preparedMessage.textPreview)
 
         const createdMessage = await tx.conversationMessage.create({
           data: {
             storeId: currentStoreId,
             conversationId: conversation.id,
             direction: "OUT",
-            text,
+            text: preparedMessage.textPreview,
             payload: toJsonValue({
               source: "bot",
-              text,
+              text: preparedMessage.textPreview,
+              outbound: preparedMessage.outbound,
               ...extraPayload,
             }),
           },
@@ -927,8 +1232,9 @@ async function processIncomingWhatsAppMessage(
 
         persistedOutboundMessages.push({
           id: createdMessage.id,
-          text: createdMessage.text ?? text,
+          text: createdMessage.text ?? preparedMessage.textPreview,
           payload: getJsonRecord(createdMessage.payload),
+          outbound: preparedMessage.outbound,
         })
       }
 
@@ -950,10 +1256,16 @@ async function processIncomingWhatsAppMessage(
         return {
           mainMenuShown,
           appointmentOptions: null,
+          dateOptions: null,
+          selectedDateKey: null,
+          selectedDateLabel: null,
           selectedAppointmentId: null,
           selectedAppointmentLabel: null,
           rescheduleAppointmentId: null,
           timeSlotSuggestions: null,
+          timeSelectionStage: null,
+          dateOptionPage: null,
+          timeSlotPage: null,
         } satisfies Partial<BotConversationContext>
       }
 
@@ -999,35 +1311,371 @@ async function processIncomingWhatsAppMessage(
           mainMenuShown: true,
           abandonDraft: true,
         })
-        await appendBotReply(getWelcomeMenuText(), {
+        await appendBotReply(buildMainMenuMessage(), {
           reason: "RETURN_TO_MAIN_MENU",
         })
       }
 
-      async function listActiveServiceNames() {
+      async function setSuggestedTimeSlots(suggestions: SuggestedSlot[], page = 0) {
+        await persistConversationContext({
+          timeSlotSuggestions: suggestions.length ? serializeSuggestedSlots(suggestions) : null,
+          timeSlotPage: suggestions.length ? page : null,
+        })
+      }
+
+      async function setTimeSlotPage(page: number) {
+        await persistConversationContext({
+          timeSlotPage: Math.max(0, page),
+        })
+      }
+
+      async function setDateOptions(options: AvailableDateOption[], page = 0) {
+        await persistConversationContext({
+          dateOptions: options.length ? serializeDateOptions(options) : null,
+          dateOptionPage: options.length ? page : null,
+        })
+      }
+
+      async function setDateOptionPage(page: number) {
+        await persistConversationContext({
+          dateOptionPage: Math.max(0, page),
+        })
+      }
+
+      async function clearAppointmentFlowContext() {
+        await persistConversationContext({
+          appointmentOptions: null,
+          selectedAppointmentId: null,
+          selectedAppointmentLabel: null,
+          rescheduleAppointmentId: null,
+        })
+      }
+
+      async function clearSchedulingSelectionContext() {
+        await persistConversationContext({
+          dateOptions: null,
+          selectedDateKey: null,
+          selectedDateLabel: null,
+          timeSelectionStage: null,
+          dateOptionPage: null,
+          timeSlotPage: null,
+        })
+        await setSuggestedTimeSlots([])
+      }
+
+      async function listActiveServices() {
         const services = await tx.service.findMany({
           where: {
             storeId: currentStoreId,
             active: true,
           },
           select: {
+            id: true,
             name: true,
+            durationMin: true,
           },
           orderBy: {
             name: "asc",
           },
         })
 
-        return services.map((service) => service.name)
+        return services
+      }
+
+      async function sendServiceSelectionPrompt(reason: string) {
+        await appendBotReply(buildServiceChoicePrompt(await listActiveServices()), {
+          reason,
+        })
+      }
+
+      async function sendAppointmentSelectionPrompt(params: {
+        options: StoredAppointmentOption[]
+        reason: string
+      }) {
+        const interactiveOptions = params.options.map((option) => ({
+          id: getAppointmentOptionId(option.id),
+          title: option.label,
+        }))
+
+        const message =
+          interactiveOptions.length <= 9
+            ? buildListBotMessage({
+                bodyText: "Escolha o agendamento que deseja alterar.",
+                buttonText: "Ver agendamentos",
+                options: interactiveOptions,
+                extraInteractiveRows: [{ id: NAV_BACK_OPTION_ID, title: "Voltar" }],
+              })
+            : createTextBotMessage(buildFutureAppointmentsMessage(params.options))
+
+        await appendBotReply(message, {
+          reason: params.reason,
+          appointmentOptions: serializeAppointmentOptions(params.options),
+        })
+      }
+
+      async function sendAppointmentActionPrompt(reason: string) {
+        const selectedLabel =
+          typeof conversationContext.selectedAppointmentLabel === "string"
+            ? conversationContext.selectedAppointmentLabel
+            : null
+
+        if (!selectedLabel) {
+          await reopenAppointmentSelection()
+          return
+        }
+
+        await appendBotReply(buildAppointmentActionPrompt(selectedLabel), {
+          reason,
+        })
+      }
+
+      async function sendAppointmentCancellationPrompt(reason: string) {
+        const selectedLabel =
+          typeof conversationContext.selectedAppointmentLabel === "string"
+            ? conversationContext.selectedAppointmentLabel
+            : null
+
+        if (!selectedLabel) {
+          await reopenAppointmentAction()
+          return
+        }
+
+        await appendBotReply(buildAppointmentCancellationPrompt(selectedLabel), {
+          reason,
+        })
+      }
+
+      async function sendStaffSelectionPrompt(params: {
+        draft: DraftWithRelations
+        staffMembers: EligibleStaffMember[]
+        reason: string
+      }) {
+        await appendBotReply(
+          buildStaffChoiceMessage(params.draft.service!.name, params.staffMembers),
+          {
+            reason: params.reason,
+            serviceId: params.draft.service!.id,
+          }
+        )
+      }
+
+      async function loadAvailableDateOptionsForDraft(draft: DraftWithRelations) {
+        if (!draft.service || !draft.staffMembershipId) {
+          return []
+        }
+
+        const ignoreAppointmentId =
+          typeof conversationContext.rescheduleAppointmentId === "string"
+            ? conversationContext.rescheduleAppointmentId
+            : null
+
+        return listNextAvailableDates({
+          db: tx,
+          storeId: currentStoreId,
+          durationMin: draft.service.durationMin,
+          timeZone,
+          staffMembershipId: draft.staffMembershipId,
+          ignoreAppointmentId,
+          searchStartAt: new Date(),
+          limit: DAY_OPTIONS_LIMIT,
+          searchDays: DAY_OPTIONS_SEARCH_DAYS,
+        })
+      }
+
+      async function sendDaySelectionPrompt(params: {
+        draft: DraftWithRelations
+        reason: string
+        page?: number
+      }) {
+        const availableDates = await loadAvailableDateOptionsForDraft(params.draft)
+        const maxPage =
+          availableDates.length > 0
+            ? Math.max(0, Math.ceil(availableDates.length / DAY_OPTIONS_PAGE_SIZE) - 1)
+            : 0
+        const page = Math.min(Math.max(0, params.page ?? 0), maxPage)
+        const pageOptions = slicePage(availableDates, page, DAY_OPTIONS_PAGE_SIZE)
+        const hasNextPage = (page + 1) * DAY_OPTIONS_PAGE_SIZE < availableDates.length
+
+        await persistConversationContext({
+          timeSelectionStage: "DAY",
+          selectedDateKey: null,
+          selectedDateLabel: null,
+        })
+        await setSuggestedTimeSlots([])
+        await setDateOptions(availableDates, page)
+
+        if (!pageOptions.length) {
+          await appendBotReply(
+            "Nao encontrei dias disponiveis nas proximas semanas. Se preferir, fale com um atendente.",
+            {
+              reason: params.reason,
+              serviceId: params.draft.service?.id,
+              staffMembershipId: params.draft.staffMembershipId,
+            }
+          )
+          shouldStop = true
+          return
+        }
+
+        const interactiveOptions = pageOptions.map((option) => ({
+          id: getDateOptionId(option.dateKey),
+          title: formatDateKeyForBot(option.dateKey),
+          description: `Primeiro horario ${getTimeKeyInTimeZone(option.firstStartAt, timeZone)}`,
+        }))
+
+        await appendBotReply(
+          buildListBotMessage({
+            bodyText: `Etapa 3 de 5: escolha o dia para ${params.draft.service!.name} com ${params.draft.membership!.user.name}.`,
+            buttonText: "Ver dias",
+            options: interactiveOptions,
+            extraInteractiveRows: [
+              ...(hasNextPage
+                ? [{ id: MORE_DATES_OPTION_ID, title: "Mais opcoes" }]
+                : []),
+              { id: NAV_BACK_OPTION_ID, title: "Voltar" },
+            ],
+          }),
+          {
+            reason: params.reason,
+            dateOptions: serializeDateOptions(availableDates),
+            page,
+          }
+        )
+      }
+
+      async function sendTimeSelectionPrompt(params: {
+        draft: DraftWithRelations
+        reason: string
+        page?: number
+      }) {
+        const selectedDateKey =
+          typeof conversationContext.selectedDateKey === "string"
+            ? conversationContext.selectedDateKey
+            : null
+        const selectedDateLabel =
+          typeof conversationContext.selectedDateLabel === "string"
+            ? conversationContext.selectedDateLabel
+            : null
+
+        if (!selectedDateKey || !selectedDateLabel || !params.draft.service || !params.draft.staffMembershipId) {
+          await sendDaySelectionPrompt({
+            draft: params.draft,
+            reason: "TIME_SELECTION_DATE_REQUIRED",
+          })
+          return
+        }
+
+        const ignoreAppointmentId =
+          typeof conversationContext.rescheduleAppointmentId === "string"
+            ? conversationContext.rescheduleAppointmentId
+            : null
+        const todayDateKey = getDateKeyInTimeZone(new Date(), timeZone)
+        const suggestions = await listAvailableSlotsForDate({
+          db: tx,
+          storeId: currentStoreId,
+          dateKey: selectedDateKey,
+          durationMin: params.draft.service.durationMin,
+          timeZone,
+          staffMembershipId: params.draft.staffMembershipId,
+          ignoreAppointmentId,
+          notBefore: selectedDateKey === todayDateKey ? new Date() : null,
+        })
+
+        if (!suggestions.length) {
+          await persistConversationContext({
+            selectedDateKey: null,
+            selectedDateLabel: null,
+            timeSelectionStage: "DAY",
+          })
+          await appendBotReply(
+            `Nao encontrei horarios livres em ${selectedDateLabel}. Vamos escolher outro dia.`,
+            {
+              reason: `${params.reason}_NO_SLOTS`,
+            }
+          )
+          await sendDaySelectionPrompt({
+            draft: params.draft,
+            reason: "TIME_SELECTION_NO_SLOTS",
+          })
+          return
+        }
+
+        const maxPage =
+          suggestions.length > 0
+            ? Math.max(0, Math.ceil(suggestions.length / TIME_OPTIONS_PAGE_SIZE) - 1)
+            : 0
+        const page = Math.min(Math.max(0, params.page ?? 0), maxPage)
+        const pageOptions = slicePage(suggestions, page, TIME_OPTIONS_PAGE_SIZE)
+        const hasNextPage = (page + 1) * TIME_OPTIONS_PAGE_SIZE < suggestions.length
+
+        await persistConversationContext({
+          timeSelectionStage: "TIME",
+        })
+        await setSuggestedTimeSlots(suggestions, page)
+
+        const interactiveOptions = pageOptions.map((slot) => ({
+          id: getTimeOptionId(slot.startAt),
+          title: getTimeKeyInTimeZone(slot.startAt, timeZone),
+        }))
+
+        await appendBotReply(
+          buildListBotMessage({
+            bodyText: `Etapa 4 de 5: escolha um horario para ${selectedDateLabel}.`,
+            buttonText: "Ver horarios",
+            options: interactiveOptions,
+            extraInteractiveRows: [
+              ...(hasNextPage
+                ? [{ id: MORE_TIMES_OPTION_ID, title: "Mais horarios" }]
+                : []),
+              { id: NAV_BACK_OPTION_ID, title: "Voltar" },
+            ],
+          }),
+          {
+            reason: params.reason,
+            page,
+            selectedDateKey,
+            suggestions: serializeSuggestedSlots(suggestions),
+          }
+        )
+      }
+
+      async function sendBookingConfirmationPrompt(reason: string) {
+        const draft = await ensureResolvedStaffForDraft()
+
+        if (!draft?.service || !draft.startAt || !draft.membership) {
+          await updateState("CHOOSING_TIME")
+          await appendBotReply(
+            "Ainda nao tenho um horario pronto para confirmar. Escolha um horario para continuar.",
+            {
+              reason: "BOOKING_CONFIRMATION_DRAFT_REQUIRED",
+            }
+          )
+          shouldStop = true
+          return
+        }
+
+        await appendBotReply(
+          buildBookingConfirmationMessage({
+            serviceName: draft.service.name,
+            staffName: draft.membership.user.name,
+            dateLabel: formatDateKeyForBot(getDateKeyInTimeZone(draft.startAt, timeZone)),
+            timeLabel: getTimeKeyInTimeZone(draft.startAt, timeZone),
+          }),
+          {
+            reason,
+            serviceId: draft.service.id,
+            staffMembershipId: draft.membership.id,
+            startAt: draft.startAt.toISOString(),
+            endAt: draft.endAt?.toISOString() ?? null,
+          }
+        )
       }
 
       async function reopenServiceSelection() {
         await abandonActiveDraft()
         await persistConversationContext(buildFlowResetContext(false))
         await updateState("CHOOSING_SERVICE")
-        await appendBotReply(buildServiceChoicePrompt(await listActiveServiceNames()), {
-          reason: "BACK_ONE_STEP_TO_SERVICE",
-        })
+        await sendServiceSelectionPrompt("BACK_ONE_STEP_TO_SERVICE")
       }
 
       async function reopenAppointmentSelection() {
@@ -1044,7 +1692,7 @@ async function processIncomingWhatsAppMessage(
           return
         }
 
-        await setSuggestedTimeSlots([])
+        await clearSchedulingSelectionContext()
         await persistConversationContext({
           appointmentOptions: serializeAppointmentOptions(options),
           selectedAppointmentId: null,
@@ -1052,27 +1700,15 @@ async function processIncomingWhatsAppMessage(
           rescheduleAppointmentId: null,
         })
         await updateState("CHOOSING_APPOINTMENT")
-        await appendBotReply(buildFutureAppointmentsMessage(options), {
+        await sendAppointmentSelectionPrompt({
+          options,
           reason: "BACK_ONE_STEP_TO_APPOINTMENT_SELECTION",
-          appointmentOptions: serializeAppointmentOptions(options),
         })
       }
 
       async function reopenAppointmentAction() {
-        const selectedLabel =
-          typeof conversationContext.selectedAppointmentLabel === "string"
-            ? conversationContext.selectedAppointmentLabel
-            : null
-
-        if (!selectedLabel) {
-          await reopenAppointmentSelection()
-          return
-        }
-
         await updateState("CHOOSING_APPOINTMENT_ACTION")
-        await appendBotReply(buildAppointmentActionMessage(selectedLabel), {
-          reason: "BACK_ONE_STEP_TO_APPOINTMENT_ACTION",
-        })
+        await sendAppointmentActionPrompt("BACK_ONE_STEP_TO_APPOINTMENT_ACTION")
       }
 
       async function reopenStaffSelection() {
@@ -1107,11 +1743,12 @@ async function processIncomingWhatsAppMessage(
           startAt: null,
           endAt: null,
         })
-        await setSuggestedTimeSlots([])
         await updateState("CHOOSING_STAFF")
-        await appendBotReply(buildStaffChoiceMessage(draft.service.name, eligibleStaff), {
+        await clearSchedulingSelectionContext()
+        await sendStaffSelectionPrompt({
+          draft,
+          staffMembers: eligibleStaff,
           reason: "BACK_ONE_STEP_TO_STAFF_SELECTION",
-          serviceId: draft.service.id,
         })
       }
 
@@ -1158,8 +1795,18 @@ async function processIncomingWhatsAppMessage(
         await clearDraftDateTime()
         await updateState("CHOOSING_TIME")
         const refreshedDraft = await getDraft(true)
-        await sendTimeSuggestionsForDraft({
+
+        if (getTimeSelectionStage(conversationContext) === "TIME") {
+          await sendTimeSelectionPrompt({
+            draft: refreshedDraft!,
+            reason: "BACK_ONE_STEP_TO_TIME_SELECTION",
+          })
+          return
+        }
+
+        await sendDaySelectionPrompt({
           draft: refreshedDraft!,
+          reason: "BACK_ONE_STEP_TO_DAY_SELECTION",
         })
       }
 
@@ -1183,6 +1830,18 @@ async function processIncomingWhatsAppMessage(
         }
 
         if (conversation.state === "CHOOSING_TIME") {
+          if (getTimeSelectionStage(conversationContext) === "TIME") {
+            await persistConversationContext({
+              selectedDateKey: null,
+              selectedDateLabel: null,
+              timeSelectionStage: "DAY",
+              timeSlotPage: null,
+            })
+            await setSuggestedTimeSlots([])
+            await reopenTimeSelection()
+            return
+          }
+
           const draft = await getDraft(true)
 
           if (!draft?.service) {
@@ -1222,6 +1881,9 @@ async function processIncomingWhatsAppMessage(
         }
 
         if (conversation.state === "CONFIRMING") {
+          await persistConversationContext({
+            timeSelectionStage: "TIME",
+          })
           await reopenTimeSelection()
           return
         }
@@ -1354,21 +2016,6 @@ async function processIncomingWhatsAppMessage(
         text: incomingMessage.text,
         context: buildBotContext(conversation.context),
       })
-
-      async function setSuggestedTimeSlots(suggestions: SuggestedSlot[]) {
-        await persistConversationContext({
-          timeSlotSuggestions: suggestions.length ? serializeSuggestedSlots(suggestions) : null,
-        })
-      }
-
-      async function clearAppointmentFlowContext() {
-        await persistConversationContext({
-          appointmentOptions: null,
-          selectedAppointmentId: null,
-          selectedAppointmentLabel: null,
-          rescheduleAppointmentId: null,
-        })
-      }
 
       async function ensureDraft() {
         if (ensuredDraftId) {
@@ -1602,62 +2249,12 @@ async function processIncomingWhatsAppMessage(
         })
       }
 
-      async function loadTimeSuggestionsForDraft(draft: DraftWithRelations, searchStartAt?: Date) {
-        if (!draft.service || !draft.staffMembershipId) {
-          return []
-        }
-
-        const ignoreAppointmentId =
-          typeof conversationContext.rescheduleAppointmentId === "string"
-            ? conversationContext.rescheduleAppointmentId
-            : null
-
-        return listNextAvailableSlots({
-          db: tx,
-          storeId: currentStoreId,
-          durationMin: draft.service.durationMin,
-          timeZone,
-          staffMembershipId: draft.staffMembershipId,
-          ignoreAppointmentId,
-          searchStartAt,
-          limit: TIME_SUGGESTIONS_LIMIT,
-        })
-      }
-
-      async function sendTimeSuggestionsForDraft(params: {
-        draft: DraftWithRelations
-        intro?: string
-        searchStartAt?: Date
-      }) {
-        const suggestions = await loadTimeSuggestionsForDraft(params.draft, params.searchStartAt)
-        await setSuggestedTimeSlots(suggestions)
-
-        await appendBotReply(
-          buildTimeSuggestionsMessage({
-            intro: params.intro,
-            suggestions,
-          }),
-          {
-            serviceId: params.draft.service?.id,
-            staffMembershipId: params.draft.staffMembershipId,
-            suggestions: serializeSuggestedSlots(suggestions),
-          }
-        )
-
-        return suggestions
-      }
-
       async function ensureResolvedStaffForDraft() {
         const draft = await getDraft(true)
 
         if (!draft?.service) {
           await updateState("CHOOSING_SERVICE")
-          await appendBotReply(
-            "Antes de escolher profissional, preciso identificar o servico. Qual servico voce quer agendar?",
-            {
-              reason: "SERVICE_REQUIRED",
-            }
-          )
+          await sendServiceSelectionPrompt("SERVICE_REQUIRED")
           shouldStop = true
           return null
         }
@@ -1679,15 +2276,13 @@ async function processIncomingWhatsAppMessage(
             startAt: null,
             endAt: null,
           })
-          await setSuggestedTimeSlots([])
+          await clearSchedulingSelectionContext()
           await updateState("CHOOSING_SERVICE")
-          await appendBotReply(
-            `Nao ha profissional disponivel para ${draft.service.name} no momento. Escolha outro servico.`,
-            {
-              reason: "NO_ELIGIBLE_STAFF",
-              serviceId: draft.service.id,
-            }
-          )
+          await appendBotReply(`Nao ha profissional disponivel para ${draft.service.name} no momento.`, {
+            reason: "NO_ELIGIBLE_STAFF",
+            serviceId: draft.service.id,
+          })
+          await sendServiceSelectionPrompt("NO_ELIGIBLE_STAFF")
           shouldStop = true
           return null
         }
@@ -1695,15 +2290,19 @@ async function processIncomingWhatsAppMessage(
         if (eligibleStaff.length === 1) {
           await setDraftSelection({
             staffMembershipId: eligibleStaff[0].membershipId,
+            startAt: null,
+            endAt: null,
           })
+          await clearSchedulingSelectionContext()
           return getDraft(true)
         }
 
         await updateState("CHOOSING_STAFF")
-        await setSuggestedTimeSlots([])
-        await appendBotReply(buildStaffChoiceMessage(draft.service.name, eligibleStaff), {
+        await clearSchedulingSelectionContext()
+        await sendStaffSelectionPrompt({
+          draft,
+          staffMembers: eligibleStaff,
           reason: "STAFF_SELECTION_REQUIRED",
-          serviceId: draft.service.id,
         })
         shouldStop = true
         return null
@@ -1737,6 +2336,86 @@ async function processIncomingWhatsAppMessage(
           continue
         }
 
+        if (action.type === "SHOW_MAIN_MENU") {
+          await appendBotReply(buildMainMenuMessage(), {
+            reason: "MAIN_MENU_SHOWN",
+          })
+          continue
+        }
+
+        if (action.type === "SHOW_SERVICE_SELECTION") {
+          await sendServiceSelectionPrompt("SERVICE_SELECTION_PROMPT")
+          continue
+        }
+
+        if (action.type === "SHOW_STAFF_SELECTION") {
+          const draft = await ensureResolvedStaffForDraft()
+          if (!draft?.service) {
+            continue
+          }
+
+          const eligibleStaff = await listEligibleStaffForService({
+            db: tx,
+            storeId: currentStoreId,
+            serviceId: draft.service.id,
+          })
+
+          if (eligibleStaff.length <= 1) {
+            continue
+          }
+
+          await updateState("CHOOSING_STAFF")
+          await sendStaffSelectionPrompt({
+            draft,
+            staffMembers: eligibleStaff,
+            reason: "STAFF_SELECTION_PROMPT",
+          })
+          continue
+        }
+
+        if (action.type === "SHOW_DAY_SELECTION") {
+          const draft = await ensureResolvedStaffForDraft()
+          if (!draft?.service || !draft.membership) {
+            continue
+          }
+
+          await updateState("CHOOSING_TIME")
+          await sendDaySelectionPrompt({
+            draft,
+            reason: "DAY_SELECTION_PROMPT",
+          })
+          continue
+        }
+
+        if (action.type === "SHOW_TIME_SELECTION") {
+          const draft = await ensureResolvedStaffForDraft()
+          if (!draft?.service || !draft.membership) {
+            continue
+          }
+
+          await updateState("CHOOSING_TIME")
+          await sendTimeSelectionPrompt({
+            draft,
+            reason: "TIME_SELECTION_PROMPT",
+          })
+          continue
+        }
+
+        if (action.type === "SHOW_BOOKING_CONFIRMATION") {
+          await sendBookingConfirmationPrompt("BOOKING_CONFIRMATION_PROMPT")
+          continue
+        }
+
+        if (action.type === "SHOW_APPOINTMENT_ACTION") {
+          await sendAppointmentActionPrompt("APPOINTMENT_ACTION_PROMPT")
+          continue
+        }
+
+        if (action.type === "SHOW_APPOINTMENT_CANCELLATION_CONFIRMATION") {
+          await sendAppointmentCancellationPrompt("APPOINTMENT_CANCELLATION_PROMPT")
+          continue
+        }
+
         if (action.type === "LIST_FUTURE_APPOINTMENTS") {
           const appointments = await listFutureAppointmentsForCustomer()
           const options = appointments.map((appointment) => ({
@@ -1744,7 +2423,7 @@ async function processIncomingWhatsAppMessage(
             label: buildAppointmentLabel(appointment, timeZone),
           }))
 
-          await setSuggestedTimeSlots([])
+          await clearSchedulingSelectionContext()
 
           if (!options.length) {
             await clearAppointmentFlowContext()
@@ -1763,9 +2442,9 @@ async function processIncomingWhatsAppMessage(
             rescheduleAppointmentId: null,
           })
           await updateState("CHOOSING_APPOINTMENT")
-          await appendBotReply(buildFutureAppointmentsMessage(options), {
+          await sendAppointmentSelectionPrompt({
+            options,
             reason: "FUTURE_APPOINTMENTS_FOUND",
-            appointmentOptions: serializeAppointmentOptions(options),
           })
           continue
         }
@@ -1775,7 +2454,7 @@ async function processIncomingWhatsAppMessage(
 
           if (!options.length) {
             await clearAppointmentFlowContext()
-            await setSuggestedTimeSlots([])
+            await clearSchedulingSelectionContext()
             await updateState("IDLE")
             await appendBotReply("Nao encontrei agendamentos futuros vinculados a este numero.", {
               reason: "NO_FUTURE_APPOINTMENTS",
@@ -1784,20 +2463,26 @@ async function processIncomingWhatsAppMessage(
             continue
           }
 
-          const selectedOption = resolveStoredAppointmentChoice(action.text, options)
+          const selectedAppointmentIdFromInteractive = getValueFromOptionId(
+            incomingMessage.selectedOptionId,
+            APPOINTMENT_OPTION_ID_PREFIX
+          )
+          const selectedOption =
+            options.find((option) => option.id === selectedAppointmentIdFromInteractive) ??
+            resolveStoredAppointmentChoice(action.text, options)
 
           if (!selectedOption) {
             await persistConversationContext({
               appointmentOptions: serializeAppointmentOptions(options),
             })
             await updateState("CHOOSING_APPOINTMENT")
-            await appendBotReply(
-              `Nao entendi qual agendamento voce quer alterar.\n${buildFutureAppointmentsMessage(options)}`,
-              {
-                reason: "APPOINTMENT_SELECTION_INVALID",
-                appointmentOptions: serializeAppointmentOptions(options),
-              }
-            )
+            await appendBotReply("Nao entendi qual agendamento voce quer alterar.", {
+              reason: "APPOINTMENT_SELECTION_INVALID",
+            })
+            await sendAppointmentSelectionPrompt({
+              options,
+              reason: "APPOINTMENT_SELECTION_INVALID",
+            })
             shouldStop = true
             continue
           }
@@ -1840,7 +2525,7 @@ async function processIncomingWhatsAppMessage(
 
             if (!refreshedOptions.length) {
               await clearAppointmentFlowContext()
-              await setSuggestedTimeSlots([])
+              await clearSchedulingSelectionContext()
               await updateState("IDLE")
               await appendBotReply("Nao encontrei mais agendamentos futuros vinculados a este numero.", {
                 reason: "APPOINTMENT_SELECTION_STALE",
@@ -1856,13 +2541,13 @@ async function processIncomingWhatsAppMessage(
               rescheduleAppointmentId: null,
             })
             await updateState("CHOOSING_APPOINTMENT")
-            await appendBotReply(
-              `Esse agendamento nao esta mais disponivel para alteracao.\n${buildFutureAppointmentsMessage(refreshedOptions)}`,
-              {
-                reason: "APPOINTMENT_SELECTION_STALE",
-                appointmentOptions: serializeAppointmentOptions(refreshedOptions),
-              }
-            )
+            await appendBotReply("Esse agendamento nao esta mais disponivel para alteracao.", {
+              reason: "APPOINTMENT_SELECTION_STALE",
+            })
+            await sendAppointmentSelectionPrompt({
+              options: refreshedOptions,
+              reason: "APPOINTMENT_SELECTION_STALE",
+            })
             shouldStop = true
             continue
           }
@@ -1875,12 +2560,9 @@ async function processIncomingWhatsAppMessage(
             selectedAppointmentLabel: selectedLabel,
             rescheduleAppointmentId: null,
           })
-          await setSuggestedTimeSlots([])
+          await clearSchedulingSelectionContext()
           await updateState("CHOOSING_APPOINTMENT_ACTION")
-          await appendBotReply(buildAppointmentActionMessage(selectedLabel), {
-            reason: "APPOINTMENT_SELECTED",
-            appointmentId: selectedAppointment.id,
-          })
+          await sendAppointmentActionPrompt("APPOINTMENT_SELECTED")
           continue
         }
 
@@ -1889,7 +2571,7 @@ async function processIncomingWhatsAppMessage(
 
           if (!selectedAppointment) {
             await clearAppointmentFlowContext()
-            await setSuggestedTimeSlots([])
+            await clearSchedulingSelectionContext()
             await updateState("IDLE")
             await appendBotReply(
               "Nao encontrei um agendamento futuro valido para cancelar neste numero.",
@@ -1923,7 +2605,7 @@ async function processIncomingWhatsAppMessage(
           })
 
           await clearAppointmentFlowContext()
-          await setSuggestedTimeSlots([])
+          await clearSchedulingSelectionContext()
           await appendBotReply(
             `Agendamento desmarcado com sucesso: ${buildAppointmentLabel(selectedAppointment, timeZone)}.`,
             {
@@ -1939,7 +2621,7 @@ async function processIncomingWhatsAppMessage(
 
           if (!selectedAppointment) {
             await clearAppointmentFlowContext()
-            await setSuggestedTimeSlots([])
+            await clearSchedulingSelectionContext()
             await updateState("IDLE")
             await appendBotReply(
               "Nao encontrei um agendamento futuro valido para remarcar neste numero.",
@@ -1982,7 +2664,7 @@ async function processIncomingWhatsAppMessage(
             selectedAppointmentLabel: selectedLabel,
             rescheduleAppointmentId: selectedAppointment.id,
           })
-          await setSuggestedTimeSlots([])
+          await clearSchedulingSelectionContext()
 
           const preparedDraft = await ensureResolvedStaffForDraft()
           if (!preparedDraft) {
@@ -1990,9 +2672,9 @@ async function processIncomingWhatsAppMessage(
           }
 
           await updateState("CHOOSING_TIME")
-          await sendTimeSuggestionsForDraft({
+          await sendDaySelectionPrompt({
             draft: preparedDraft,
-            intro: `Perfeito! Vamos remarcar ${selectedLabel}.`,
+            reason: "RESCHEDULE_DAY_SELECTION",
           })
           continue
         }
@@ -2001,37 +2683,30 @@ async function processIncomingWhatsAppMessage(
           await ensureDraft()
 
           const query = normalizeBotText(action.text)
-          const services = await tx.service.findMany({
-            where: {
-              storeId: currentStoreId,
-              active: true,
-            },
-            select: {
-              id: true,
-              name: true,
-              durationMin: true,
-            },
-            orderBy: { name: "asc" },
-          })
+          const services = await listActiveServices()
+          const selectedServiceIdFromInteractive = getValueFromOptionId(
+            incomingMessage.selectedOptionId,
+            SERVICE_OPTION_ID_PREFIX
+          )
 
           const matched =
+            services.find((service) => service.id === selectedServiceIdFromInteractive) ??
             services.find((service) => normalizeBotText(service.name) === query) ??
             services.find((service) => {
               const normalizedName = normalizeBotText(service.name)
               return normalizedName.includes(query) || query.includes(normalizedName)
-            })
+            }) ??
+            (() => {
+              const numericChoice = getNumericChoice(action.text)
+              return numericChoice === null ? null : services[numericChoice] ?? null
+            })()
 
           if (!matched) {
-            const list = services.map((service, index) => `${index + 1}) ${service.name}`).join("\n")
-
-            const textOut = services.length
-              ? `Nao encontrei esse servico. Escolha uma opcao:\n${list}`
-              : "Ainda nao ha servicos cadastrados. Peca para o admin cadastrar um servico primeiro."
-
             await updateState("CHOOSING_SERVICE")
-            await appendBotReply(textOut, {
+            await appendBotReply("Nao encontrei esse servico. Escolha uma opcao da lista ou digite o nome.", {
               reason: "SERVICE_NOT_FOUND",
             })
+            await sendServiceSelectionPrompt("SERVICE_NOT_FOUND")
             shouldStop = true
             continue
           }
@@ -2042,7 +2717,7 @@ async function processIncomingWhatsAppMessage(
             startAt: null,
             endAt: null,
           })
-          await setSuggestedTimeSlots([])
+          await clearSchedulingSelectionContext()
           continue
         }
 
@@ -2053,9 +2728,9 @@ async function processIncomingWhatsAppMessage(
           }
 
           await updateState("CHOOSING_TIME")
-          await sendTimeSuggestionsForDraft({
+          await sendDaySelectionPrompt({
             draft,
-            intro: `Show! Servico: ${draft.service!.name}. Profissional: ${draft.membership!.user.name}.`,
+            reason: "DAY_SELECTION_AFTER_SERVICE",
           })
           continue
         }
@@ -2065,12 +2740,7 @@ async function processIncomingWhatsAppMessage(
 
           if (!draft?.service) {
             await updateState("CHOOSING_SERVICE")
-            await appendBotReply(
-              "Antes de escolher profissional, preciso identificar o servico. Qual servico voce quer agendar?",
-              {
-                reason: "SERVICE_REQUIRED",
-              }
-            )
+            await sendServiceSelectionPrompt("SERVICE_REQUIRED")
             shouldStop = true
             continue
           }
@@ -2088,15 +2758,13 @@ async function processIncomingWhatsAppMessage(
               startAt: null,
               endAt: null,
             })
-            await setSuggestedTimeSlots([])
+            await clearSchedulingSelectionContext()
             await updateState("CHOOSING_SERVICE")
-            await appendBotReply(
-              `Nao ha profissional disponivel para ${draft.service.name} no momento. Escolha outro servico.`,
-              {
-                reason: "NO_ELIGIBLE_STAFF",
-                serviceId: draft.service.id,
-              }
-            )
+            await appendBotReply(`Nao ha profissional disponivel para ${draft.service.name} no momento.`, {
+              reason: "NO_ELIGIBLE_STAFF",
+              serviceId: draft.service.id,
+            })
+            await sendServiceSelectionPrompt("NO_ELIGIBLE_STAFF")
             shouldStop = true
             continue
           }
@@ -2107,33 +2775,62 @@ async function processIncomingWhatsAppMessage(
               startAt: null,
               endAt: null,
             })
+            await clearSchedulingSelectionContext()
 
             const updatedDraft = await getDraft(true)
             await updateState("CHOOSING_TIME")
-            await sendTimeSuggestionsForDraft({
+            await sendDaySelectionPrompt({
               draft: updatedDraft!,
-              intro: `Vou seguir com ${updatedDraft!.membership!.user.name}.`,
+              reason: "DAY_SELECTION_AFTER_STAFF_AUTOSELECT",
             })
             continue
           }
 
-          const selectedStaff = resolveEligibleStaffChoice({
-            text: action.text,
-            staffMembers: eligibleStaff,
-          })
+          const selectedStaffMembershipIdFromInteractive = getValueFromOptionId(
+            incomingMessage.selectedOptionId,
+            STAFF_OPTION_ID_PREFIX
+          )
+          const selectedStaff =
+            selectedStaffMembershipIdFromInteractive
+              ? (() => {
+                  const matchedStaff = eligibleStaff.find(
+                    (staff) => staff.membershipId === selectedStaffMembershipIdFromInteractive
+                  )
+
+                  return matchedStaff
+                    ? {
+                        ok: true as const,
+                        staff: matchedStaff,
+                      }
+                    : {
+                        ok: false as const,
+                        reason: "INVALID" as const,
+                        matches: [],
+                      }
+                })()
+              : resolveEligibleStaffChoice({
+                  text: action.text,
+                  staffMembers: eligibleStaff,
+                })
 
           if (!selectedStaff.ok) {
             await updateState("CHOOSING_STAFF")
-
-            const textOut =
+            await appendBotReply(
               selectedStaff.reason === "AMBIGUOUS"
-                ? `Encontrei mais de um profissional parecido. Escolha pelo numero:\n${buildStaffOptionsText(eligibleStaff)}`
-                : `Nao entendi qual profissional voce quer. Escolha pelo numero ou nome:\n${buildStaffOptionsText(eligibleStaff)}`
-
-            await appendBotReply(textOut, {
+                ? "Encontrei mais de um profissional parecido. Escolha uma opcao da lista."
+                : "Nao entendi qual profissional voce quer. Escolha uma opcao da lista ou digite o nome.",
+              {
               reason:
                 selectedStaff.reason === "AMBIGUOUS" ? "STAFF_SELECTION_AMBIGUOUS" : "STAFF_SELECTION_INVALID",
               serviceId: draft.service.id,
+            })
+            await sendStaffSelectionPrompt({
+              draft,
+              staffMembers: eligibleStaff,
+              reason:
+                selectedStaff.reason === "AMBIGUOUS"
+                  ? "STAFF_SELECTION_AMBIGUOUS"
+                  : "STAFF_SELECTION_INVALID",
             })
             shouldStop = true
             continue
@@ -2144,97 +2841,207 @@ async function processIncomingWhatsAppMessage(
             startAt: null,
             endAt: null,
           })
+          await clearSchedulingSelectionContext()
 
           const updatedDraft = await getDraft(true)
           await updateState("CHOOSING_TIME")
-          await sendTimeSuggestionsForDraft({
+          await sendDaySelectionPrompt({
             draft: updatedDraft!,
-            intro: `Perfeito! Vou seguir com ${updatedDraft!.membership!.user.name}.`,
+            reason: "DAY_SELECTION_AFTER_STAFF",
           })
           continue
         }
 
-        if (action.type === "SUGGEST_TIME_SLOTS") {
+        if (action.type === "SELECT_DAY_FROM_TEXT") {
           const draft = await ensureResolvedStaffForDraft()
           if (!draft?.service || !draft.staffMembershipId || !draft.membership) {
             continue
           }
 
-          await updateState("CHOOSING_TIME")
-          await sendTimeSuggestionsForDraft({ draft })
-          continue
-        }
+          const storedDateOptions = getStoredDateOptions(conversationContext)
+          const currentPage = getStoredNumberValue(conversationContext, "dateOptionPage")
 
-        if (action.type === "SELECT_SUGGESTED_SLOT") {
-          const draft = await ensureResolvedStaffForDraft()
-          if (!draft?.service || !draft.staffMembershipId) {
+          if (incomingMessage.selectedOptionId === MORE_DATES_OPTION_ID) {
+            const nextPage = currentPage + 1
+            await setDateOptionPage(nextPage)
+            await sendDaySelectionPrompt({
+              draft,
+              reason: "DAY_SELECTION_NEXT_PAGE",
+              page: nextPage,
+            })
             continue
           }
 
-          let suggestions = getStoredSuggestedSlots(conversationContext)
-          if (!suggestions.length) {
-            suggestions = await loadTimeSuggestionsForDraft(draft)
-            await setSuggestedTimeSlots(suggestions)
-          }
+          const currentPageOptions = slicePage(
+            storedDateOptions,
+            currentPage,
+            DAY_OPTIONS_PAGE_SIZE
+          )
+          const selectedDateKeyFromInteractive = getValueFromOptionId(
+            incomingMessage.selectedOptionId,
+            DATE_OPTION_ID_PREFIX
+          )
+          const selectedDateOption =
+            currentPageOptions.find((option) => option.dateKey === selectedDateKeyFromInteractive) ??
+            getStoredDateOptionChoice(action.text, currentPageOptions)
+          const parsedDate =
+            selectedDateOption
+              ? {
+                  ok: true as const,
+                  value: {
+                    dateKey: selectedDateOption.dateKey,
+                    label: selectedDateOption.label,
+                  },
+                }
+              : parseDateFromText({
+                  text: action.text,
+                  timeZone,
+                })
 
-          const selectedSlot = resolveSuggestedSlotChoice(action.text, suggestions)
-
-          if (!selectedSlot) {
+          if (!parsedDate.ok) {
             await updateState("CHOOSING_TIME")
-            await appendBotReply(
-              buildTimeSuggestionsMessage({
-                intro: "Nao encontrei essa opcao.",
-                suggestions,
-              }),
-              {
-                reason: "SUGGESTED_SLOT_INVALID",
-                staffMembershipId: draft.staffMembershipId,
-                suggestions: serializeSuggestedSlots(suggestions),
-              }
-            )
+            await appendBotReply(parsedDate.error, {
+              reason: "DAY_SELECTION_INVALID",
+            })
+            await sendDaySelectionPrompt({
+              draft,
+              reason: "DAY_SELECTION_INVALID",
+              page: currentPage,
+            })
             shouldStop = true
             continue
           }
 
-          parsedDateTime = toParsedDateTimeValue(selectedSlot.startAt, timeZone)
-          continue
-        }
-
-        if (action.type === "PARSE_DATETIME_FROM_TEXT") {
-          const parsed = parseDateTimeFromText({
-            text: action.text,
-            timeZone,
+          await persistConversationContext({
+            selectedDateKey: parsedDate.value.dateKey,
+            selectedDateLabel: parsedDate.value.label,
+            timeSelectionStage: "TIME",
+            timeSlotPage: 0,
           })
+          await clearDraftDateTime()
+          await updateState("CHOOSING_TIME")
+          await sendTimeSelectionPrompt({
+            draft,
+            reason: "TIME_SELECTION_AFTER_DAY",
+          })
+          continue
+        }
 
-          if (!parsed.ok) {
-            parsedDateTime = null
-            const suggestions = getStoredSuggestedSlots(conversationContext)
+        if (action.type === "SELECT_TIME_INPUT") {
+          const draft = await ensureResolvedStaffForDraft()
+          if (!draft?.service || !draft.staffMembershipId || !draft.membership) {
+            continue
+          }
+
+          const selectedDateKey =
+            typeof conversationContext.selectedDateKey === "string"
+              ? conversationContext.selectedDateKey
+              : null
+          const selectedDateLabel =
+            typeof conversationContext.selectedDateLabel === "string"
+              ? conversationContext.selectedDateLabel
+              : null
+
+          if (!selectedDateKey || !selectedDateLabel) {
             await updateState("CHOOSING_TIME")
-            await appendBotReply(
-              suggestions.length
-                ? `${parsed.error}\n${buildSuggestedSlotsText(suggestions)}\n\nPode responder com o numero da opcao ou me dizer outro dia e horario.`
-                : parsed.error,
-              {
-                reason: "DATETIME_PARSE_FAILED",
-                suggestions: serializeSuggestedSlots(suggestions),
-              }
-            )
+            await sendDaySelectionPrompt({
+              draft,
+              reason: "TIME_SELECTION_DATE_REQUIRED",
+            })
             shouldStop = true
             continue
           }
 
-          parsedDateTime = parsed.value
-          continue
-        }
+          const currentPage = getStoredNumberValue(conversationContext, "timeSlotPage")
 
-        if (action.type === "CHECK_AVAILABILITY_FOR_DRAFT") {
+          if (incomingMessage.selectedOptionId === MORE_TIMES_OPTION_ID) {
+            const nextPage = currentPage + 1
+            await setTimeSlotPage(nextPage)
+            await sendTimeSelectionPrompt({
+              draft,
+              reason: "TIME_SELECTION_NEXT_PAGE",
+              page: nextPage,
+            })
+            continue
+          }
+
+          const storedSuggestions = getStoredSuggestedSlots(conversationContext)
+          const currentPageSuggestions = slicePage(
+            storedSuggestions,
+            currentPage,
+            TIME_OPTIONS_PAGE_SIZE
+          )
+          const selectedStartAtFromInteractive = getValueFromOptionId(
+            incomingMessage.selectedOptionId,
+            TIME_OPTION_ID_PREFIX
+          )
+          const selectedSuggestedSlot =
+            currentPageSuggestions.find(
+              (slot) => slot.startAt.toISOString() === selectedStartAtFromInteractive
+            ) ?? resolveSuggestedSlotChoice(action.text, currentPageSuggestions)
+
+          if (selectedSuggestedSlot) {
+            parsedDateTime = toParsedDateTimeValue(selectedSuggestedSlot.startAt, timeZone)
+          } else {
+            const parsedTime = parseTimeFromText({ text: action.text })
+
+            if (parsedTime.ok) {
+              parsedDateTime = toParsedDateTimeValue(
+                combineDateKeyAndTime(
+                  selectedDateKey,
+                  parsedTime.value.timeKey,
+                  timeZone
+                ),
+                timeZone
+              )
+            } else {
+              const parsedFullDateTime = parseDateTimeFromText({
+                text: action.text,
+                timeZone,
+              })
+
+              if (!parsedFullDateTime.ok) {
+                parsedDateTime = null
+                await updateState("CHOOSING_TIME")
+                await appendBotReply(
+                  "Nao entendi o horario. Escolha uma opcao da lista ou escreva algo como 14h ou 14:30.",
+                  {
+                    reason: "TIME_SELECTION_INVALID",
+                  }
+                )
+                await sendTimeSelectionPrompt({
+                  draft,
+                  reason: "TIME_SELECTION_INVALID",
+                  page: currentPage,
+                })
+                shouldStop = true
+                continue
+              }
+
+              parsedDateTime = parsedFullDateTime.value
+              await persistConversationContext({
+                selectedDateKey: parsedFullDateTime.value.dateKey,
+                selectedDateLabel: formatDateKeyForBot(parsedFullDateTime.value.dateKey),
+              })
+            }
+          }
+
           if (!parsedDateTime) {
             shouldStop = true
             continue
           }
 
-          const draft = await ensureResolvedStaffForDraft()
-          if (!draft?.service || !draft.staffMembershipId) {
+          if (parsedDateTime.startAt.getTime() <= Date.now()) {
+            await updateState("CHOOSING_TIME")
+            await appendBotReply("Preciso de um horario futuro para continuar.", {
+              reason: "TIME_SELECTION_IN_PAST",
+            })
+            await sendTimeSelectionPrompt({
+              draft,
+              reason: "TIME_SELECTION_IN_PAST",
+              page: currentPage,
+            })
+            shouldStop = true
             continue
           }
 
@@ -2254,61 +3061,49 @@ async function processIncomingWhatsAppMessage(
 
           if (!availability.available) {
             await clearDraftDateTime()
-            await setSuggestedTimeSlots(availability.suggestions)
             await updateState("CHOOSING_TIME")
             await appendBotReply(
-              buildUnavailableTimeMessage({
-                message: availability.message,
-                suggestions: availability.suggestions,
-              }),
+              `Esse horario nao esta mais disponivel para ${draft.membership.user.name}.`,
               {
                 reason: availability.reason,
                 staffMembershipId: draft.staffMembershipId,
-                suggestions: serializeSuggestedSlots(availability.suggestions),
               }
             )
+
+            await persistConversationContext({
+              selectedDateKey: parsedDateTime.dateKey,
+              selectedDateLabel: formatDateKeyForBot(parsedDateTime.dateKey),
+              timeSelectionStage: "TIME",
+            })
+            await sendTimeSelectionPrompt({
+              draft,
+              reason: "TIME_SELECTION_UNAVAILABLE",
+            })
             shouldStop = true
             continue
           }
 
-          draftCache = draft
-          parsedDateTime = {
+          const confirmedDateTime = {
             ...parsedDateTime,
             startAt: availability.startAt,
             label: formatDateTimeForBot(availability.startAt, timeZone),
           }
-          continue
-        }
-
-        if (action.type === "SAVE_DRAFT_DATETIME") {
-          if (!parsedDateTime) {
-            shouldStop = true
-            continue
-          }
-
-          const draft = await ensureResolvedStaffForDraft()
-          if (!draft?.service || !draft.staffMembershipId || !draft.membership) {
-            continue
-          }
-
-          const endAt = new Date(parsedDateTime.startAt.getTime() + draft.service.durationMin * 60 * 1000)
+          const endAt = new Date(
+            confirmedDateTime.startAt.getTime() + draft.service.durationMin * 60 * 1000
+          )
 
           await setDraftSelection({
-            startAt: parsedDateTime.startAt,
+            startAt: confirmedDateTime.startAt,
             endAt,
           })
+          await persistConversationContext({
+            selectedDateKey: confirmedDateTime.dateKey,
+            selectedDateLabel: formatDateKeyForBot(confirmedDateTime.dateKey),
+            timeSelectionStage: "TIME",
+          })
           await setSuggestedTimeSlots([])
-
-          const updatedDraft = await getDraft(true)
-          await appendBotReply(
-            `Perfeito! Posso confirmar seu agendamento de ${updatedDraft!.service!.name} com ${updatedDraft!.membership!.user.name} para ${formatDateTimeForBot(parsedDateTime.startAt, timeZone)}? Responda SIM para confirmar ou NAO para escolher outro horario.`,
-            {
-              serviceId: updatedDraft!.service!.id,
-              staffMembershipId: updatedDraft!.membership!.id,
-              startAt: parsedDateTime.startAt.toISOString(),
-              endAt: endAt.toISOString(),
-            }
-          )
+          await updateState("CONFIRMING")
+          await sendBookingConfirmationPrompt("BOOKING_CONFIRMATION_READY")
           continue
         }
 
@@ -2324,7 +3119,7 @@ async function processIncomingWhatsAppMessage(
 
           if (!originalAppointment) {
             await clearAppointmentFlowContext()
-            await setSuggestedTimeSlots([])
+            await clearSchedulingSelectionContext()
             await updateState("IDLE")
             await appendBotReply(
               "Nao encontrei mais o agendamento original para remarcar. Se quiser, posso te ajudar com um novo agendamento.",
@@ -2338,13 +3133,10 @@ async function processIncomingWhatsAppMessage(
 
           if (!draft?.service || !draft.startAt || !draft.endAt || !draft.staffMembershipId || !draft.membership) {
             await updateState("CHOOSING_TIME")
-            await appendBotReply(
-              "Ainda nao tenho um novo horario pronto para remarcar. Escolha um horario disponivel para continuar.",
-              {
-                reason: "RESCHEDULE_DATETIME_REQUIRED",
-                appointmentId: originalAppointment.id,
-              }
-            )
+            await sendTimeSelectionPrompt({
+              draft: (await getDraft(true))!,
+              reason: "RESCHEDULE_DATETIME_REQUIRED",
+            })
             shouldStop = true
             continue
           }
@@ -2362,19 +3154,15 @@ async function processIncomingWhatsAppMessage(
 
           if (!latestAvailability.available) {
             await clearDraftDateTime()
-            await setSuggestedTimeSlots(latestAvailability.suggestions)
             await updateState("CHOOSING_TIME")
-            await appendBotReply(
-              buildUnavailableTimeMessage({
-                message: `Esse horario nao esta mais disponivel para ${draft.membership.user.name}.`,
-                suggestions: latestAvailability.suggestions,
-              }),
-              {
-                reason: latestAvailability.reason,
-                staffMembershipId: draft.staffMembershipId,
-                suggestions: serializeSuggestedSlots(latestAvailability.suggestions),
-              }
-            )
+            await appendBotReply(`Esse horario nao esta mais disponivel para ${draft.membership.user.name}.`, {
+              reason: latestAvailability.reason,
+              staffMembershipId: draft.staffMembershipId,
+            })
+            await sendTimeSelectionPrompt({
+              draft,
+              reason: "RESCHEDULE_TIME_UNAVAILABLE",
+            })
             shouldStop = true
             continue
           }
@@ -2433,7 +3221,7 @@ async function processIncomingWhatsAppMessage(
           })
 
           await clearAppointmentFlowContext()
-          await setSuggestedTimeSlots([])
+          await clearSchedulingSelectionContext()
           createdAppointmentId = newAppointment.id
           await appendBotReply(
             `Agendamento remarcado! ${draft.service.name} com ${draft.membership.user.name} em ${formatDateTimeForBot(newAppointment.startAt, timeZone)}.`,
@@ -2452,12 +3240,10 @@ async function processIncomingWhatsAppMessage(
           if (!draft?.service || !draft.startAt || !draft.endAt || !draft.staffMembershipId || !draft.membership) {
             if (!shouldStop) {
               await updateState("CHOOSING_TIME")
-              await appendBotReply(
-                "Ainda nao tenho um horario pronto para confirmar. Me diga outro dia e horario.",
-                {
-                  reason: "DRAFT_DATETIME_REQUIRED",
-                }
-              )
+              await sendTimeSelectionPrompt({
+                draft: (await getDraft(true))!,
+                reason: "DRAFT_DATETIME_REQUIRED",
+              })
               shouldStop = true
             }
             continue
@@ -2479,19 +3265,15 @@ async function processIncomingWhatsAppMessage(
 
           if (!latestAvailability.available) {
             await clearDraftDateTime()
-            await setSuggestedTimeSlots(latestAvailability.suggestions)
             await updateState("CHOOSING_TIME")
-            await appendBotReply(
-              buildUnavailableTimeMessage({
-                message: `Esse horario nao esta mais disponivel para ${draft.membership.user.name}.`,
-                suggestions: latestAvailability.suggestions,
-              }),
-              {
-                reason: latestAvailability.reason,
-                staffMembershipId: draft.staffMembershipId,
-                suggestions: serializeSuggestedSlots(latestAvailability.suggestions),
-              }
-            )
+            await appendBotReply(`Esse horario nao esta mais disponivel para ${draft.membership.user.name}.`, {
+              reason: latestAvailability.reason,
+              staffMembershipId: draft.staffMembershipId,
+            })
+            await sendTimeSelectionPrompt({
+              draft,
+              reason: "CREATE_TIME_UNAVAILABLE",
+            })
             shouldStop = true
             continue
           }
@@ -2526,7 +3308,7 @@ async function processIncomingWhatsAppMessage(
             },
           })
           await clearAppointmentFlowContext()
-          await setSuggestedTimeSlots([])
+          await clearSchedulingSelectionContext()
 
           createdAppointmentId = appointment.id
           await appendBotReply(
@@ -2784,6 +3566,7 @@ export async function POST(req: NextRequest) {
             providerMessageId: message.providerMessageId,
             from: message.from,
             text: message.text,
+            selectedOptionId: message.interactiveReply?.id ?? null,
             raw: inboundPayload,
           },
         })
@@ -2832,6 +3615,7 @@ export async function POST(req: NextRequest) {
         providerMessageId: incomingMessage.providerMessageId,
         from: incomingMessage.from,
         text: incomingMessage.text,
+        selectedOptionId: incomingMessage.interactiveReply?.id ?? null,
         raw: incomingMessage.raw,
       },
     })
