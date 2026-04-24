@@ -18,6 +18,7 @@ export type TimeSelectionStage = "DAY" | "TIME"
 export type BotConversationContext = {
   timezone?: string | null
   mainMenuShown?: boolean | null
+  priceListPage?: number | null
   appointmentOptions?:
     | Array<{
         id: string
@@ -52,6 +53,7 @@ export type BotAction =
   | { type: "REPLY_TEXT"; text: string }
   | { type: "REPLY_STORE_INFO" }
   | { type: "SHOW_MAIN_MENU" }
+  | { type: "SHOW_SERVICE_PRICES_PAGE"; page: number }
   | { type: "SHOW_SERVICE_SELECTION" }
   | { type: "SHOW_STAFF_SELECTION" }
   | { type: "SHOW_DAY_SELECTION" }

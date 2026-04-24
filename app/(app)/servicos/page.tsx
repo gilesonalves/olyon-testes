@@ -1,9 +1,10 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import { zodResolver } from "@hookform/resolvers/zod"
+import { Controller as ControllerForm, useForm, type Resolver } from "react-hook-form"
 import HeaderPage from "@/components/headerPage"
 import { Button } from "@/components/ui/button"
-import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import {
   Dialog,
   DialogClose,
@@ -14,25 +15,40 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { Controller as ControllerForm, useForm } from "react-hook-form"
-import { zodResolver } from "@hookform/resolvers/zod"
-import { type Resolver } from "react-hook-form"
-import { Controller } from "./controllers"
 import NovoServicos from "./components/novoServicos"
-import { formSchema, type FormValues } from "./schemas"
+import { Controller } from "./controllers"
+import {
+  updateServiceFormSchema,
+  type UpdateServiceFormValues,
+} from "./schemas"
 
 type Service = {
   id: string
   name: string
   description: string | null
   durationMin: number
+  price: string | null
   active: boolean
   createdAt: string
   updatedAt: string
 }
 
 const PAGE_SIZE = 10
+const currencyFormatter = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+})
+
+function formatCurrency(value: string | number | null) {
+  if (value === null) {
+    return "Preço não informado"
+  }
+
+  const amount = typeof value === "number" ? value : Number(value)
+  return currencyFormatter.format(Number.isFinite(amount) ? amount : 0)
+}
 
 export default function Servicos() {
   const { form, onSubmit, state, updateService, deleteService } = Controller()
@@ -42,48 +58,63 @@ export default function Servicos() {
   const [selected, setSelected] = useState<Service | null>(null)
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
 
-  const editForm = useForm<FormValues>({
-    resolver: zodResolver(formSchema) as unknown as Resolver<FormValues>, // mantém compatível com seu setup atual
+  const editForm = useForm<UpdateServiceFormValues>({
+    resolver:
+      zodResolver(updateServiceFormSchema) as unknown as Resolver<UpdateServiceFormValues>,
     defaultValues: {
       name: "",
       durationMin: 30,
+      price: undefined,
       description: null,
     },
   })
 
-  const openEdit = (s: Service) => {
-    setSelected(s)
+  const openEdit = (service: Service) => {
+    setSelected(service)
     editForm.reset({
-      name: s.name,
-      durationMin: s.durationMin,
-      description: s.description ?? null,
+      name: service.name,
+      durationMin: service.durationMin,
+      price: service.price ? Number(service.price) : undefined,
+      description: service.description ?? null,
     })
     setEditOpen(true)
   }
 
-  const openDelete = (s: Service) => {
-    setSelected(s)
+  const openDelete = (service: Service) => {
+    setSelected(service)
     setDeleteOpen(true)
   }
 
-  const handleEditSubmit = async (data: FormValues) => {
+  const handleEditSubmit = async (data: UpdateServiceFormValues) => {
     if (!selected) return
+
     const ok = await updateService(selected.id, {
       name: data.name,
       durationMin: Number(data.durationMin),
+      price:
+        data.price === undefined || data.price === null ? undefined : Number(data.price),
       description: data.description ?? null,
     })
-    if (ok) setEditOpen(false)
+
+    if (ok) {
+      setEditOpen(false)
+    }
   }
 
   const handleDeleteConfirm = async () => {
     if (!selected) return
+
     const ok = await deleteService(selected.id)
-    if (ok) setDeleteOpen(false)
+    if (ok) {
+      setDeleteOpen(false)
+    }
   }
 
   const selectedName = useMemo(() => selected?.name ?? "este serviço", [selected])
-  const visibleServices = useMemo(() => state.services.slice(0, visibleCount), [state.services, visibleCount])
+  const visibleServices = useMemo(
+    () => state.services.slice(0, visibleCount),
+    [state.services, visibleCount]
+  )
   const hasMoreItems = visibleServices.length < state.services.length
 
   return (
@@ -92,7 +123,6 @@ export default function Servicos() {
         <div className="flex items-center justify-between">
           <span className="text-foreground font-semibold">Serviços</span>
 
-          {/* CREATE */}
           <Dialog>
             <DialogTrigger asChild>
               <Button type="button" variant="primary">
@@ -104,7 +134,7 @@ export default function Servicos() {
               <DialogHeader className="pb-4">
                 <DialogTitle>Novo serviço</DialogTitle>
                 <DialogDescription>
-                  Cadastre um serviço informando nome e duração.
+                  Cadastre um serviço informando nome, preço e duração.
                 </DialogDescription>
               </DialogHeader>
 
@@ -122,6 +152,34 @@ export default function Servicos() {
                           type="text"
                           aria-invalid={fieldState.invalid}
                           placeholder="Digite aqui o nome do serviço"
+                        />
+                        {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+                      </Field>
+                    )}
+                  />
+                </FieldGroup>
+
+                <FieldGroup>
+                  <ControllerForm
+                    name="price"
+                    control={form.control}
+                    render={({ field, fieldState }) => (
+                      <Field data-invalid={fieldState.invalid}>
+                        <FieldLabel htmlFor="price">Preço</FieldLabel>
+                        <Input
+                          id="price"
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          inputMode="decimal"
+                          aria-invalid={fieldState.invalid}
+                          placeholder="Ex.: 89.90"
+                          value={field.value ?? ""}
+                          onChange={(event) =>
+                            field.onChange(
+                              event.target.value === "" ? undefined : event.target.value
+                            )
+                          }
                         />
                         {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
                       </Field>
@@ -159,7 +217,6 @@ export default function Servicos() {
         </div>
       </HeaderPage>
 
-      {/* LIST */}
       <div className="bg-white px-6 py-7">
         <div className="space-y-3">
           {state.loading ? (
@@ -172,21 +229,30 @@ export default function Servicos() {
             </div>
           ) : (
             <>
-              {visibleServices.map((s: Service) => (
+              {visibleServices.map((service: Service) => (
                 <div
-                  key={s.id}
+                  key={service.id}
                   className="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div>
-                    <p className="text-sm font-medium text-gray-900">{s.name}</p>
-                    <p className="text-xs text-gray-600">{s.durationMin} min</p>
+                    <p className="text-sm font-medium text-gray-900">{service.name}</p>
+                    <p className="text-xs text-gray-600">
+                      {service.durationMin} min
+                    </p>
+                    <p className="text-xs text-gray-600">
+                      {formatCurrency(service.price)}
+                    </p>
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <Button type="button" variant="outline" onClick={() => openEdit(s)}>
+                    <Button type="button" variant="outline" onClick={() => openEdit(service)}>
                       Editar
                     </Button>
-                    <Button type="button" variant="destructive" onClick={() => openDelete(s)}>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      onClick={() => openDelete(service)}
+                    >
                       Excluir
                     </Button>
                   </div>
@@ -195,7 +261,11 @@ export default function Servicos() {
 
               {hasMoreItems ? (
                 <div className="mt-4 flex justify-center">
-                  <Button type="button" variant="outline" onClick={() => setVisibleCount((prev) => prev + PAGE_SIZE)}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setVisibleCount((prev) => prev + PAGE_SIZE)}
+                  >
                     Carregar mais
                   </Button>
                 </div>
@@ -205,7 +275,6 @@ export default function Servicos() {
         </div>
       </div>
 
-      {/* EDIT DIALOG */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent className="sm:max-w-106.25">
           <DialogHeader className="pb-4">
@@ -222,6 +291,34 @@ export default function Servicos() {
                   <Field data-invalid={fieldState.invalid}>
                     <FieldLabel htmlFor="edit-name">Nome</FieldLabel>
                     <Input {...field} id="edit-name" type="text" aria-invalid={fieldState.invalid} />
+                    {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+                  </Field>
+                )}
+              />
+            </FieldGroup>
+
+            <FieldGroup>
+              <ControllerForm
+                name="price"
+                control={editForm.control}
+                render={({ field, fieldState }) => (
+                  <Field data-invalid={fieldState.invalid}>
+                    <FieldLabel htmlFor="edit-price">Preço</FieldLabel>
+                    <Input
+                      id="edit-price"
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      inputMode="decimal"
+                      aria-invalid={fieldState.invalid}
+                      placeholder="Ex.: 89.90"
+                      value={field.value ?? ""}
+                      onChange={(event) =>
+                        field.onChange(
+                          event.target.value === "" ? undefined : event.target.value
+                        )
+                      }
+                    />
                     {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
                   </Field>
                 )}
@@ -253,7 +350,6 @@ export default function Servicos() {
         </DialogContent>
       </Dialog>
 
-      {/* DELETE CONFIRMATION */}
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent className="sm:max-w-106.25">
           <DialogHeader className="pb-2">

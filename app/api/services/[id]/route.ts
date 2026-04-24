@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma"
+import { Prisma, prisma } from "@/lib/prisma"
 import { ServiceUpdateSchema } from "@/lib/validators/service"
 import { badRequest, notFound, ok, serverError, unauthorized, forbidden } from "@/lib/api/response"
 import { requireMembershipRole } from "@/lib/guards/require-membership-role"
@@ -30,11 +30,19 @@ export async function PUT(req: Request, { params }: Params) {
 
     const service = await prisma.service.update({
       where: { id },
-      data: parsed.data,
+      data: {
+        ...parsed.data,
+        ...(parsed.data.price !== undefined
+          ? { price: new Prisma.Decimal(parsed.data.price.toFixed(2)) }
+          : {}),
+      },
     })
 
     return ok(service)
-  } catch {
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      return badRequest("Já existe um serviço com esse nome nesta loja.")
+    }
     return serverError()
   }
 }

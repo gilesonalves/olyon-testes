@@ -1,3 +1,135 @@
+## 24 de abril de 2026 - Preços e meus agendamentos no menu principal do WhatsApp
+
+### Objetivo
+
+Integrar a opção `Preços` ao fluxo real do WhatsApp usando os serviços ativos da loja com `Service.price` preenchido, e reorganizar o menu inicial para destacar `Meus agendamentos` sem criar fluxo paralelo novo para remarcação ou cancelamento.
+
+### Arquivos alterados
+
+- `app/api/webhooks/whatsapp/route.ts`
+- `src/lib/bot/flow.ts`
+- `src/lib/bot/types.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Menu principal reorganizado
+
+- O menu inicial do WhatsApp passou a usar quatro opções:
+  - `Agendar horário`
+  - `Meus agendamentos`
+  - `Preços`
+  - `Informações`
+- Como o menu agora tem quatro opções, o outbound principal passou a usar `interactive_list` da Meta em vez de `reply buttons`.
+
+#### 2. Meus agendamentos reaproveitando o fluxo real
+
+- A opção `Meus agendamentos` agora chama a mesma listagem real de agendamentos futuros por telefone já usada no fluxo de desmarcar/remarcar.
+- O bot continua reaproveitando os mesmos caminhos reais para:
+  - selecionar o agendamento
+  - desmarcar
+  - remarcar
+
+#### 3. Preços com serviços reais da loja
+
+- A nova opção `Preços` busca apenas serviços:
+  - da loja atual
+  - ativos
+  - com `price` preenchido
+- A listagem é enviada em texto curto, com formatação em BRL (`R$ 79,90`) e paginação simples quando houver muitos serviços.
+- Após cada página, o bot envia navegação curta com botões oficiais da Meta para:
+  - `Mais preços` quando houver próxima página
+  - `Agendar horário`
+  - `Menu`
+
+### Validação executada
+
+- `yarn lint`
+- `yarn build`
+
+## 24 de abril de 2026 - Preço real persistido em Serviços
+
+### Objetivo
+
+Adicionar suporte real a preço no domínio de `Service`, com persistência segura em Prisma e integração completa no CRUD de `/servicos`, sem backfill fake e sem quebrar os serviços já existentes.
+
+### Arquivos alterados
+
+- `prisma/schema.prisma`
+- `prisma/migrations/20260424194444_add_service_price/migration.sql`
+- `src/lib/validators/service.ts`
+- `app/api/services/route.ts`
+- `app/api/services/[id]/route.ts`
+- `app/(app)/servicos/schemas/index.ts`
+- `app/(app)/servicos/controllers/index.tsx`
+- `app/(app)/servicos/page.tsx`
+- `prisma/seed.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Prisma e migration segura
+
+- O model `Service` ganhou o campo `price Decimal? @db.Decimal(12, 2)`.
+- A migration adiciona a coluna como nullable, sem backfill artificial e sem forçar `0.00` em serviços já existentes.
+
+#### 2. Validators e API
+
+- O create de serviço agora exige `price` positivo com no máximo 2 casas decimais.
+- O update aceita `price` opcional, preservando a compatibilidade com serviços antigos ainda nulos.
+- `POST /api/services` e `PUT /api/services/[id]` passaram a persistir `price` via `Prisma.Decimal`.
+
+#### 3. UI e seed
+
+- A tela `/servicos` agora permite informar preço no create e no edit.
+- A listagem passou a exibir preço formatado em BRL, com fallback legível quando o serviço antigo ainda não tem preço.
+- O seed foi ajustado para criar o serviço de teste já com preço válido.
+
+### Validação executada
+
+- `yarn prisma migrate dev --name add_service_price`
+- `yarn lint`
+- `yarn build`
+- `yarn prisma db seed`
+
+## 24 de abril de 2026 - Refinamento textual do fluxo WhatsApp
+
+### Objetivo
+
+Ajustar apenas a UX textual do fluxo WhatsApp já funcionando, sem alterar a lógica principal de disponibilidade, create, remarcação ou cancelamento real de `Appointment`.
+
+### Arquivos alterados
+
+- `app/api/webhooks/whatsapp/route.ts`
+- `src/lib/bot/datetime.ts`
+- `src/lib/bot/flow.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Etapas mais limpas
+
+- Foram removidos os textos de progresso como `Etapa 1 de 5`, `Etapa 3 de 5` e equivalentes.
+- O menu inicial e os prompts de serviço, profissional, dia, horário e confirmação ficaram mais curtos e diretos.
+
+#### 2. Lista de datas simplificada
+
+- A seleção de dias agora mostra apenas a data disponível em cada opção.
+- A descrição `Primeiro horário ...` deixou de aparecer para o cliente, sem mexer no dado interno usado pelo backend.
+
+#### 3. PT-BR revisado
+
+- Labels, títulos e mensagens do fluxo foram revisados com acentuação correta e tom mais natural.
+- O helper de data/hora também passou a formatar saídas como `segunda 27/04 às 14:00`.
+
+### Validação executada
+
+- `yarn lint`
+- `yarn build`
+
 ## 24 de abril de 2026 - Fluxo WhatsApp guiado por etapas com mensagens interativas
 
 ### Objetivo

@@ -115,6 +115,10 @@
 [x] Fluxo WhatsApp com timeout por inatividade, encerrar atendimento, voltar etapa e voltar ao menu
 [x] Fluxo WhatsApp guiado por etapas com menu, servico, profissional, dia, horario e confirmacao
 [x] Mensagens interativas oficiais da Meta no WhatsApp com fallback por texto livre e numero
+[x] Refino textual do fluxo WhatsApp com PT-BR revisado, datas sem "primeiro horario" e sem indicadores visuais de etapa
+[x] Servicos com preco real persistido em `Decimal?`, CRUD de `/servicos` atualizado e migration segura sem backfill fake
+[x] Menu inicial do WhatsApp com `Agendar horário`, `Meus agendamentos`, `Preços` e `Informações`
+[x] Opção `Preços` no WhatsApp usando serviços ativos reais com preço em BRL e paginação simples
 
 ---
 
@@ -757,7 +761,7 @@ Validacao executada neste ajuste:
 Observacoes remanescentes:
 
 - O build ainda emite warnings nao bloqueantes sobre `baseline-browser-mapping` desatualizado.
-- O build ainda emite warning de root inferido por haver `package-lock.json` no diretÃ³rio pai e `yarn.lock` no projeto.
+- O build ainda emite warning de root inferido por haver `package-lock.json` no diretório pai e `yarn.lock` no projeto.
 - O build ainda emite warning deprecando `middleware` em favor de `proxy`.
 
 Proximo passo sugerido:
@@ -1058,6 +1062,9 @@ Proximo passo sugerido:
 
 | Data | Mudanca |
 |------|---------|
+| 24/04/2026 | WhatsApp: menu inicial atualizado para `Agendar horário`, `Meus agendamentos`, `Preços` e `Informações`; `Meus agendamentos` passou a reaproveitar explicitamente a listagem real de futuros por telefone, e `Preços` agora lista serviços ativos reais com `price` preenchido em BRL, com navegação para mais preços, agendar ou voltar ao menu |
+| 24/04/2026 | Servicos: adicionado `price Decimal? @db.Decimal(12, 2)` no Prisma, migration segura aplicada sem backfill fake, validators/API/UI do CRUD atualizados para exigir preco no create, aceitar no update e exibir valor em BRL |
+| 24/04/2026 | Fluxo WhatsApp refinado em UX textual: menu e etapas sem indicadores visuais, lista de datas sem "primeiro horário", labels/títulos revisados em PT-BR e navegação preservada sem mexer na lógica real de `Appointment` |
 | 24/04/2026 | WhatsApp UX guiada por etapas: webhook passou a aceitar replies interativas da Meta, outbound suporta reply buttons/list messages com fallback textual, e o fluxo real foi reorganizado em menu > servico > profissional > dia > horario > confirmacao sem quebrar create/remarcacao/cancelamento de `Appointment` |
 | 22/04/2026 | Build TypeScript: corrigido narrowing de `json.code` no create de agendamento e alinhado `ignoreAppointmentId` nos callers de disponibilidade; `yarn build` voltou a concluir |
 | 22/04/2026 | Build Vercel/Prisma: imports diretos para `generated/prisma/client` foram centralizados em `src/lib/prisma` e o script `build` passou a executar `prisma generate` antes do `next build` |

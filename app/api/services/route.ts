@@ -37,8 +37,13 @@ export async function POST(req: Request) {
       )
     }
 
+    const { price, ...serviceInput } = parsed.data
     const service = await prisma.service.create({
-      data: { storeId: guard.storeId, ...parsed.data },
+      data: {
+        storeId: guard.storeId,
+        ...serviceInput,
+        price: new Prisma.Decimal(price.toFixed(2)),
+      },
     })
 
     return created(service)

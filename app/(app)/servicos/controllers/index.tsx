@@ -4,13 +4,17 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { useEffect, useMemo, useState } from "react"
 import { useForm, type SubmitHandler, type Resolver } from "react-hook-form"
 import { toast } from "sonner"
-import { formSchema, type FormValues } from "../schemas"
+import {
+  createServiceFormSchema,
+  type CreateServiceFormValues,
+} from "../schemas"
 
 type Service = {
   id: string
   name: string
   description: string | null
   durationMin: number
+  price: string | null
   active: boolean
   createdAt: string
   updatedAt: string
@@ -20,6 +24,7 @@ type ServiceUpdatePayload = {
   name?: string
   durationMin?: number
   description?: string | null
+  price?: number
   active?: boolean
 }
 
@@ -28,11 +33,13 @@ type ApiErr = { ok: false; error: string }
 type ApiResp<T> = ApiOk<T> | ApiErr
 
 export const Controller = () => {
-  const form = useForm<FormValues>({
-    resolver: zodResolver(formSchema) as unknown as Resolver<FormValues>,
+  const form = useForm<CreateServiceFormValues>({
+    resolver:
+      zodResolver(createServiceFormSchema) as unknown as Resolver<CreateServiceFormValues>,
     defaultValues: {
       name: "",
       durationMin: 30,
+      price: undefined,
       description: null,
     },
   })
@@ -65,11 +72,12 @@ export const Controller = () => {
     void loadServices()
   }, [])
 
-  const onSubmit: SubmitHandler<FormValues> = async (data) => {
+  const onSubmit: SubmitHandler<CreateServiceFormValues> = async (data) => {
     try {
       const payload = {
         name: data.name,
         durationMin: Number(data.durationMin),
+        price: Number(data.price),
         description: data.description ?? null,
       }
 
@@ -87,7 +95,7 @@ export const Controller = () => {
       }
 
       toast.success("Serviço criado com sucesso!", { position: "bottom-right" })
-      form.reset({ name: "", durationMin: 30, description: null })
+      form.reset({ name: "", durationMin: 30, price: undefined, description: null })
       await loadServices()
     } catch {
       toast.error("Falha ao criar serviço.")

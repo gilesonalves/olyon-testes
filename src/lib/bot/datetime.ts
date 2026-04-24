@@ -5,11 +5,11 @@ const DAY_MS = 24 * 60 * 60 * 1000
 const weekdayLabels: Record<Weekday, string> = {
   SUN: "domingo",
   MON: "segunda",
-  TUE: "terca",
+  TUE: "terça",
   WED: "quarta",
   THU: "quinta",
   FRI: "sexta",
-  SAT: "sabado",
+  SAT: "sábado",
 }
 
 const weekdayTokens: Array<{ weekday: Weekday; tokens: string[] }> = [
@@ -153,7 +153,7 @@ export function getTimeKeyInTimeZone(date: Date, timeZone: string) {
 export function formatDateTimeForBot(date: Date, timeZone: string) {
   const dateKey = getDateKeyInTimeZone(date, timeZone)
   const timeKey = getTimeKeyInTimeZone(date, timeZone)
-  return `${formatDateKeyForBot(dateKey)} as ${timeKey}`
+  return `${formatDateKeyForBot(dateKey)} às ${timeKey}`
 }
 
 export function formatDateKeyForBot(dateKey: string) {
@@ -190,7 +190,7 @@ export function parseDateTimeFromText(params: {
   if (!parsedTime) {
     return {
       ok: false,
-      error: "Nao entendi o horario. Ex.: amanha 14h, segunda 15:30 ou dia 12 as 9h.",
+      error: "Não entendi o horário. Ex.: amanhã 14h, segunda 15:30 ou dia 12 às 9h.",
     }
   }
 
@@ -200,7 +200,7 @@ export function parseDateTimeFromText(params: {
   if (!dateKey) {
     return {
       ok: false,
-      error: "Nao entendi o dia. Ex.: amanha 14h, segunda 15:30 ou dia 12 as 9h.",
+      error: "Não entendi o dia. Ex.: amanhã 14h, segunda 15:30 ou dia 12 às 9h.",
     }
   }
 
@@ -210,7 +210,7 @@ export function parseDateTimeFromText(params: {
   if (startAt.getTime() <= now.getTime()) {
     return {
       ok: false,
-      error: "Preciso de um horario futuro. Ex.: amanha 14h.",
+      error: "Preciso de um horário futuro. Ex.: amanhã 14h.",
     }
   }
 
@@ -243,7 +243,7 @@ export function parseDateFromText(params: {
   if (!dateKey) {
     return {
       ok: false,
-      error: "Nao entendi o dia. Ex.: amanha, segunda ou 24/04.",
+      error: "Não entendi o dia. Ex.: amanhã, segunda ou 24/04.",
     }
   }
 
@@ -264,7 +264,7 @@ export function parseTimeFromText(params: { text: string }): ParsedTimeResult {
   if (!parsedTime) {
     return {
       ok: false,
-      error: "Nao entendi o horario. Ex.: 14h ou 14:30.",
+      error: "Não entendi o horário. Ex.: 14h ou 14:30.",
     }
   }
 

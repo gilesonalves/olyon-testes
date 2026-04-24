@@ -4,12 +4,12 @@ import { normalizeBotText } from "./datetime"
 import type { BotAction, BotConversationContext, BotResult } from "./types"
 
 const COMMANDS_FOOTER = "Comandos: voltar | menu | atendente | encerrar"
-const WELCOME_MENU_TEXT = `Ola! Vou te ajudar por etapas.
-Escolha uma opcao:
+const WELCOME_MENU_TEXT = `Olá! Como posso te ajudar?
 
-1. Agendar horario
-2. Desmarcar ou remarcar
-3. Informacoes de atendimento
+1. Agendar horário
+2. Meus agendamentos
+3. Preços
+4. Informações
 
 ${COMMANDS_FOOTER}`
 const BOT_INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000
@@ -63,7 +63,7 @@ function matchesAny(text: string, expressions: string[]) {
   })
 }
 
-function matchesMenuOption(text: string, option: "1" | "2" | "3") {
+function matchesMenuOption(text: string, option: "1" | "2" | "3" | "4") {
   const normalizedText = normalizeBotText(text)
   return new RegExp(`(^|\\b)${option}(\\b|$)`).test(normalizedText)
 }
@@ -158,10 +158,14 @@ function isSchedulingIntent(text: string) {
   )
 }
 
-function isRescheduleIntent(text: string) {
+function isAppointmentsIntent(text: string) {
   return (
     matchesMenuOption(text, "2") ||
     matchesAny(text, [
+      "meus agendamentos",
+      "meu agendamento",
+      "agendamentos",
+      "agendamento",
       "desmarcar",
       "remarcar",
       "reagendar",
@@ -170,6 +174,33 @@ function isRescheduleIntent(text: string) {
       "alterar horario",
     ])
   )
+}
+
+function isServicePricesIntent(text: string) {
+  return (
+    matchesMenuOption(text, "3") ||
+    matchesAny(text, [
+      "preco",
+      "precos",
+      "valor",
+      "valores",
+      "preco dos servicos",
+      "precos dos servicos",
+      "quanto custa",
+      "quanto fica",
+      "tabela de precos",
+    ])
+  )
+}
+
+function isMoreServicePricesIntent(text: string) {
+  return matchesAny(text, [
+    "mais",
+    "mais opcoes",
+    "mais precos",
+    "ver mais",
+    "proximos precos",
+  ])
 }
 
 function isCancelAppointmentChoice(text: string) {
@@ -185,7 +216,7 @@ function isRescheduleAppointmentChoice(text: string) {
 
 function isInfoIntent(text: string) {
   return (
-    matchesMenuOption(text, "3") ||
+    matchesMenuOption(text, "4") ||
     matchesAny(text, [
       "informacao",
       "informacoes",
@@ -225,6 +256,7 @@ function buildStartSchedulingActions(): BotAction[] {
       type: "PATCH_CONTEXT",
       context: {
         mainMenuShown: false,
+        priceListPage: null,
         appointmentOptions: null,
         selectedAppointmentId: null,
         selectedAppointmentLabel: null,
@@ -263,7 +295,7 @@ export function handleIncomingMessage(params: {
       actions: [
         {
           type: "REPLY_TEXT",
-          text: "Pode me mandar uma mensagem com o que voce precisa?",
+          text: "Pode me mandar uma mensagem com o que você precisa?",
         },
       ],
     }
@@ -396,19 +428,30 @@ export function handleIncomingMessage(params: {
     }
   }
 
+  if (
+    params.state === "IDLE" &&
+    typeof params.context?.priceListPage === "number" &&
+    isMoreServicePricesIntent(text)
+  ) {
+    return {
+      actions: [{ type: "SHOW_SERVICE_PRICES_PAGE", page: params.context.priceListPage + 1 }],
+    }
+  }
+
   if (isSchedulingIntent(text)) {
     return {
       actions: buildStartSchedulingActions(),
     }
   }
 
-  if (isRescheduleIntent(text)) {
+  if (isAppointmentsIntent(text)) {
     return {
       actions: [
         {
           type: "PATCH_CONTEXT",
           context: {
             mainMenuShown: false,
+            priceListPage: null,
             appointmentOptions: null,
             selectedAppointmentId: null,
             selectedAppointmentLabel: null,
@@ -427,10 +470,36 @@ export function handleIncomingMessage(params: {
     }
   }
 
+  if (isServicePricesIntent(text)) {
+    return {
+      actions: [
+        {
+          type: "PATCH_CONTEXT",
+          context: {
+            mainMenuShown: false,
+            priceListPage: 0,
+            appointmentOptions: null,
+            selectedAppointmentId: null,
+            selectedAppointmentLabel: null,
+            rescheduleAppointmentId: null,
+            timeSlotSuggestions: null,
+            dateOptions: null,
+            selectedDateKey: null,
+            selectedDateLabel: null,
+            timeSelectionStage: null,
+            dateOptionPage: null,
+            timeSlotPage: null,
+          },
+        },
+        { type: "SHOW_SERVICE_PRICES_PAGE", page: 0 },
+      ],
+    }
+  }
+
   if (isInfoIntent(text)) {
     return {
       actions: [
-        { type: "PATCH_CONTEXT", context: { mainMenuShown: false } },
+        { type: "PATCH_CONTEXT", context: { mainMenuShown: false, priceListPage: null } },
         { type: "REPLY_STORE_INFO" },
       ],
     }
@@ -439,7 +508,7 @@ export function handleIncomingMessage(params: {
   if (!mainMenuShown) {
     return {
       actions: [
-        { type: "PATCH_CONTEXT", context: { mainMenuShown: true } },
+        { type: "PATCH_CONTEXT", context: { mainMenuShown: true, priceListPage: null } },
         { type: "SHOW_MAIN_MENU" },
       ],
     }

@@ -207,6 +207,7 @@ async function main() {
     update: {
       description: TEST_SERVICE_DESCRIPTION,
       durationMin: 60,
+      price: "79.90",
       active: true,
     },
     create: {
@@ -214,6 +215,7 @@ async function main() {
       name: TEST_SERVICE_NAME,
       description: TEST_SERVICE_DESCRIPTION,
       durationMin: 60,
+      price: "79.90",
       active: true,
     },
   })
@@ -317,7 +319,9 @@ async function main() {
 
   console.log("Seed concluido.")
   console.log(`Loja: ${store.name} (${store.id})`)
-  console.log(`Servico de teste: ${service.name} (${service.durationMin} min)`)
+  console.log(
+    `Servico de teste: ${service.name} (${service.durationMin} min, R$ ${service.price ? Number(service.price).toFixed(2) : "-"})`
+  )
   console.log(
     `Profissionais elegiveis: ${anaUser.name} (${anaMembership.id}) e ${brunoUser.name} (${brunoMembership.id})`
   )
