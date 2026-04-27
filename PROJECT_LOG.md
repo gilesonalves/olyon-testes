@@ -6080,3 +6080,87 @@ Registrar o estado atual da integração WhatsApp após validar resposta real do
 - A base do webhook inbound ficou mais robusta para produção
 - Próximo foco permanece na validação manual da refatoração em cenários críticos de retry e idempotência
 
+## 27 de abril de 2026 - Base tecnica do Cadastro Incorporado WhatsApp/Meta
+
+### Objetivo
+
+Implementar a base tecnica do Embedded Signup no app autenticado do Olyon, reaproveitando a `WhatsAppConnection` da loja atual sem mover o webhook existente nem degradar o fluxo atual de inbound/outbound.
+
+### Arquivos alterados
+
+- `app/(app)/configuracoes/whatsapp/page.tsx`
+- `app/api/whatsapp/embedded-signup/callback/route.ts`
+- `.gitignore`
+- `src/components/whatsapp/embedded-signup-button.tsx`
+- `src/lib/validators/whatsapp-embedded-signup.ts`
+- `src/lib/whatsapp/embedded-signup.ts`
+- `.env.example`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+- Card novo na tela autenticada `/configuracoes/whatsapp` para conexao via Cadastro Incorporado da Meta, exibindo status atual e CTA `Conectar com WhatsApp Business`.
+- Componente client-side para carregar o Facebook SDK apenas no navegador, abrir o fluxo Embedded Signup, capturar `code`, `phoneNumberId`, `wabaId` e `businessId` quando retornados pela Meta e enviar tudo para a API interna.
+- `POST /api/whatsapp/embedded-signup/callback` com validacao Zod, sessao store-scoped via membership atual e resposta JSON padronizada com `ok`, `data` e `error.message`/`error.code`.
+- Helper server-side para trocar o `code` por token na Graph API, resolver dados minimos da conexao e persistir a `WhatsAppConnection` da loja atual sem expor token na resposta.
+- Regra defensiva para nao sobrescrever uma conexao `CONNECTED` existente com um retorno incompleto do Embedded Signup.
+- `.env.example` criado com os envs atuais do projeto e os novos envs necessarios para App ID, App Secret, Graph API e `config_id` do Embedded Signup.
+- `.gitignore` ajustado com `!.env.example` para que o arquivo de exemplo possa ser versionado junto com a feature.
+
+### Fora do escopo mantido
+
+- Sem alterar `app/api/webhooks/whatsapp/route.ts`.
+- Sem mover o webhook para o dominio da landing.
+- Sem trocar o fluxo atual de inbound/outbound WhatsApp.
+- Sem validar coexistencia ponta a ponta em ambiente Meta antes da aprovacao final do App Review e Access Verification.
+
+### Validacao executada
+
+- `yarn lint` passou com 2 warnings antigos fora do escopo em controllers de auth (`data` nao usada).
+- `yarn build` passou com sucesso.
+- `prisma generate` foi executado pelo proprio script de build e concluiu com sucesso.
+
+### Resultado
+
+A base tecnica do Cadastro Incorporado WhatsApp/Meta ficou implementada no backoffice autenticado do Olyon e pronta para integracao real assim que a aprovacao final da Meta liberar a validacao ponta a ponta de coexistencia.
+
+## 27 de abril de 2026 - Refino da UX e do diagnostico tecnico em `/configuracoes/whatsapp`
+
+### Objetivo
+
+Separar a visao operacional da loja da visao tecnica da conexao Meta/WhatsApp, mantendo a `WhatsAppConnection` sempre vinculada a uma `Store` especifica da sessao atual e sem alterar o webhook existente.
+
+### Arquivos alterados
+
+- `app/(app)/configuracoes/whatsapp/page.tsx`
+- `app/api/store/current/whatsapp-connection/route.ts`
+- `src/components/whatsapp/embedded-signup-button.tsx`
+- `src/lib/whatsapp/embedded-signup.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+- A cabeca da tela `/configuracoes/whatsapp` foi simplificada para a loja, com status amigavel (`Conectado`, `Nao conectado`, `Pendente`, `Erro na conexao`), CTA de conexao e textos curtos sobre permissao de administrador na Meta e dependencia da aprovacao final do app.
+- Os blocos tecnicos de auditoria, checklist operacional, teste real com Meta, resumo tecnico e formulario manual passaram a ser renderizados apenas quando a sessao possui `globalRole = SUPER_ADMIN`.
+- O texto tecnico agora deixa explicito que qualquer diagnostico continua restrito a uma `WhatsAppConnection` da `Store` atual da sessao, sem configuracao global unica para o sistema.
+- O componente `EmbeddedSignupButton` manteve a logica validada do SDK/popup/callback, mas trocou mensagens cruas por mensagens amigaveis para a loja.
+- A rota store-scoped `GET/PATCH /api/store/current/whatsapp-connection` deixou de devolver `accessToken` no payload do client, preservando o uso do token apenas no backend para avaliacao operacional.
+
+### Fora do escopo mantido
+
+- Sem alterar `app/api/webhooks/whatsapp/route.ts`.
+- Sem mover o webhook para outro dominio.
+- Sem alterar o fluxo atual de inbound/outbound WhatsApp.
+- Sem mudar Prisma/schema/migrations.
+- Sem separar o login em rotas diferentes.
+
+### Validacao executada
+
+- `yarn lint`
+- `yarn build`
+
+### Resultado
+
+A tela `/configuracoes/whatsapp` passou a ter uma UX adequada para a loja, enquanto o diagnostico tecnico detalhado ficou protegido para `SUPER_ADMIN`. A configuracao continua multi-tenant e store-scoped, com persistencia e leitura vinculadas a `storeId` resolvido pela sessao/membership.

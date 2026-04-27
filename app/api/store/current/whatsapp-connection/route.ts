@@ -57,9 +57,16 @@ function getUniqueConstraintMessage(error: Prisma.PrismaClientKnownRequestError)
 function toStoreScopedWhatsAppConnectionApiData(
   connection?: Parameters<typeof toWhatsAppConnectionApiData>[0]
 ) {
+  const safeConnection = connection
+    ? {
+        ...connection,
+        accessToken: undefined,
+      }
+    : null
+
   return {
-    ...toWhatsAppConnectionApiData(connection),
-    formValues: toWhatsAppConnectionFormValues(connection),
+    ...toWhatsAppConnectionApiData(safeConnection),
+    formValues: toWhatsAppConnectionFormValues(safeConnection),
     operational: evaluateWhatsAppConnectionOperationalStatus(connection),
   }
 }

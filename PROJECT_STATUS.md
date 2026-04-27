@@ -1,6 +1,6 @@
 # PROJECT_STATUS.md
 
-**Data de ultima atualizacao:** 24 de abril de 2026
+**Data de ultima atualizacao:** 27 de abril de 2026
 
 ## Status geral do projeto Olyon
 
@@ -107,6 +107,10 @@
 [x] Webhook Meta com verificacao `GET` e inbound real `POST`
 [x] Roteamento inbound nativo por `phoneNumberId`
 [x] Onboarding/admin minimo da `WhatsAppConnection` por `Store`
+[x] Base tecnica do Cadastro Incorporado WhatsApp/Meta implementada na tela autenticada da loja
+[x] `/configuracoes/whatsapp` refinada para visao simples da loja com status amigavel e CTA de conexao
+[x] Diagnostico tecnico da `WhatsAppConnection` restrito a `SUPER_ADMIN`, sempre vinculado a uma `Store` da sessao atual
+[ ] Validacao real de coexistencia via Embedded Signup pendente de aprovacao final da Meta
 [x] Envio outbound real de texto via Meta Graph API usando a `WhatsAppConnection` da loja
 [x] Teste real store-scoped da conexao Meta/WhatsApp atual da loja
 [x] Check real da conexao Meta/WhatsApp alinhado ao endpoint `GET /v25.0/{phoneNumberId}` ja validado externamente
@@ -1063,6 +1067,8 @@ Proximo passo sugerido:
 
 | Data | Mudanca |
 |------|---------|
+| 27/04/2026 | WhatsApp configuracoes refinadas: `/configuracoes/whatsapp` passou a priorizar a UX simples da loja, sem expor `accessToken` no payload store-scoped padrao e com diagnostico detalhado restrito a `SUPER_ADMIN`, sempre sobre a `WhatsAppConnection` da Store atual |
+| 27/04/2026 | WhatsApp Embedded Signup: card autenticado em `/configuracoes/whatsapp`, SDK Meta no client, `POST /api/whatsapp/embedded-signup/callback` com troca store-scoped do `code` por token e persistencia segura na `WhatsAppConnection`, mantendo a validacao real de coexistencia dependente da aprovacao final da Meta |
 | 24/04/2026 | WhatsApp: corrigida a regressão do bot silencioso após o patch do novo menu; o webhook agora loga estado/texto/`selectedOptionId`/actions/dispatch, usa `selectedOptionId` como fallback canônico para intents interativas e adiciona resposta de segurança quando um branch termina sem `appendBotReply` |
 | 24/04/2026 | WhatsApp: menu inicial atualizado para `Agendar horário`, `Meus agendamentos`, `Preços` e `Informações`; `Meus agendamentos` passou a reaproveitar explicitamente a listagem real de futuros por telefone, e `Preços` agora lista serviços ativos reais com `price` preenchido em BRL, com navegação para mais preços, agendar ou voltar ao menu |
 | 24/04/2026 | Servicos: adicionado `price Decimal? @db.Decimal(12, 2)` no Prisma, migration segura aplicada sem backfill fake, validators/API/UI do CRUD atualizados para exigir preco no create, aceitar no update e exibir valor em BRL |
