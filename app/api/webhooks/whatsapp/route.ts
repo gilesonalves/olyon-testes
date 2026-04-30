@@ -1,6 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto"
 import { NextRequest } from "next/server"
-import { z } from "zod"
 import { prisma, Prisma, type ConversationState } from "@/lib/prisma"
 import { badRequest, ok, serverError, unauthorized } from "@/lib/api/response"
 import {
@@ -44,7 +43,6 @@ import {
   parseIncomingWhatsApp,
 } from "@/lib/whatsapp/parse"
 import {
-  findActiveWhatsAppConnectionByVerifyToken,
   findActiveWhatsAppConnectionForInboundMessage,
 } from "@/lib/whatsapp/connection"
 import {
@@ -954,12 +952,6 @@ async function getStorePublicInfoReply(tx: Prisma.TransactionClient, storeId: st
 
   return formatStorePublicInfoForWhatsApp(store)
 }
-
-const metaWebhookVerificationSchema = z.object({
-  mode: z.string().min(1),
-  verifyToken: z.string().min(1),
-  challenge: z.string().min(1),
-})
 
 type ProcessIncomingMessageParams = {
   currentStoreId: string
@@ -3674,49 +3666,24 @@ async function processIncomingWhatsAppMessage(
 }
 
 export async function GET(req: NextRequest) {
-  try {
-    const parsed = metaWebhookVerificationSchema.safeParse({
-      mode: req.nextUrl.searchParams.get("hub.mode"),
-      verifyToken: req.nextUrl.searchParams.get("hub.verify_token"),
-      challenge: req.nextUrl.searchParams.get("hub.challenge"),
-    })
+  const mode = req.nextUrl.searchParams.get("hub.mode")
+  const token = req.nextUrl.searchParams.get("hub.verify_token")
+  const challenge = req.nextUrl.searchParams.get("hub.challenge")
+  const expectedToken = process.env.WHATSAPP_WEBHOOK_SECRET
 
-    if (!parsed.success) {
-      return badRequest("Parâmetros obrigatórios do webhook não informados")
-    }
-
-    if (parsed.data.mode !== "subscribe") {
-      return badRequest("Unsupported hub.mode")
-    }
-
-    const connection = await findActiveWhatsAppConnectionByVerifyToken(parsed.data.verifyToken)
-    if (!connection) {
-      return unauthorized("Invalid hub.verify_token")
-    }
-
-    return new Response(parsed.data.challenge, {
+  if (mode === "subscribe" && token === expectedToken && challenge) {
+    return new Response(challenge, {
       status: 200,
       headers: {
         "Content-Type": "text/plain",
       },
     })
-  } catch (error) {
-    console.error("whatsapp webhook verification error", error)
-
-    return new Response(
-      JSON.stringify({
-        ok: false,
-        error: "Não foi possível verificar o webhook do WhatsApp",
-        details: error instanceof Error ? error.message : String(error),
-      }),
-      {
-        status: 500,
-        headers: {
-          "Content-Type": "application/json",
-        },
-      }
-    )
   }
+
+  return Response.json(
+    { ok: false, error: "Invalid hub.verify_token" },
+    { status: 403 }
+  )
 }
 
 export async function POST(req: NextRequest) {

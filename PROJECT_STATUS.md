@@ -1063,10 +1063,41 @@ Proximo passo sugerido:
 
 ---
 
-## 8. Historico resumido
+## 8. Ajuste webhook Meta GET
+
+Objetivo desta correcao:
+
+- alinhar a verificacao `GET /api/webhooks/whatsapp` com o token configurado em `WHATSAPP_WEBHOOK_SECRET`, sem alterar o fluxo `POST` inbound.
+
+Resultado desta correcao:
+
+- o `GET` deixou de consultar `WhatsAppConnection` por `verifyToken` no banco e passou a comparar `hub.verify_token` com `process.env.WHATSAPP_WEBHOOK_SECRET`
+- quando `hub.mode=subscribe`, o token confere e `hub.challenge` existe, a rota responde somente o valor de `hub.challenge` com `Content-Type: text/plain`
+- falhas de validacao agora retornam `403` com `{ ok: false, error: "Invalid hub.verify_token" }`
+- `middleware.ts` foi auditado e nao bloqueia `/api/webhooks/whatsapp`, porque o `matcher` atual nao inclui `/api/*`
+
+Arquivos alterados nesta correcao:
+
+- `app/api/webhooks/whatsapp/route.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+Validacao executada:
+
+- `yarn lint app/api/webhooks/whatsapp/route.ts middleware.ts`
+- `yarn build`
+
+Resultado:
+
+- a base publicada fica pronta para a validacao da Meta assim que a Vercel receber novo deploy com `WHATSAPP_WEBHOOK_SECRET=olyon_whatsapp_test_secret_2026`
+
+---
+
+## 9. Historico resumido
 
 | Data | Mudanca |
 |------|---------|
+| 30/04/2026 | Webhook WhatsApp/Meta: verificador `GET /api/webhooks/whatsapp` corrigido para comparar `hub.verify_token` com `process.env.WHATSAPP_WEBHOOK_SECRET`, retornar `hub.challenge` puro em sucesso e manter o `POST` inbound sem mudancas |
 | 27/04/2026 | WhatsApp configuracoes refinadas: `/configuracoes/whatsapp` passou a priorizar a UX simples da loja, sem expor `accessToken` no payload store-scoped padrao e com diagnostico detalhado restrito a `SUPER_ADMIN`, sempre sobre a `WhatsAppConnection` da Store atual |
 | 27/04/2026 | WhatsApp Embedded Signup: card autenticado em `/configuracoes/whatsapp`, SDK Meta no client, `POST /api/whatsapp/embedded-signup/callback` com troca store-scoped do `code` por token e persistencia segura na `WhatsAppConnection`, mantendo a validacao real de coexistencia dependente da aprovacao final da Meta |
 | 24/04/2026 | WhatsApp: corrigida a regressão do bot silencioso após o patch do novo menu; o webhook agora loga estado/texto/`selectedOptionId`/actions/dispatch, usa `selectedOptionId` como fallback canônico para intents interativas e adiciona resposta de segurança quando um branch termina sem `appendBotReply` |

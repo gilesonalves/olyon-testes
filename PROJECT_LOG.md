@@ -6164,3 +6164,35 @@ Separar a visao operacional da loja da visao tecnica da conexao Meta/WhatsApp, m
 ### Resultado
 
 A tela `/configuracoes/whatsapp` passou a ter uma UX adequada para a loja, enquanto o diagnostico tecnico detalhado ficou protegido para `SUPER_ADMIN`. A configuracao continua multi-tenant e store-scoped, com persistencia e leitura vinculadas a `storeId` resolvido pela sessao/membership.
+
+## 30 de abril de 2026 - Correcao da validacao GET do webhook WhatsApp/Meta
+
+### Objetivo
+
+Corrigir a verificacao `GET /api/webhooks/whatsapp` para usar o segredo publicado em `WHATSAPP_WEBHOOK_SECRET`, permitindo que a Meta valide o webhook por `hub.challenge` sem depender de lookup por token no banco.
+
+### Arquivos alterados
+
+- `app/api/webhooks/whatsapp/route.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi corrigido
+
+- O `GET` do webhook deixou de usar `findActiveWhatsAppConnectionByVerifyToken(...)` para autenticar `hub.verify_token`.
+- A validacao passou a ler `process.env.WHATSAPP_WEBHOOK_SECRET` diretamente e comparar com `req.nextUrl.searchParams.get("hub.verify_token")`.
+- Quando `hub.mode=subscribe`, o token confere e `hub.challenge` existe, a resposta agora e somente o valor de `hub.challenge` com `Content-Type: text/plain`.
+- Falhas de validacao passaram a responder `403` com `{ ok: false, error: "Invalid hub.verify_token" }`.
+- O `POST` inbound do webhook nao foi alterado.
+- `middleware.ts` foi auditado e nao intercepta `/api/webhooks/whatsapp`, porque o `matcher` atual nao inclui rotas `/api/*`.
+
+### Validacao executada
+
+- `yarn lint app/api/webhooks/whatsapp/route.ts middleware.ts`
+- `yarn build`
+
+### Resultado
+
+- `yarn lint app/api/webhooks/whatsapp/route.ts middleware.ts` concluiu sem erros e manteve apenas 2 warnings legados fora do escopo em `app/(auth)/cadastro/controllers/index.tsx` e `app/(auth)/recuperar-senha/controllers/index.tsx`.
+- `yarn build` concluiu com sucesso.
+- O ajuste fica pronto para validacao na Meta assim que a Vercel receber novo deploy com o env `WHATSAPP_WEBHOOK_SECRET` ja configurado.
