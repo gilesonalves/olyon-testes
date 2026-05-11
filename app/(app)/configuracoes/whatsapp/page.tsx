@@ -1,12 +1,14 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
+import Link from "next/link"
 import { useSession } from "next-auth/react"
 import { Controller, useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import {
   CheckCircle2,
   CircleAlert,
+  FileText,
   KeyRound,
   MessageSquareShare,
   RefreshCw,
@@ -524,6 +526,13 @@ export default function StoreWhatsAppSettingsPage() {
                   >
                     <RefreshCw className="size-4" />
                     Recarregar
+                  </Button>
+
+                  <Button asChild variant="outline">
+                    <Link href="/configuracoes/whatsapp/templates">
+                      <FileText className="size-4" />
+                      Testar templates WhatsApp
+                    </Link>
                   </Button>
                 </div>
               </div>

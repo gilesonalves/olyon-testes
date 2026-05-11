@@ -1,6 +1,6 @@
 # PROJECT_STATUS.md
 
-**Data de ultima atualizacao:** 27 de abril de 2026
+**Data de ultima atualizacao:** 10 de maio de 2026
 
 ## Status geral do projeto Olyon
 
@@ -114,6 +114,9 @@
 [x] Envio outbound real de texto via Meta Graph API usando a `WhatsAppConnection` da loja
 [x] Teste real store-scoped da conexao Meta/WhatsApp atual da loja
 [x] Check real da conexao Meta/WhatsApp alinhado ao endpoint `GET /v25.0/{phoneNumberId}` ja validado externamente
+[x] Tela minima `/configuracoes/whatsapp/templates` criada para demonstrar templates WhatsApp no App Review da Meta
+[x] Endpoints store-scoped para listar templates WhatsApp e enviar template de teste via Graph API `v25.0`
+[x] Templates WhatsApp com placeholders nomeados (`{{customer_name}}`, `{{appointment_date}}`, `{{order_id}}`) suportados na UI e no envio para a Cloud API
 [x] Pausa operacional do chatbot WhatsApp por palavra-chave com estado `PAUSED`
 [x] Matcher de pausa do chatbot WhatsApp ampliado para frases naturais de handoff humano
 [x] Fluxo WhatsApp com timeout por inatividade, encerrar atendimento, voltar etapa e voltar ao menu
@@ -170,6 +173,9 @@ O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) poss
 - A tela de detalhes da loja agora tambem permite cadastrar e manter a conexao tecnica `WhatsAppConnection` via API admin store-scoped.
 - A propria loja autenticada agora tambem consegue disparar um teste real minimo da conexao Meta salva, com chamada `POST` store-scoped para a Graph API e feedback tecnico separado da auditoria local.
 - O check real da conexao Meta/WhatsApp agora usa o mesmo endpoint validado fora do Olyon (`GET /v25.0/{phoneNumberId}`), sem campos extras, e devolve diagnostico seguro do token lido de `WhatsAppConnection.accessToken`.
+- A propria loja autenticada agora possui uma tela minima de App Review em `/configuracoes/whatsapp/templates`, com listagem de templates da WABA, selecao, preenchimento de placeholders do BODY e envio de template de teste sem expor `accessToken` no frontend.
+- Os endpoints `GET /api/store/current/whatsapp/templates` e `POST /api/store/current/whatsapp/templates/test-send` usam a `WhatsAppConnection` ativa da Store atual, sem aceitar `storeId` no payload, para atender a exigencia da Meta sobre `whatsapp_business_management`.
+- A tela de templates agora reconhece placeholders numericos e nomeados no BODY, aproveitando `components[].example.body_text_named_params` para labels e exemplos, e o envio inclui `parameter_name` quando a Cloud API exige parametros nomeados.
 - Tela `/agendamentos` com calendario mensal limpo, resumo por dia, sheet de detalhe, skeletons reais e criacao/edicao guiadas por disponibilidade real.
 - Tela `/agendamentos` agora com agenda diaria operacional por profissional como experiencia principal, preservando criacao, detalhe, edicao e disponibilidade reais.
 - Criacao manual e remarcacao em `/agendamentos` agora trafegam `date + time`, montam `startAt/endAt` de forma explicita no backend e mantem a mesma engine de disponibilidade como fonte de verdade.
@@ -1097,6 +1103,8 @@ Resultado:
 
 | Data | Mudanca |
 |------|---------|
+| 10/05/2026 | WhatsApp templates: suporte a placeholders nomeados no BODY, com leitura de `body_text_named_params`, preenchimento inicial por exemplos da Meta e envio de `parameter_name` na Cloud API mantendo compatibilidade com placeholders numericos |
+| 10/05/2026 | WhatsApp templates App Review: criada tela minima `/configuracoes/whatsapp/templates`, endpoints store-scoped de listagem e envio de template via Graph API `v25.0`, com placeholders do BODY e sem expor `accessToken` no frontend |
 | 30/04/2026 | Webhook WhatsApp/Meta: verificador `GET /api/webhooks/whatsapp` corrigido para comparar `hub.verify_token` com `process.env.WHATSAPP_WEBHOOK_SECRET`, retornar `hub.challenge` puro em sucesso e manter o `POST` inbound sem mudancas |
 | 27/04/2026 | WhatsApp configuracoes refinadas: `/configuracoes/whatsapp` passou a priorizar a UX simples da loja, sem expor `accessToken` no payload store-scoped padrao e com diagnostico detalhado restrito a `SUPER_ADMIN`, sempre sobre a `WhatsAppConnection` da Store atual |
 | 27/04/2026 | WhatsApp Embedded Signup: card autenticado em `/configuracoes/whatsapp`, SDK Meta no client, `POST /api/whatsapp/embedded-signup/callback` com troca store-scoped do `code` por token e persistencia segura na `WhatsAppConnection`, mantendo a validacao real de coexistencia dependente da aprovacao final da Meta |

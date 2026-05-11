@@ -1,3 +1,106 @@
+## 10 de maio de 2026 - Placeholders nomeados em templates WhatsApp
+
+### Objetivo
+
+Ajustar a tela minima de App Review para suportar o template aprovado `confirmacao_agendamento_olyon` (`pt_BR`), que usa placeholders nomeados no BODY: `{{customer_name}}`, `{{appointment_date}}` e `{{order_id}}`.
+
+### Arquivos alterados
+
+- `app/(app)/configuracoes/whatsapp/templates/page.tsx`
+- `app/api/store/current/whatsapp/templates/test-send/route.ts`
+- `src/lib/validators/whatsapp-template.ts`
+- `src/lib/meta/meta-templates.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Deteccao de placeholders numericos e nomeados
+
+- A tela agora detecta placeholders do BODY com regex que cobre:
+  - numericos: `{{1}}`, `{{2}}`
+  - nomeados: `{{customer_name}}`, `{{appointment_date}}`, `{{order_id}}`
+- A ordem usada no envio segue a ordem em que os placeholders aparecem no BODY.
+
+#### 2. Examples da Meta para placeholders nomeados
+
+- Para placeholders nomeados, a tela le `components[].example.body_text_named_params`.
+- Os labels passam a ser os nomes dos parametros (`customer_name`, `appointment_date`, `order_id`).
+- Os valores iniciais usam `example` quando a Meta retorna esses exemplos.
+
+#### 3. Payload correto para Cloud API
+
+- O schema Zod passou a aceitar `namedBodyParameters?: Record<string, string>` mantendo `bodyParameters: string[]`.
+- O endpoint de envio monta parametros nomeados como `{ type: "text", parameter_name, text }`.
+- Templates numericos continuam usando `{ type: "text", text }`.
+
+### Fora de escopo
+
+- Sem alterar Prisma.
+- Sem alterar chatbot.
+- Sem alterar webhook.
+- Sem expor `accessToken` no frontend.
+
+### Validacao executada
+
+- `yarn eslint "app/(app)/configuracoes/whatsapp/templates/page.tsx" "app/api/store/current/whatsapp/templates/test-send/route.ts" "src/lib/validators/whatsapp-template.ts" "src/lib/meta/meta-templates.ts"`
+- `yarn tsc --noEmit --pretty false --incremental false`
+
+O lint e o typecheck passaram. O Yarn/Node exibiu apenas o warning legado `DEP0005 Buffer()`, sem falha.
+
+## 10 de maio de 2026 - Tela minima de templates WhatsApp para App Review Meta
+
+### Objetivo
+
+Criar o menor fluxo funcional possivel para demonstrar, no App Review da Meta, uso de `whatsapp_business_management`: listar templates da WABA, selecionar um template utility/marketing ja aprovado, preencher placeholders simples do BODY, enviar para destinatario de teste e exibir o retorno da Graph API sem expor `accessToken` no frontend.
+
+### Arquivos alterados
+
+- `src/lib/meta/meta-templates.ts`
+- `src/lib/validators/whatsapp-template.ts`
+- `app/api/store/current/whatsapp/templates/route.ts`
+- `app/api/store/current/whatsapp/templates/test-send/route.ts`
+- `app/(app)/configuracoes/whatsapp/templates/page.tsx`
+- `app/(app)/configuracoes/whatsapp/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Helper server-side para templates Meta
+
+- `listMetaWhatsAppTemplates` chama `GET /v25.0/{wabaId}/message_templates` usando `businessAccountId` e `accessToken` da `WhatsAppConnection`.
+- `sendMetaWhatsAppTemplate` chama `POST /v25.0/{phoneNumberId}/messages` com `type = "template"`, `template.name`, `language.code` e `components`.
+- Erros da Meta sao resumidos com status HTTP, `graphError`, preview controlado e `fbtrace_id` quando disponivel.
+
+#### 2. Endpoints store-scoped
+
+- `GET /api/store/current/whatsapp/templates` lista templates usando apenas a Store atual da sessao.
+- `POST /api/store/current/whatsapp/templates/test-send` valida o payload com Zod, rejeita `storeId` no body, monta `components.body.parameters` como textos e envia o template.
+- Ambos reutilizam a `WhatsAppConnection` ativa ja existente e nao retornam `accessToken` ao client.
+
+#### 3. Tela autenticada para demonstracao
+
+- Criada `/configuracoes/whatsapp/templates` com botao `Carregar templates`, select de template, resumo de status/categoria/idioma e JSON de componentes.
+- A tela detecta placeholders simples no BODY por `/{{\d+}}/g` e gera inputs dinamicos.
+- O envio mostra sucesso/erro, `graphMessageId`, JSON da Meta e `fbtrace_id` quando a Meta devolver erro.
+- A tela principal `/configuracoes/whatsapp` ganhou o atalho `Testar templates WhatsApp`.
+
+### Fora de escopo
+
+- Sem migration Prisma.
+- Sem alteracao no chatbot.
+- Sem alteracao no webhook.
+- Sem alteracao de dominio/callback.
+- Sem persistencia obrigatoria em `ConversationMessage`, para evitar acoplamento com o fluxo conversacional.
+
+### Validacao executada
+
+- `yarn eslint "app/api/store/current/whatsapp/templates/route.ts" "app/api/store/current/whatsapp/templates/test-send/route.ts" "app/(app)/configuracoes/whatsapp/templates/page.tsx" "src/lib/meta/meta-templates.ts" "src/lib/validators/whatsapp-template.ts"`
+- `yarn eslint "app/(app)/configuracoes/whatsapp/page.tsx"`
+
+As duas validacoes passaram. O Yarn/Node exibiu apenas o warning legado `DEP0005 Buffer()`, sem falha de lint.
+
 ## 24 de abril de 2026 - Correção da regressão do bot silencioso no WhatsApp
 
 ### Objetivo
