@@ -13,12 +13,14 @@ import {
   type SuggestedSlot,
 } from "@/lib/appointments/availability"
 import {
+  buildBotFlowResetContext,
   hasConversationFlowTimedOut,
   handleIncomingMessage,
   isBackOneStepIntent,
   isBackToMenuIntent,
   isEndConversationIntent,
   isPauseChatbotTriggerText,
+  isResumeChatbotTriggerText,
 } from "@/lib/bot/flow"
 import {
   combineDateKeyAndTime,
@@ -1351,21 +1353,7 @@ async function processIncomingWhatsAppMessage(
       }
 
       function buildFlowResetContext(mainMenuShown: boolean) {
-        return {
-          mainMenuShown,
-          priceListPage: null,
-          appointmentOptions: null,
-          dateOptions: null,
-          selectedDateKey: null,
-          selectedDateLabel: null,
-          selectedAppointmentId: null,
-          selectedAppointmentLabel: null,
-          rescheduleAppointmentId: null,
-          timeSlotSuggestions: null,
-          timeSelectionStage: null,
-          dateOptionPage: null,
-          timeSlotPage: null,
-        } satisfies Partial<BotConversationContext>
+        return buildBotFlowResetContext(mainMenuShown)
       }
 
       async function abandonActiveDraft() {
@@ -2111,6 +2099,43 @@ async function processIncomingWhatsAppMessage(
       }
 
       if (conversation.state === "PAUSED") {
+        if (isResumeChatbotTriggerText(effectiveIncomingText)) {
+          console.info("whatsapp bot paused conversation resumed by customer", {
+            storeId: currentStoreId,
+            conversationId: conversation.id,
+            providerMessageId: incomingMessage.providerMessageId,
+            from: incomingMessage.from,
+            text: incomingMessage.text,
+            effectiveText: effectiveIncomingText,
+          })
+
+          await resetConversationFlow({
+            mainMenuShown: true,
+            abandonDraft: true,
+          })
+          await appendBotReply(
+            "Atendimento automatico retomado. Vou te mostrar o menu inicial.",
+            {
+              reason: "CHATBOT_RESUMED_BY_CUSTOMER",
+              resumedByMessageId: savedIn.id,
+            }
+          )
+          await appendBotReply(buildMainMenuMessage(), {
+            reason: "CHATBOT_RESUMED_BY_CUSTOMER_MENU",
+            resumedByMessageId: savedIn.id,
+          })
+
+          return {
+            conversationId: conversation.id,
+            messageId: savedIn.id,
+            nextState: "IDLE",
+            draftId: null,
+            appointmentId: null,
+            replies: outMessages,
+            replayed: false,
+          }
+        }
+
         return {
           conversationId: conversation.id,
           messageId: savedIn.id,

@@ -1,3 +1,64 @@
+## 10 de maio de 2026 - Retomada de conversa WhatsApp pausada
+
+### Objetivo
+
+Permitir que uma conversa WhatsApp em `state = PAUSED` volte ao atendimento automatico sem intervencao direta no banco, cobrindo tanto retomada manual pela loja quanto retomada pelo proprio cliente via palavra-chave.
+
+### Arquivos alterados
+
+- `src/lib/bot/flow.ts`
+- `app/api/webhooks/whatsapp/route.ts`
+- `app/api/store/current/whatsapp/conversations/[id]/resume/route.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Endpoint manual store-scoped
+
+- Criado `POST /api/store/current/whatsapp/conversations/[id]/resume`.
+- O endpoint exige usuario autenticado com papel `ADMIN` ou superior na loja atual.
+- A conversa e buscada por `id`, `storeId` da sessao e `channel = WHATSAPP`.
+- Se a conversa nao existir para a loja atual, retorna `404`.
+- Se a conversa nao estiver `PAUSED`, retorna `409`.
+- Ao retomar, atualiza `state` para `IDLE`, atualiza `lastMessageAt`, limpa contexto de fluxo e abandona draft ativo sem apagar historico de mensagens.
+
+#### 2. Retomada pelo cliente no webhook
+
+- O webhook continua retornando cedo para conversas `PAUSED` quando a mensagem nao e comando de retomada.
+- Antes desse retorno, agora reconhece:
+  - `voltar bot`
+  - `retomar bot`
+  - `menu`
+  - `iniciar`
+  - `agendar`
+  - `atendimento automatico`
+  - `atendimento automático`
+- Quando reconhece retomada, registra `whatsapp bot paused conversation resumed by customer`, reseta a conversa para `IDLE` e envia uma mensagem curta junto com o menu inicial.
+
+#### 3. Helper de reset reutilizavel
+
+- O reset dos campos de contexto do fluxo foi extraido para `buildBotFlowResetContext`, mantendo o mesmo conjunto de chaves ja usado pelo webhook.
+
+### Fora de escopo
+
+- Sem migration Prisma.
+- Sem alterar webhook GET.
+- Sem alterar configuracao Meta.
+- Sem alterar templates WhatsApp.
+- Sem timeout automatico de `PAUSED`.
+
+### Melhoria futura registrada
+
+- Avaliar auto-retomada de conversas `PAUSED` apos X horas sem atendimento humano, quando o produto tiver uma definicao clara de mensagem humana/atendimento manual.
+
+### Validacao executada
+
+- `yarn eslint "app/api/store/current/whatsapp/conversations/[id]/resume/route.ts" "app/api/webhooks/whatsapp/route.ts" "src/lib/bot/flow.ts"`
+- `yarn tsc --noEmit --pretty false --incremental false`
+
+As duas validacoes passaram. O Yarn/Node exibiu apenas o warning legado `DEP0005 Buffer()`, sem falha.
+
 ## 10 de maio de 2026 - Placeholders nomeados em templates WhatsApp
 
 ### Objetivo

@@ -42,6 +42,14 @@ const BACK_ONE_STEP_PATTERNS = [
   /^voltar opcao$/,
   /^voltar uma opcao$/,
 ]
+const RESUME_CHATBOT_PATTERNS = [
+  /^voltar bot$/,
+  /^retomar bot$/,
+  /^menu$/,
+  /^iniciar$/,
+  /^agendar$/,
+  /^atendimento automatico$/,
+]
 const TIMEOUT_ELIGIBLE_STATES = new Set<ConversationState>([
   "COLLECTING_CUSTOMER",
   "CHOOSING_SERVICE",
@@ -124,8 +132,35 @@ export function isBackOneStepIntent(input: string | null | undefined) {
   return normalizedText.length > 0 && matchesControlPatterns(normalizedText, BACK_ONE_STEP_PATTERNS)
 }
 
+export function isResumeChatbotTriggerText(input: string | null | undefined) {
+  if (typeof input !== "string") {
+    return false
+  }
+
+  const normalizedText = normalizeConversationControlText(input)
+  return normalizedText.length > 0 && matchesControlPatterns(normalizedText, RESUME_CHATBOT_PATTERNS)
+}
+
 export function getWelcomeMenuText() {
   return WELCOME_MENU_TEXT
+}
+
+export function buildBotFlowResetContext(mainMenuShown: boolean) {
+  return {
+    mainMenuShown,
+    priceListPage: null,
+    appointmentOptions: null,
+    dateOptions: null,
+    selectedDateKey: null,
+    selectedDateLabel: null,
+    selectedAppointmentId: null,
+    selectedAppointmentLabel: null,
+    rescheduleAppointmentId: null,
+    timeSlotSuggestions: null,
+    timeSelectionStage: null,
+    dateOptionPage: null,
+    timeSlotPage: null,
+  } satisfies Partial<BotConversationContext>
 }
 
 export function isConversationStateEligibleForTimeout(state: ConversationState) {

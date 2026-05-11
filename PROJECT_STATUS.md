@@ -122,6 +122,7 @@
 [x] Fluxo WhatsApp com timeout por inatividade, encerrar atendimento, voltar etapa e voltar ao menu
 [x] Fluxo WhatsApp guiado por etapas com menu, servico, profissional, dia, horario e confirmacao
 [x] Mensagens interativas oficiais da Meta no WhatsApp com fallback por texto livre e numero
+[x] Conversas WhatsApp pausadas por handoff humano agora podem ser retomadas por endpoint store-scoped ou por comando do cliente
 [x] Refino textual do fluxo WhatsApp com PT-BR revisado, datas sem "primeiro horario" e sem indicadores visuais de etapa
 [x] Servicos com preco real persistido em `Decimal?`, CRUD de `/servicos` atualizado e migration segura sem backfill fake
 [x] Menu inicial do WhatsApp com `Agendar horário`, `Meus agendamentos`, `Preços` e `Informações`
@@ -155,6 +156,7 @@ O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) poss
 - Base de conversas WhatsApp com `Conversation`, `ConversationMessage`, `AppointmentDraft` e `Appointment`.
 - Fluxo de bot via WhatsApp com menu inicial hibrido, selecao de servico, resolucao de profissional, sugestao ativa de horarios, escolha de horario por numero ou texto livre, confirmacao, cancelamento, remarcacao e resposta institucional da loja na opcao `3`.
 - O fluxo WhatsApp agora tambem aceita handoff humano por palavra-chave, marca a conversa como `PAUSED`, envia uma unica mensagem de pausa e bloqueia novas automacoes enquanto o atendimento segue no app oficial do WhatsApp.
+- O fluxo WhatsApp agora tambem permite retomar uma conversa `PAUSED` manualmente por endpoint store-scoped ou pelo proprio cliente com comandos como `menu`, `retomar bot` e `atendimento automatico`.
 - O matcher de pausa do WhatsApp agora trabalha por intencao humana com normalizacao mais tolerante, cobrindo frases como `falar com atendente`, `quero atendimento humano` e `falar com alguem` sem depender de igualdade exata.
 - O fluxo WhatsApp agora tambem encerra atendimentos ativos por inatividade de 5 minutos e reconhece comandos de `encerrar`, `menu` e `voltar`, sempre antes da automacao principal e sem criar inbox dentro do Olyon.
 - `Store` agora possui campos publicos para telefone, WhatsApp, endereco, observacoes e resumo textual de horario de funcionamento.
@@ -1065,7 +1067,8 @@ Proximo passo sugerido:
 3. Coletar nome do cliente no fluxo WhatsApp antes da confirmacao final.
 4. Evoluir disponibilidade por profissional para agendas individuais quando o produto suportar agenda propria por staff.
 5. Cobrir create manual, remarcacao, listagem por data, bloqueio com conflito de appointments e agenda publica com testes automatizados de integracao.
-6. Limpar warnings antigos fora do escopo da feature, como lockfiles multiplos, `middleware` depreciado e baseline-browser-mapping desatualizado.
+6. Avaliar auto-retomada de conversas WhatsApp em `PAUSED` apos X horas sem atendimento humano, quando houver uma definicao clara de mensagem humana/atendimento manual.
+7. Limpar warnings antigos fora do escopo da feature, como lockfiles multiplos, `middleware` depreciado e baseline-browser-mapping desatualizado.
 
 ---
 
@@ -1103,6 +1106,7 @@ Resultado:
 
 | Data | Mudanca |
 |------|---------|
+| 10/05/2026 | WhatsApp: conversas `PAUSED` ganharam retomada manual por `POST /api/store/current/whatsapp/conversations/[id]/resume` e retomada pelo cliente via comandos como `menu`, `retomar bot` e `atendimento automatico`, sem alterar o fluxo normal fora de `PAUSED` |
 | 10/05/2026 | WhatsApp templates: suporte a placeholders nomeados no BODY, com leitura de `body_text_named_params`, preenchimento inicial por exemplos da Meta e envio de `parameter_name` na Cloud API mantendo compatibilidade com placeholders numericos |
 | 10/05/2026 | WhatsApp templates App Review: criada tela minima `/configuracoes/whatsapp/templates`, endpoints store-scoped de listagem e envio de template via Graph API `v25.0`, com placeholders do BODY e sem expor `accessToken` no frontend |
 | 30/04/2026 | Webhook WhatsApp/Meta: verificador `GET /api/webhooks/whatsapp` corrigido para comparar `hub.verify_token` com `process.env.WHATSAPP_WEBHOOK_SECRET`, retornar `hub.challenge` puro em sucesso e manter o `POST` inbound sem mudancas |
