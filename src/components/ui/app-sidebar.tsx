@@ -2,8 +2,8 @@
 
 import * as React from "react"
 import { signOut, useSession } from "next-auth/react"
-import { useRouter } from "next/navigation"
-import { LogOut } from "lucide-react"
+import { usePathname, useRouter } from "next/navigation"
+import { LogOut, MessageCircle, type LucideIcon } from "lucide-react"
 import {
   Sidebar,
   SidebarContent,
@@ -31,6 +31,7 @@ type SidebarNavItem = {
   title: string
   url: string
   isActive?: boolean
+  icon?: LucideIcon
 }
 
 type SidebarNavGroup = {
@@ -52,6 +53,17 @@ const data: {
         {
           title: "Home",
           url: "/dashboard",
+        },
+      ],
+    },
+    {
+      title: "Atendimento",
+      url: "#",
+      items: [
+        {
+          title: "Atendimento",
+          url: "/atendimento",
+          icon: MessageCircle,
         },
       ],
     },
@@ -134,6 +146,10 @@ const data: {
           url: "/configuracoes/loja",
         },
         {
+          title: "Configuracoes do Bot",
+          url: "/configuracoes/bot",
+        },
+        {
           title: "WhatsApp Meta",
           url: "/configuracoes/whatsapp",
         },
@@ -151,6 +167,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const [stores, setStores] = React.useState<Store[]>([])
   const { data: session } = useSession()
   const router = useRouter()
+  const pathname = usePathname()
 
   React.useEffect(() => {
     if (session?.user.storeId && stores.length > 0) {
@@ -212,8 +229,18 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               <SidebarMenu>
                 {item.items.map((navItem) => (
                   <SidebarMenuItem key={navItem.title}>
-                    <SidebarMenuButton asChild isActive={navItem.isActive}>
-                      <a href={navItem.url}>{navItem.title}</a>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={
+                        navItem.isActive ??
+                        (pathname === navItem.url ||
+                          pathname.startsWith(`${navItem.url}/`))
+                      }
+                    >
+                      <a href={navItem.url}>
+                        {navItem.icon ? <navItem.icon className="size-4" /> : null}
+                        <span>{navItem.title}</span>
+                      </a>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))}

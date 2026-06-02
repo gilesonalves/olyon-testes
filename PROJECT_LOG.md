@@ -1,3 +1,275 @@
+## 2 de junho de 2026 - BotSettings no menu inicial do WhatsApp real
+
+### Objetivo
+
+Garantir que as respostas de boas-vindas, menu e retomada do bot WhatsApp usem `BotSettings` da loja atual, sem manter o menu inicial hardcoded antigo no fluxo do bot.
+
+### Arquivos alterados
+
+- `src/lib/bot/flow.ts`
+- `app/api/webhooks/whatsapp/route.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### Diagnostico
+
+- O webhook real ja carrega `getBotSettingsForStore(currentStoreId)` usando o `storeId` resolvido pela conexao WhatsApp inbound.
+- Os pontos que montam o menu inicial no webhook passam por `buildMainMenuMessage(botSettings)`, que usa `welcomeMessage` e respeita `showMenuAfterWelcome`.
+- O comando de pausa/handoff do cliente ja usa `botSettings.customerRequestedHumanMessage`.
+- Ainda existia em `src/lib/bot/flow.ts` um helper legado `getWelcomeMenuText()` com `WELCOME_MENU_TEXT` contendo `Olá! Como posso te ajudar?` e as opcoes do menu hardcoded.
+- Na retomada de conversa pausada, o webhook enviava uma frase fixa `Atendimento automatico retomado. Vou te mostrar o menu inicial.` antes do menu.
+
+### O que foi ajustado
+
+- Removido o helper legado `getWelcomeMenuText()` e a constante `WELCOME_MENU_TEXT` de `src/lib/bot/flow.ts`.
+- A retomada de conversa pausada agora envia apenas `Atendimento automático retomado.` e, em seguida, chama `buildMainMenuMessage(botSettings)`.
+- O menu inicial segue centralizado em `buildMainMenuMessage(botSettings)`:
+  - com `showMenuAfterWelcome = true`, envia `settings.welcomeMessage` com lista de opcoes;
+  - com `showMenuAfterWelcome = false`, envia somente `settings.welcomeMessage`.
+
+### Deploy e banco
+
+- Para o WhatsApp real, o inbound usa o webhook publico `https://olyon-testes.vercel.app/api/webhooks/whatsapp`.
+- As configuracoes precisam estar salvas no banco usado por esse deploy publico.
+- Se `/configuracoes/bot` for testada em `localhost`, o `/atendimento` local pode ler o banco local, mas mensagens inbound do WhatsApp continuam usando o ambiente publico configurado na Meta.
+- Confirmar no deploy que a migration `20260602221348_add_bot_settings` foi aplicada no banco da Vercel; se necessario, usar `yarn prisma migrate deploy` no ambiente de deploy.
+- Depois de confirmar o banco correto, salvar a mensagem em `/configuracoes/bot` no mesmo ambiente do webhook publico.
+
+### Validacao
+
+- Busca por `Olá! Como posso te ajudar?`, `Atendimento automático retomado`, `Chat pausado` e `Como posso te ajudar` foi refeita.
+- O unico `Olá! Como posso te ajudar?` remanescente em codigo fica em `DEFAULT_BOT_SETTINGS`, como fallback seguro quando nao ha `BotSettings` salvo.
+- `yarn eslint` e `yarn tsc --noEmit --pretty false --incremental false` foram executados apos a correcao.
+
+## 2 de junho de 2026 - Correcao do GET/PUT de Configuracoes do Bot
+
+### Objetivo
+
+Corrigir a falha de carregamento e salvamento da tela `/configuracoes/bot`, mantendo o salvamento restrito a perfis com permissao administrativa.
+
+### Arquivos alterados
+
+- `app/api/store/current/bot-settings/route.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### Diagnostico
+
+- A model `BotSettings` existe no Prisma schema.
+- A migration `20260602221348_add_bot_settings` existe e a tabela `BotSettings` esta criada no banco atual.
+- O banco possui indice unico `BotSettings_storeId_key` e indice `BotSettings_storeId_idx`.
+- O Prisma Client gerado conhece `prisma.botSettings`.
+- O erro real no terminal do Next era `Cannot read properties of undefined (reading 'findUnique')` no GET e `Cannot read properties of undefined (reading 'upsert')` no PUT, indicando que o processo `next dev` antigo ainda estava com Prisma Client carregado antes do `BotSettings`.
+- Apos `yarn prisma generate` e restart do `next dev`, `prisma.botSettings` passou a responder corretamente na API.
+- Tambem foi encontrada uma divergencia no contrato de permissao do `GET /api/store/current/bot-settings`: ele exigia `ADMIN`, enquanto rotas estaveis de leitura operacional da loja, como conversas WhatsApp, usam `STAFF`.
+
+### O que foi ajustado
+
+- `GET /api/store/current/bot-settings` agora exige apenas membro da loja (`STAFF` ou superior), carrega defaults/configuracao para a loja atual e segue sem aceitar `storeId` por body.
+- `PUT /api/store/current/bot-settings` permanece restrito a `ADMIN` ou superior, com Zod, upsert por `storeId` da sessao e sem alterar `storeId` no update.
+- Logs controlados foram ajustados para `bot settings load failed` e `bot settings save failed`, sem dados sensiveis.
+
+### Validacao
+
+- A checagem direta com Prisma confirmou tabela, indices, registro salvo e delegate `prisma.botSettings`.
+- Com sessao JWT local autenticada, `GET /api/store/current/bot-settings` retornou 200 com defaults quando nao havia registro salvo.
+- Com sessao `OWNER`, `PUT /api/store/current/bot-settings` retornou 200 e criou o registro `BotSettings` para a loja atual.
+- `PUT /api/store/current/bot-settings` com `storeId` no body retornou 400.
+- Um novo `GET /api/store/current/bot-settings` retornou 200 com os valores salvos.
+- `yarn prisma generate`, `yarn eslint` e `yarn tsc --noEmit --pretty false --incremental false` foram executados apos a correcao.
+
+## 2 de junho de 2026 - Configuracoes do Bot por loja
+
+### Objetivo
+
+Criar a primeira versao persistida das configuracoes do bot por loja, cobrindo mensagens configuraveis e preparo do tempo de retorno automatico.
+
+### Arquivos criados
+
+- `prisma/migrations/20260602221348_add_bot_settings/migration.sql`
+- `src/lib/validators/bot-settings.ts`
+- `src/lib/bot/settings.ts`
+- `app/api/store/current/bot-settings/route.ts`
+- `app/(app)/configuracoes/bot/page.tsx`
+
+### Arquivos alterados
+
+- `prisma/schema.prisma`
+- `src/components/ui/app-sidebar.tsx`
+- `src/lib/bot/flow.ts`
+- `app/api/webhooks/whatsapp/route.ts`
+- `app/api/store/current/whatsapp/conversations/[id]/messages/send/route.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+- Criada a model `BotSettings`, 1:1 por `Store`, com mensagens configuraveis, `showMenuAfterWelcome`, `autoResumeEnabled` e `autoResumeAfterMinutes`.
+- Criada migration Prisma `20260602221348_add_bot_settings` via `yarn prisma migrate dev --name add_bot_settings --create-only` e aplicada depois com `yarn prisma migrate dev --name add_bot_settings`.
+- Criado helper `getBotSettingsForStore(storeId)`, retornando sempre configuracao completa com defaults quando ainda nao existe registro salvo.
+- Criado validator Zod `botSettingsSchema`, com trim, limite de 1000 caracteres para mensagens e intervalo de 5 a 1440 minutos para retorno automatico.
+- Criada API `GET/PUT /api/store/current/bot-settings`, store-scoped por sessao, com `ADMIN`, rejeitando `storeId` no body e usando respostas JSON padronizadas.
+- Criada pagina `/configuracoes/bot` com formulario de mensagens, toggles e tempo de retorno automatico.
+- Sidebar ganhou o item `Configuracoes do Bot` dentro do grupo `Configuracoes`.
+- O webhook passa a usar `welcomeMessage` e `showMenuAfterWelcome` no menu inicial e `customerRequestedHumanMessage` quando o cliente pede atendente.
+- O envio manual em `/atendimento` passa a usar `humanHandoffMessage` configurada e, quando a conversa ainda nao estava `PAUSED`, envia/persiste o handoff antes da mensagem manual do operador.
+
+### Fora de escopo mantido
+
+- Sem alterar Embedded Signup.
+- Sem alterar templates WhatsApp.
+- Sem expor `accessToken` no frontend.
+- Sem cron de retorno automatico nesta etapa.
+
+### Pendencia registrada
+
+- `autoResumeEnabled` e `autoResumeAfterMinutes` ficam persistidos e editaveis, mas o retorno automatico ainda nao foi ativado tecnicamente porque o schema atual nao diferencia com seguranca pausa solicitada pelo cliente, pausa iniciada pelo operador e existencia de resposta humana posterior.
+
+### Validacao
+
+- `yarn prisma migrate dev --name add_bot_settings --create-only` criou a migration.
+- `yarn prisma migrate dev --name add_bot_settings` aplicou a migration e deixou o banco em sync com o schema.
+- `yarn prisma generate` passou.
+- `yarn eslint` passou sem erros. Permanecem 2 warnings antigos fora do escopo em `app/(auth)/cadastro/controllers/index.tsx` e `app/(auth)/recuperar-senha/controllers/index.tsx`, ambos por `data` nao usada.
+- `yarn tsc --noEmit --pretty false --incremental false` passou sem erros.
+- O Yarn/Node exibiu o warning legado `DEP0005 Buffer()`, sem falha.
+
+## 2 de junho de 2026 - Aviso automatico ao iniciar atendimento humano WhatsApp
+
+### Objetivo
+
+Avisar o cliente no WhatsApp quando o operador iniciar o atendimento humano pelo `/atendimento`, sem repetir esse aviso enquanto a conversa ja estiver `PAUSED`.
+
+### Arquivos alterados
+
+- `app/api/store/current/whatsapp/conversations/[id]/messages/send/route.ts`
+- `app/(app)/atendimento/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+- O endpoint de envio manual passou a ler o `state` da conversa e a calcular se o aviso de handoff deve ser enviado.
+- Quando a conversa ainda nao estava `PAUSED`, o fluxo envia a mensagem manual do operador, persiste a `ConversationMessage OUT`, pausa a conversa e envia uma segunda mensagem automatica: "Certo, vou te passar para o atendimento humano. Nossa equipe continuará a conversa por aqui."
+- A mensagem automatica tambem e persistida como `ConversationMessage OUT`, com payload `manual_attendance_handoff_notice`.
+- Quando a conversa ja estava `PAUSED`, o endpoint envia somente a mensagem manual e nao repete o aviso automatico.
+- Se a mensagem manual falhar na Meta, nada e pausado nem persistido, mantendo o comportamento anterior.
+- Se o aviso automatico falhar depois da mensagem manual, a falha e registrada em uma `ConversationMessage OUT` com status `FAILED` e a resposta retorna `handoffError` para a UI.
+- A UI passa a adicionar `handoffMessage` no historico imediatamente quando a API retornar essa mensagem, mantendo a conversa como `HUMANO`/`PAUSED`.
+
+### Fora de escopo mantido
+
+- Sem migration Prisma.
+- Sem alterar schema Prisma.
+- Sem alterar webhook.
+- Sem alterar templates WhatsApp.
+- Sem alterar Embedded Signup.
+- Sem expor `accessToken` no frontend.
+
+### Validacao
+
+- `yarn eslint` passou sem erros. Permanecem 2 warnings antigos fora do escopo em `app/(auth)/cadastro/controllers/index.tsx` e `app/(auth)/recuperar-senha/controllers/index.tsx`, ambos por `data` nao usada.
+- `yarn tsc --noEmit --pretty false --incremental false` passou sem erros.
+- O Yarn/Node exibiu o warning legado `DEP0005 Buffer()`, sem falha.
+
+## 2 de junho de 2026 - Envio manual pausa bot no atendimento WhatsApp
+
+### Objetivo
+
+Garantir que qualquer mensagem manual enviada pela aba `/atendimento` assuma atendimento humano ativo, impedindo o bot de responder automaticamente no meio da conversa.
+
+### Arquivos alterados
+
+- `app/api/store/current/whatsapp/conversations/[id]/messages/send/route.ts`
+- `app/(app)/atendimento/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+- O endpoint de envio manual continua resolvendo a loja pela sessao, rejeitando `storeId` no body e validando a conversa por `id`, `storeId` e `channel = WHATSAPP`.
+- Depois do envio pela WhatsApp Cloud API e da persistencia da mensagem `OUT`, a conversa passa para `state = PAUSED` e atualiza `lastMessageAt`.
+- A resposta do endpoint agora devolve a conversa atualizada junto com a mensagem enviada, para a UI refletir o novo estado sem aguardar polling.
+- A lista lateral de `/atendimento` passa a mostrar `HUMANO` para conversas `PAUSED`.
+- O painel da conversa selecionada exibe o aviso "Atendimento humano ativo. O bot está pausado nesta conversa." e mantem o botao `Retomar bot`.
+- Ao enviar mensagem manual ou retomar o bot, a UI atualiza estado selecionado, badge e historico imediatamente e depois reconcilia com reload silencioso.
+
+### Fora de escopo mantido
+
+- Sem migration Prisma.
+- Sem alterar schema Prisma.
+- Sem alterar webhook.
+- Sem alterar fluxo de templates WhatsApp.
+- Sem alterar Embedded Signup.
+- Sem expor `accessToken` no frontend.
+
+### Validacao
+
+- `yarn eslint` passou sem erros. Permanecem 2 warnings antigos fora do escopo em `app/(auth)/cadastro/controllers/index.tsx` e `app/(auth)/recuperar-senha/controllers/index.tsx`, ambos por `data` nao usada.
+- `yarn tsc --noEmit --pretty false --incremental false` passou sem erros.
+- O Yarn/Node exibiu o warning legado `DEP0005 Buffer()`, sem falha.
+
+## 1 de junho de 2026 - Aba oficial de atendimento WhatsApp
+
+### Objetivo
+
+Criar a primeira versao oficial do inbox humano WhatsApp em `/atendimento`, usando as conversas reais persistidas pelo webhook, envio manual pela Cloud API e a `WhatsAppConnection` ativa da loja atual.
+
+### Arquivos criados
+
+- `app/(app)/atendimento/page.tsx`
+- `app/api/store/current/whatsapp/conversations/route.ts`
+- `app/api/store/current/whatsapp/conversations/[id]/messages/route.ts`
+- `app/api/store/current/whatsapp/conversations/[id]/messages/send/route.ts`
+- `src/lib/validators/whatsapp-attendance.ts`
+
+### Arquivos alterados
+
+- `src/components/ui/app-sidebar.tsx`
+- `middleware.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### APIs criadas
+
+- `GET /api/store/current/whatsapp/conversations`
+- `GET /api/store/current/whatsapp/conversations/[id]/messages`
+- `POST /api/store/current/whatsapp/conversations/[id]/messages/send`
+
+### O que foi implementado
+
+- A pagina `/atendimento` foi criada no app autenticado com status da conexao WhatsApp, aviso da janela de 24h, busca, lista de conversas, historico e polling simples a cada 5 segundos.
+- `middleware.ts` passou a proteger `/atendimento` como rota do app autenticado.
+- O sidebar ganhou o item oficial `Atendimento` apontando para `/atendimento`, com icone `MessageCircle`.
+- A listagem usa `Conversation.channel = WHATSAPP`, `Conversation.contact`, `Conversation.lastMessageAt`, `ConversationMessage.text`, `providerMessageId` e `payload`, sempre filtrando por `storeId` resolvido pela sessao/membership.
+- O historico normaliza `ConversationMessage.text` para `body`, retorna mensagens em ordem crescente e nao devolve dados sensiveis.
+- O envio manual valida body com Zod, rejeita `storeId`, exige `ADMIN`, busca a `WhatsAppConnection` ativa da loja, chama `sendMetaTextMessage` e persiste a mensagem `OUT` com `providerMessageId`/`graphMessageId` no padrao de `payload` usado pelo webhook.
+- Erros da Meta relacionados a janela de atendimento de 24h retornam mensagem legivel orientando o uso de template aprovado.
+- Conversas `PAUSED` podem ser retomadas pela UI usando o endpoint existente `POST /api/store/current/whatsapp/conversations/[id]/resume`.
+
+### Fora de escopo mantido
+
+- Sem WebSocket.
+- Sem inbox multicanal generico.
+- Sem IA.
+- Sem anexos ou midia.
+- Sem templates nessa tela.
+- Sem migration Prisma.
+- Sem alteracao do fluxo do webhook.
+
+### Validacao
+
+- `yarn eslint` passou sem erros. Permanecem 2 warnings antigos fora do escopo em `app/(auth)/cadastro/controllers/index.tsx` e `app/(auth)/recuperar-senha/controllers/index.tsx`, ambos por `data` nao usada.
+- `yarn tsc --noEmit --pretty false --incremental false` passou sem erros.
+- `curl.exe -I http://localhost:3001/atendimento` sem sessao retornou `307` para `/login?callbackUrl=%2Fatendimento`, confirmando a protecao pelo middleware.
+- O Yarn/Node exibiu o warning legado `DEP0005 Buffer()`, sem falha.
+
+### Pendencias e riscos
+
+- O teste manual real de screencast ainda depende de sessao valida, `WhatsAppConnection` conectada, webhook publico recebendo inbound e envio dentro da janela de 24h.
+- `unreadCount` retorna `0`, porque o schema atual nao possui campo de leitura por operador.
+- `customerName` e exibido quando vier do perfil Meta em `payload.contacts` ou de `AppointmentDraft`; caso contrario a UI usa o telefone da conversa.
+
 ## 10 de maio de 2026 - Retomada de conversa WhatsApp pausada
 
 ### Objetivo

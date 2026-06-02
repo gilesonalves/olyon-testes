@@ -23,6 +23,10 @@ import {
   isResumeChatbotTriggerText,
 } from "@/lib/bot/flow"
 import {
+  getBotSettingsForStore,
+  type CompleteBotSettings,
+} from "@/lib/bot/settings"
+import {
   combineDateKeyAndTime,
   formatDateKeyForBot,
   getDateKeyInTimeZone,
@@ -143,8 +147,6 @@ const BOOKING_END_OPTION_ID = NAV_END_OPTION_ID
 const APPOINTMENT_CANCEL_OPTION_ID = "appointment-action:cancel"
 const APPOINTMENT_RESCHEDULE_OPTION_ID = "appointment-action:reschedule"
 const CANCEL_CONFIRM_OPTION_ID = "appointment-cancel:confirm"
-const CHATBOT_PAUSED_MESSAGE =
-  "Chat pausado. Em breve um atendente continuar\u00e1 por aqui."
 const CHATBOT_TIMEOUT_MESSAGE =
   "Encerramos este atendimento por falta de intera\u00e7\u00e3o. Quando quiser agendar novamente, \u00e9 s\u00f3 me chamar."
 const CHATBOT_CLOSED_MESSAGE =
@@ -604,9 +606,13 @@ function buildServicePricesNavigationMessage(hasMorePrices: boolean) {
   })
 }
 
-function buildMainMenuMessage() {
+function buildMainMenuMessage(botSettings: CompleteBotSettings) {
+  if (!botSettings.showMenuAfterWelcome) {
+    return createTextBotMessage(botSettings.welcomeMessage)
+  }
+
   return buildListBotMessage({
-    bodyText: "Olá! Como posso te ajudar?",
+    bodyText: botSettings.welcomeMessage,
     buttonText: "Ver opções",
     options: [
       { id: MAIN_MENU_SCHEDULE_OPTION_ID, title: "Agendar horário" },
@@ -1186,6 +1192,7 @@ async function processIncomingWhatsAppMessage(
 
   const outMessages: string[] = []
   const persistedOutboundMessages: PersistedOutboundMessage[] = []
+  const botSettings = await getBotSettingsForStore(currentStoreId)
   let transactionResult: ProcessIncomingMessageResult
 
   try {
@@ -1398,7 +1405,7 @@ async function processIncomingWhatsAppMessage(
           mainMenuShown: true,
           abandonDraft: true,
         })
-        await appendBotReply(buildMainMenuMessage(), {
+        await appendBotReply(buildMainMenuMessage(botSettings), {
           reason: "RETURN_TO_MAIN_MENU",
         })
       }
@@ -2092,7 +2099,7 @@ async function processIncomingWhatsAppMessage(
           },
         })
 
-        await appendBotReply(CHATBOT_PAUSED_MESSAGE, {
+        await appendBotReply(botSettings.customerRequestedHumanMessage, {
           reason: "CHATBOT_PAUSED_BY_CUSTOMER",
           pausedByMessageId: savedIn.id,
         })
@@ -2114,13 +2121,13 @@ async function processIncomingWhatsAppMessage(
             abandonDraft: true,
           })
           await appendBotReply(
-            "Atendimento automatico retomado. Vou te mostrar o menu inicial.",
+            "Atendimento automático retomado.",
             {
               reason: "CHATBOT_RESUMED_BY_CUSTOMER",
               resumedByMessageId: savedIn.id,
             }
           )
-          await appendBotReply(buildMainMenuMessage(), {
+          await appendBotReply(buildMainMenuMessage(botSettings), {
             reason: "CHATBOT_RESUMED_BY_CUSTOMER_MENU",
             resumedByMessageId: savedIn.id,
           })
@@ -2569,7 +2576,7 @@ async function processIncomingWhatsAppMessage(
         }
 
         if (action.type === "SHOW_MAIN_MENU") {
-          await appendBotReply(buildMainMenuMessage(), {
+          await appendBotReply(buildMainMenuMessage(botSettings), {
             reason: "MAIN_MENU_SHOWN",
           })
           continue
@@ -3603,7 +3610,7 @@ async function processIncomingWhatsAppMessage(
             mainMenuShown: true,
             priceListPage: null,
           })
-          await appendBotReply(buildMainMenuMessage(), {
+          await appendBotReply(buildMainMenuMessage(botSettings), {
             reason: "EMPTY_OUTBOUND_FALLBACK_MAIN_MENU",
           })
         } else {

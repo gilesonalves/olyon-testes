@@ -15,6 +15,7 @@ export async function middleware(req: NextRequest) {
   const isAdminRoute = pathname.startsWith("/admin")
   const isAppRoute = [
     "/dashboard",
+    "/atendimento",
     "/usuarios",
     "/servicos",
     "/agendamentos",
@@ -92,6 +93,7 @@ export const config = {
     "/login",
     "/admin/:path*",
     "/dashboard/:path*",
+    "/atendimento/:path*",
     "/usuarios/:path*",
     "/servicos/:path*",
     "/agendamentos/:path*",

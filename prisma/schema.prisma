@@ -49,6 +49,7 @@ model Store {
   memberships          Membership[]
   services             Service[]
   weekScheduleDays     WeekScheduleDay[]
+  botSettings          BotSettings?
   WhatsAppConnection   WhatsAppConnection?
 }
 
@@ -379,6 +380,22 @@ model BlockedSchedule {
 
   @@index([storeId, date])
   @@index([membershipId, date])
+}
+
+model BotSettings {
+  id                            String   @id @default(cuid())
+  storeId                       String   @unique
+  welcomeMessage                String?
+  showMenuAfterWelcome          Boolean  @default(true)
+  humanHandoffMessage           String?
+  customerRequestedHumanMessage String?
+  autoResumeEnabled             Boolean  @default(false)
+  autoResumeAfterMinutes        Int      @default(30)
+  createdAt                     DateTime @default(now())
+  updatedAt                     DateTime @updatedAt
+  store                         Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId])
 }
 
 model WhatsAppConnection {

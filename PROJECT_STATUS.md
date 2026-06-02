@@ -1,6 +1,6 @@
 # PROJECT_STATUS.md
 
-**Data de ultima atualizacao:** 10 de maio de 2026
+**Data de ultima atualizacao:** 2 de junho de 2026
 
 ## Status geral do projeto Olyon
 
@@ -117,6 +117,15 @@
 [x] Tela minima `/configuracoes/whatsapp/templates` criada para demonstrar templates WhatsApp no App Review da Meta
 [x] Endpoints store-scoped para listar templates WhatsApp e enviar template de teste via Graph API `v25.0`
 [x] Templates WhatsApp com placeholders nomeados (`{{customer_name}}`, `{{appointment_date}}`, `{{order_id}}`) suportados na UI e no envio para a Cloud API
+[x] Aba oficial `/atendimento` criada no app autenticado para inbox humano WhatsApp
+[x] Middleware protege `/atendimento` como rota autenticada do app da loja
+[x] Inbox WhatsApp inicial lista conversas reais da loja atual e historico de `ConversationMessage`
+[x] Envio manual de texto livre pela Cloud API usando `sendMetaTextMessage`, com persistencia `ConversationMessage OUT`
+[x] Envio manual em `/atendimento` pausa automaticamente o bot com `state = PAUSED` e badge `HUMANO`
+[x] Inicio de atendimento humano em `/atendimento` envia aviso automatico uma unica vez ao cliente quando a conversa ainda nao estava `PAUSED`
+[x] Configuracoes do Bot por loja com `BotSettings`, API store-scoped e UI em `/configuracoes/bot`
+[x] `/atendimento` exibe o ativo WhatsApp conectado sem expor `accessToken`
+[x] `/atendimento` mostra aviso da janela de atendimento de 24h para mensagens livres
 [x] Pausa operacional do chatbot WhatsApp por palavra-chave com estado `PAUSED`
 [x] Matcher de pausa do chatbot WhatsApp ampliado para frases naturais de handoff humano
 [x] Fluxo WhatsApp com timeout por inatividade, encerrar atendimento, voltar etapa e voltar ao menu
@@ -178,6 +187,12 @@ O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) poss
 - A propria loja autenticada agora possui uma tela minima de App Review em `/configuracoes/whatsapp/templates`, com listagem de templates da WABA, selecao, preenchimento de placeholders do BODY e envio de template de teste sem expor `accessToken` no frontend.
 - Os endpoints `GET /api/store/current/whatsapp/templates` e `POST /api/store/current/whatsapp/templates/test-send` usam a `WhatsAppConnection` ativa da Store atual, sem aceitar `storeId` no payload, para atender a exigencia da Meta sobre `whatsapp_business_management`.
 - A tela de templates agora reconhece placeholders numericos e nomeados no BODY, aproveitando `components[].example.body_text_named_params` para labels e exemplos, e o envio inclui `parameter_name` quando a Cloud API exige parametros nomeados.
+- A aba oficial `/atendimento` agora permite listar conversas WhatsApp reais da loja, abrir historico, enviar mensagem livre manual pela Cloud API e retomar conversas `PAUSED` pelo endpoint store-scoped existente.
+- O envio manual em `/atendimento` respeita a `WhatsAppConnection` ativa da loja atual, nunca recebe `storeId` do frontend e nao expoe `accessToken`; fora da janela de 24h retorna erro legivel orientando o uso de template aprovado.
+- Ao enviar mensagem manual em `/atendimento`, a conversa passa imediatamente para `PAUSED`, a lista mostra badge `HUMANO` e o painel exibe o aviso de atendimento humano ativo com acao para `Retomar bot`.
+- Quando o atendimento humano comeca pelo `/atendimento`, o cliente recebe uma mensagem automatica curta de handoff; conversas que ja estavam `PAUSED` nao recebem aviso duplicado.
+- As mensagens principais do bot agora podem ser configuradas por loja em `/configuracoes/bot`, com persistencia em `BotSettings`, API store-scoped e defaults seguros quando a loja ainda nao salvou configuracao.
+- O tempo de retorno automatico do bot ja fica persistido por loja, mas o job/cron de retomada ainda nao foi ativado nesta etapa.
 - Tela `/agendamentos` com calendario mensal limpo, resumo por dia, sheet de detalhe, skeletons reais e criacao/edicao guiadas por disponibilidade real.
 - Tela `/agendamentos` agora com agenda diaria operacional por profissional como experiencia principal, preservando criacao, detalhe, edicao e disponibilidade reais.
 - Criacao manual e remarcacao em `/agendamentos` agora trafegam `date + time`, montam `startAt/endAt` de forma explicita no backend e mantem a mesma engine de disponibilidade como fonte de verdade.
@@ -1018,6 +1033,162 @@ Proximo passo sugerido:
 
 ---
 
+## 5.12 Ajuste atual - atendimento humano pausa bot no envio manual
+
+- `ConversationState.PAUSED` ja existia no schema Prisma; nenhuma migration foi criada.
+- O endpoint `POST /api/store/current/whatsapp/conversations/[id]/messages/send` continua validando sessao, loja atual, conversa WhatsApp e payload sem aceitar `storeId` no body.
+- Apos envio pela Cloud API e persistencia da `ConversationMessage OUT`, a conversa e atualizada para `state = PAUSED` e `lastMessageAt` da mensagem criada.
+- A resposta do envio manual agora inclui a conversa atualizada, permitindo que a UI reflita `PAUSED` imediatamente.
+- A UI de `/atendimento` mostra `HUMANO` para conversas `PAUSED`, exibe o aviso "Atendimento humano ativo. O bot está pausado nesta conversa." e mantem a acao `Retomar bot`.
+- O botao `Retomar bot` reaproveita o endpoint store-scoped existente e atualiza a conversa selecionada e a lista para `IDLE` antes do proximo polling.
+- Webhook, templates WhatsApp e Embedded Signup permaneceram fora do escopo.
+
+Arquivos alterados neste ajuste:
+
+- `app/api/store/current/whatsapp/conversations/[id]/messages/send/route.ts`
+- `app/(app)/atendimento/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+Validacao executada neste ajuste:
+
+- [x] `yarn eslint` passou sem erros; permanecem 2 warnings antigos fora do escopo em `app/(auth)/cadastro/controllers/index.tsx` e `app/(auth)/recuperar-senha/controllers/index.tsx`.
+- [x] `yarn tsc --noEmit --pretty false --incremental false` passou sem erros.
+
+---
+
+## 5.13 Ajuste atual - aviso automatico no inicio do atendimento humano
+
+- `ConversationState.PAUSED` e o schema atual foram apenas auditados; nenhuma migration ou mudanca de schema foi criada.
+- `POST /api/store/current/whatsapp/conversations/[id]/messages/send` agora guarda se a conversa ja estava `PAUSED` antes do envio manual.
+- Quando a conversa ainda nao estava pausada, o endpoint envia a mensagem manual, persiste a `ConversationMessage OUT`, pausa a conversa e envia uma segunda mensagem automatica de handoff ao cliente.
+- A mensagem automatica usa o helper existente `sendMetaTextMessage` e tambem e persistida como `ConversationMessage OUT`.
+- Quando a conversa ja estava `PAUSED`, o endpoint envia somente a mensagem manual e nao repete o aviso automatico.
+- Se a mensagem manual falhar, a conversa nao e pausada e o aviso nao e enviado.
+- Se o aviso automatico falhar depois da mensagem manual, a tentativa e registrada com status `FAILED` e a UI recebe `handoffError`.
+- A UI de `/atendimento` adiciona `handoffMessage` ao historico imediatamente quando retornada pela API e preserva o badge `HUMANO` e o aviso interno de bot pausado.
+- Webhook, templates WhatsApp e Embedded Signup permaneceram fora do escopo.
+
+Arquivos alterados neste ajuste:
+
+- `app/api/store/current/whatsapp/conversations/[id]/messages/send/route.ts`
+- `app/(app)/atendimento/page.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+Validacao executada neste ajuste:
+
+- [x] `yarn eslint` passou sem erros; permanecem 2 warnings antigos fora do escopo em `app/(auth)/cadastro/controllers/index.tsx` e `app/(auth)/recuperar-senha/controllers/index.tsx`.
+- [x] `yarn tsc --noEmit --pretty false --incremental false` passou sem erros.
+
+---
+
+## 5.14 Ajuste atual - configuracoes do bot por loja
+
+- Foi criada a model `BotSettings`, vinculada 1:1 a `Store`, para mensagens e parametros do bot por loja.
+- A migration `20260602221348_add_bot_settings` foi criada com `yarn prisma migrate dev --name add_bot_settings --create-only` e aplicada com `yarn prisma migrate dev --name add_bot_settings`.
+- `src/lib/bot/settings.ts` centraliza defaults seguros e `getBotSettingsForStore(storeId)`, retornando configuracao completa mesmo sem registro salvo.
+- `src/lib/validators/bot-settings.ts` valida o payload com Zod, incluindo mensagens de ate 1000 caracteres e `autoResumeAfterMinutes` entre 5 e 1440.
+- `GET /api/store/current/bot-settings` retorna defaults ou configuracao salva para a loja atual da sessao.
+- `PUT /api/store/current/bot-settings` exige `ADMIN`, rejeita `storeId` no body, faz upsert por `storeId` da sessao e retorna a configuracao salva.
+- A pagina `/configuracoes/bot` permite editar mensagens, exibicao de menu, retorno automatico habilitado e minutos para retorno.
+- O sidebar ganhou `Configuracoes do Bot` dentro de `Configuracoes`.
+- O webhook usa `welcomeMessage` e `showMenuAfterWelcome` no menu inicial e `customerRequestedHumanMessage` quando o cliente pede atendente.
+- O envio manual em `/atendimento` usa `humanHandoffMessage` configurada e envia/persiste o handoff antes da mensagem manual quando a conversa ainda nao estava `PAUSED`.
+- Webhook estrutural, templates WhatsApp e Embedded Signup permaneceram fora do escopo.
+
+Pendencia registrada:
+
+- `autoResumeEnabled` e `autoResumeAfterMinutes` estao persistidos e editaveis, mas o retorno automatico ainda nao foi ativado tecnicamente porque o schema atual nao diferencia com seguranca pausa por cliente, pausa por operador e resposta humana posterior.
+
+Arquivos criados neste ajuste:
+
+- `prisma/migrations/20260602221348_add_bot_settings/migration.sql`
+- `src/lib/validators/bot-settings.ts`
+- `src/lib/bot/settings.ts`
+- `app/api/store/current/bot-settings/route.ts`
+- `app/(app)/configuracoes/bot/page.tsx`
+
+Arquivos alterados neste ajuste:
+
+- `prisma/schema.prisma`
+- `src/components/ui/app-sidebar.tsx`
+- `src/lib/bot/flow.ts`
+- `app/api/webhooks/whatsapp/route.ts`
+- `app/api/store/current/whatsapp/conversations/[id]/messages/send/route.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+Validacao executada neste ajuste:
+
+- [x] `yarn prisma migrate dev --name add_bot_settings --create-only`
+- [x] `yarn prisma migrate dev --name add_bot_settings`
+- [x] `yarn prisma generate`
+- [x] `yarn eslint` passou sem erros; permanecem 2 warnings antigos fora do escopo em `app/(auth)/cadastro/controllers/index.tsx` e `app/(auth)/recuperar-senha/controllers/index.tsx`.
+- [x] `yarn tsc --noEmit --pretty false --incremental false` passou sem erros.
+
+---
+
+## 5.15 Ajuste atual - correcao de GET/PUT de BotSettings
+
+- A model, migration, tabela `BotSettings`, indice unico de `storeId` e delegate `prisma.botSettings` foram auditados e estavam corretos.
+- O erro real no terminal do Next era `Cannot read properties of undefined (reading 'findUnique')` no GET e `Cannot read properties of undefined (reading 'upsert')` no PUT, causado por processo `next dev` antigo com Prisma Client carregado antes do `BotSettings`.
+- Apos `yarn prisma generate` e restart do `next dev`, a API passou a reconhecer `prisma.botSettings`.
+- Tambem foi corrigida a exigencia excessiva de permissao no `GET /api/store/current/bot-settings`, que exigia `ADMIN` embora a tela precise carregar defaults/configuracao para qualquer membro autenticado da loja.
+- O `GET` foi ajustado para exigir `STAFF` ou superior, mantendo escopo por `storeId` da sessao.
+- O `PUT` permanece restrito a `ADMIN` ou superior, rejeitando `storeId` no body e fazendo upsert por `storeId` da sessao.
+- Logs controlados foram ajustados para `bot settings load failed` e `bot settings save failed`, sem dados sensiveis.
+
+Arquivos alterados neste ajuste:
+
+- `app/api/store/current/bot-settings/route.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+Validacao executada neste ajuste:
+
+- [x] Checagem direta com Prisma confirmou tabela `BotSettings`, indices `BotSettings_storeId_key`/`BotSettings_storeId_idx`, registro salvo e delegate `prisma.botSettings`.
+- [x] `GET /api/store/current/bot-settings` autenticado como `STAFF` retornou 200 com defaults.
+- [x] `PUT /api/store/current/bot-settings` autenticado como `OWNER` retornou 200 e salvou a configuracao.
+- [x] `PUT /api/store/current/bot-settings` com `storeId` no body retornou 400.
+- [x] `GET /api/store/current/bot-settings` apos salvar retornou 200 com os valores persistidos.
+- [x] `yarn prisma generate`
+- [x] `yarn eslint`
+- [x] `yarn tsc --noEmit --pretty false --incremental false`
+
+---
+
+## 5.16 Ajuste atual - BotSettings no menu inicial do WhatsApp real
+
+- O webhook real resolve a loja por `currentStoreId` da conexao WhatsApp inbound e carrega `getBotSettingsForStore(currentStoreId)` antes de processar o fluxo.
+- Os pontos que exibem menu inicial no webhook usam `buildMainMenuMessage(botSettings)`, que envia `botSettings.welcomeMessage`.
+- `showMenuAfterWelcome = true` envia `welcomeMessage` com lista de opcoes; `showMenuAfterWelcome = false` envia apenas `welcomeMessage`.
+- O comando de cliente para atendimento humano usa `botSettings.customerRequestedHumanMessage`.
+- Foi removido o helper legado `getWelcomeMenuText()` e a constante `WELCOME_MENU_TEXT` de `src/lib/bot/flow.ts`, que ainda carregavam o texto antigo `Olá! Como posso te ajudar?`.
+- A retomada de conversa `PAUSED` agora envia apenas `Atendimento automático retomado.` e depois monta o menu por `buildMainMenuMessage(botSettings)`.
+- O texto `Olá! Como posso te ajudar?` permanece somente em `DEFAULT_BOT_SETTINGS`, como fallback quando a loja ainda nao tem `BotSettings` salvo.
+- Para o WhatsApp real, as configuracoes precisam estar salvas no banco do deploy publico `https://olyon-testes.vercel.app/api/webhooks/whatsapp`; testes em `localhost` podem ler outro banco.
+- Confirmar que a migration `20260602221348_add_bot_settings` foi aplicada no banco da Vercel; se necessario, executar `yarn prisma migrate deploy` no ambiente de deploy.
+- Embedded Signup, templates WhatsApp, schema Prisma e migrations ficaram fora do escopo.
+
+Arquivos alterados neste ajuste:
+
+- `src/lib/bot/flow.ts`
+- `app/api/webhooks/whatsapp/route.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+Validacao executada neste ajuste:
+
+- [x] Busca por `Olá! Como posso te ajudar?`
+- [x] Busca por `Atendimento automático retomado`
+- [x] Busca por `Chat pausado`
+- [x] Busca por `Como posso te ajudar`
+- [x] `yarn eslint`
+- [x] `yarn tsc --noEmit --pretty false --incremental false`
+
+---
+
 ## 6. Arquivos principais desta etapa
 
 - `app/api/webhooks/whatsapp/route.ts`
@@ -1069,6 +1240,7 @@ Proximo passo sugerido:
 5. Cobrir create manual, remarcacao, listagem por data, bloqueio com conflito de appointments e agenda publica com testes automatizados de integracao.
 6. Avaliar auto-retomada de conversas WhatsApp em `PAUSED` apos X horas sem atendimento humano, quando houver uma definicao clara de mensagem humana/atendimento manual.
 7. Limpar warnings antigos fora do escopo da feature, como lockfiles multiplos, `middleware` depreciado e baseline-browser-mapping desatualizado.
+8. Validar o fluxo real de App Review em `/atendimento`: inbound pelo WhatsApp nativo, conversa aparecendo no Olyon, envio manual dentro da janela de 24h e recebimento no WhatsApp nativo.
 
 ---
 
@@ -1106,6 +1278,10 @@ Resultado:
 
 | Data | Mudanca |
 |------|---------|
+| 02/06/2026 | Configuracoes do Bot por loja: criada model `BotSettings`, API `GET/PUT /api/store/current/bot-settings`, tela `/configuracoes/bot`, mensagens configuraveis no webhook/atendimento e preparo persistido de retorno automatico |
+| 02/06/2026 | WhatsApp atendimento humano: primeira mensagem manual em conversa ainda nao pausada agora envia tambem um aviso automatico ao cliente, persiste essa `OUT` e nao repete o aviso enquanto a conversa ja estiver `PAUSED` |
+| 02/06/2026 | WhatsApp atendimento humano: envio manual em `/atendimento` agora pausa automaticamente a conversa em `PAUSED`, mostra badge `HUMANO`, exibe aviso de bot pausado e permite retomar para `IDLE` pela UI |
+| 01/06/2026 | WhatsApp atendimento humano: criada a aba oficial `/atendimento`, APIs store-scoped de conversas/mensagens/envio manual, persistencia `ConversationMessage OUT`, aviso de janela de 24h e item oficial no sidebar sem expor `accessToken` |
 | 10/05/2026 | WhatsApp: conversas `PAUSED` ganharam retomada manual por `POST /api/store/current/whatsapp/conversations/[id]/resume` e retomada pelo cliente via comandos como `menu`, `retomar bot` e `atendimento automatico`, sem alterar o fluxo normal fora de `PAUSED` |
 | 10/05/2026 | WhatsApp templates: suporte a placeholders nomeados no BODY, com leitura de `body_text_named_params`, preenchimento inicial por exemplos da Meta e envio de `parameter_name` na Cloud API mantendo compatibilidade com placeholders numericos |
 | 10/05/2026 | WhatsApp templates App Review: criada tela minima `/configuracoes/whatsapp/templates`, endpoints store-scoped de listagem e envio de template via Graph API `v25.0`, com placeholders do BODY e sem expor `accessToken` no frontend |

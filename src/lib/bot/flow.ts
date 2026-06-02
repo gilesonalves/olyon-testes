@@ -3,15 +3,6 @@ import type { ConversationState } from "@/lib/prisma"
 import { normalizeBotText } from "./datetime"
 import type { BotAction, BotConversationContext, BotResult } from "./types"
 
-const COMMANDS_FOOTER = "Comandos: voltar | menu | atendente | encerrar"
-const WELCOME_MENU_TEXT = `Olá! Como posso te ajudar?
-
-1. Agendar horário
-2. Meus agendamentos
-3. Preços
-4. Informações
-
-${COMMANDS_FOOTER}`
 const BOT_INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000
 
 const CHATBOT_PAUSE_KEYWORD_REGEX = /\b(?:atendente|humano|chatbot)\b/
@@ -139,10 +130,6 @@ export function isResumeChatbotTriggerText(input: string | null | undefined) {
 
   const normalizedText = normalizeConversationControlText(input)
   return normalizedText.length > 0 && matchesControlPatterns(normalizedText, RESUME_CHATBOT_PATTERNS)
-}
-
-export function getWelcomeMenuText() {
-  return WELCOME_MENU_TEXT
 }
 
 export function buildBotFlowResetContext(mainMenuShown: boolean) {
@@ -284,6 +271,10 @@ function isGreeting(text: string) {
     "e ai",
     "tudo bem",
   ])
+}
+
+function isInitialWelcomeIntent(text: string) {
+  return isGreeting(text) || matchesAny(text, ["menu", "iniciar", "agendar"])
 }
 
 function buildStartSchedulingActions(): BotAction[] {
@@ -471,6 +462,15 @@ export function handleIncomingMessage(params: {
   ) {
     return {
       actions: [{ type: "SHOW_SERVICE_PRICES_PAGE", page: params.context.priceListPage + 1 }],
+    }
+  }
+
+  if (params.state === "IDLE" && !mainMenuShown && isInitialWelcomeIntent(text)) {
+    return {
+      actions: [
+        { type: "PATCH_CONTEXT", context: { mainMenuShown: true, priceListPage: null } },
+        { type: "SHOW_MAIN_MENU" },
+      ],
     }
   }
 
