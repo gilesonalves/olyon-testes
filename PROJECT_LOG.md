@@ -1,3 +1,46 @@
+## 2 de junho de 2026 - Favicon oficial do Olyon
+
+### Objetivo
+
+Adicionar o icone oficial do Olyon para aparecer corretamente na aba do navegador.
+
+### Arquivos alterados
+
+- `app/layout.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### Arquivos criados
+
+- `app/icon.png`
+
+### Diagnostico
+
+- Ja existia `app/favicon.png`, um PNG quadrado de 1254x1254 com o icone do Olyon.
+- Nao havia `public/` com assets adicionais nem `src/assets/`.
+- As telas de login/sidebar referenciam `/imagens/logo-login.svg`, mas esse arquivo nao foi localizado no workspace atual.
+- O App Router reconhece `app/icon.png` como arquivo especial de metadata; `app/favicon.png` nao e o nome mais adequado para favicon automatico.
+- `app/layout.tsx` ja possuia metadata global.
+
+### O que foi ajustado
+
+- Gerada uma versao 512x512 do PNG existente em `app/icon.png`.
+- Atualizada a metadata global para usar a descricao do Olyon e declarar `icons.icon`/`icons.apple` apontando para `/icon.png`.
+
+### Fora de escopo mantido
+
+- Sem Prisma.
+- Sem migration.
+- Sem webhook.
+- Sem fluxo WhatsApp.
+- Sem alterar `/atendimento`.
+- Sem alterar `/configuracoes/bot`.
+
+### Validacao
+
+- O arquivo `app/icon.png` foi gerado e servido pelo dev server em `/icon.png`.
+- `yarn eslint` e `yarn tsc --noEmit --pretty false --incremental false` foram executados apos a alteracao.
+
 ## 2 de junho de 2026 - BotSettings no menu inicial do WhatsApp real
 
 ### Objetivo

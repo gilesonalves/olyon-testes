@@ -1189,6 +1189,34 @@ Validacao executada neste ajuste:
 
 ---
 
+## 5.17 Ajuste atual - favicon oficial do Olyon
+
+- Foi auditado que o projeto ja tinha `app/favicon.png`, um PNG quadrado de 1254x1254 com o icone do Olyon.
+- Nao havia `public/` com assets adicionais nem `src/assets/`.
+- Foi gerado `app/icon.png` em 512x512 a partir do PNG existente.
+- `app/layout.tsx` teve a metadata atualizada com descricao do Olyon e `icons.icon`/`icons.apple` apontando para `/icon.png`.
+- O App Router passa a ter um app icon especial reconhecido para a aba do navegador.
+- Prisma, migrations, webhook, fluxo WhatsApp, `/atendimento` e `/configuracoes/bot` permaneceram fora do escopo.
+
+Arquivos criados neste ajuste:
+
+- `app/icon.png`
+
+Arquivos alterados neste ajuste:
+
+- `app/layout.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+Validacao executada neste ajuste:
+
+- [x] `app/icon.png` gerado em 512x512.
+- [x] Dev server serviu `/icon.png` com `Content-Type: image/png`.
+- [x] `yarn eslint`
+- [x] `yarn tsc --noEmit --pretty false --incremental false`
+
+---
+
 ## 6. Arquivos principais desta etapa
 
 - `app/api/webhooks/whatsapp/route.ts`
