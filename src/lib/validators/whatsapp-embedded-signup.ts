@@ -24,7 +24,6 @@ export const whatsAppEmbeddedSignupCallbackSchema = z
       .optional(),
     phoneNumberId: optionalMetaIdentifier("phoneNumberId"),
     wabaId: optionalMetaIdentifier("wabaId"),
-    businessId: optionalMetaIdentifier("businessId"),
   })
   .strict()
 

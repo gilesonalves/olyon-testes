@@ -6,10 +6,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 
 const META_SDK_SCRIPT_ID = "meta-facebook-jssdk"
-const NEXT_PUBLIC_META_APP_ID = process.env.NEXT_PUBLIC_META_APP_ID?.trim() || ""
-const NEXT_PUBLIC_META_EMBEDDED_SIGNUP_CONFIG_ID =
-  process.env.NEXT_PUBLIC_META_EMBEDDED_SIGNUP_CONFIG_ID?.trim() || ""
-const META_GRAPH_API_VERSION = "v25.0"
+const META_SESSION_METADATA_TIMEOUT_MS = 3_000
 
 type EmbeddedSignupStatusTone = "connected" | "pending" | "disconnected" | "error"
 
@@ -40,6 +37,17 @@ type EmbeddedSignupApiError = {
   }
 }
 
+type EmbeddedSignupPublicConfig = {
+  appId: string
+  configId: string
+  graphApiVersion: string
+}
+
+type EmbeddedSignupConfigApiSuccess = {
+  ok: true
+  data: EmbeddedSignupPublicConfig
+}
+
 type MetaLoginResponse = {
   status?: string
   authResponse?: {
@@ -67,7 +75,6 @@ type EmbeddedSignupWindowMessage = {
   data?: {
     phone_number_id?: string
     waba_id?: string
-    business_id?: string
   }
 }
 
@@ -75,7 +82,6 @@ type PendingSessionMetadata = {
   state?: string
   phoneNumberId?: string
   wabaId?: string
-  businessId?: string
 }
 
 declare global {
@@ -108,6 +114,14 @@ function parseMessagePayload(payload: unknown): EmbeddedSignupWindowMessage | nu
   }
 
   return payload as EmbeddedSignupWindowMessage
+}
+
+function hasSignupAssetMetadata(metadata: PendingSessionMetadata | null) {
+  return Boolean(metadata?.phoneNumberId || metadata?.wabaId)
+}
+
+function isEmbeddedSignupFinishEvent(event: string | undefined) {
+  return event === "FINISH" || event?.startsWith("FINISH_") === true
 }
 
 function getStatusStyles(statusTone: EmbeddedSignupStatusTone) {
@@ -156,9 +170,16 @@ export function EmbeddedSignupButton({
   const [sdkError, setSdkError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [eventMessage, setEventMessage] = useState<string | null>(null)
+  const signupConfigRef = useRef<EmbeddedSignupPublicConfig | null>(null)
   const sessionMetadataRef = useRef<PendingSessionMetadata | null>(null)
+  const sessionMetadataPromiseRef = useRef<Promise<PendingSessionMetadata> | null>(
+    null
+  )
+  const resolveSessionMetadataRef = useRef<
+    ((metadata: PendingSessionMetadata) => void) | null
+  >(null)
 
-  const initializeSdk = useEffectEvent(() => {
+  const initializeSdk = useEffectEvent((config: EmbeddedSignupPublicConfig) => {
     if (!window.FB) {
       setSdkState("error")
       setSdkError("O SDK da Meta nao ficou disponivel no navegador.")
@@ -167,10 +188,10 @@ export function EmbeddedSignupButton({
 
     try {
       window.FB.init({
-        appId: NEXT_PUBLIC_META_APP_ID,
+        appId: config.appId,
         autoLogAppEvents: false,
         xfbml: false,
-        version: META_GRAPH_API_VERSION,
+        version: config.graphApiVersion,
       })
 
       setSdkState("ready")
@@ -182,55 +203,96 @@ export function EmbeddedSignupButton({
   })
 
   useEffect(() => {
-    if (!NEXT_PUBLIC_META_APP_ID || !NEXT_PUBLIC_META_EMBEDDED_SIGNUP_CONFIG_ID) {
-      setSdkState("error")
-      setSdkError(
-        "A conexao com a Meta nao esta disponivel neste ambiente agora."
-      )
-      return
-    }
-
-    if (window.FB) {
-      initializeSdk()
-      return
-    }
-
+    let cancelled = false
+    let script: HTMLScriptElement | null = null
+    let handleLoad: (() => void) | null = null
+    let handleError: (() => void) | null = null
     setSdkState("loading")
     setSdkError(null)
 
-    const existingScript = document.getElementById(
-      META_SDK_SCRIPT_ID
-    ) as HTMLScriptElement | null
-    const script =
-      existingScript ??
-      Object.assign(document.createElement("script"), {
-        id: META_SDK_SCRIPT_ID,
-        async: true,
-        defer: true,
-        crossOrigin: "anonymous",
-        src: "https://connect.facebook.net/en_US/sdk.js",
-      })
+    async function setupSdk() {
+      try {
+        const response = await fetch("/api/whatsapp/embedded-signup/config", {
+          cache: "no-store",
+        })
+        const json = (await response.json().catch(() => null)) as
+          | EmbeddedSignupConfigApiSuccess
+          | EmbeddedSignupApiError
+          | null
 
-    const handleLoad = () => {
-      initializeSdk()
+        if (!response.ok || !json?.ok) {
+          throw new Error(
+            json && !json.ok
+              ? getFriendlyEmbeddedSignupErrorMessage(json.error)
+              : "A conexao com a Meta nao esta disponivel neste ambiente agora."
+          )
+        }
+
+        if (cancelled) {
+          return
+        }
+
+        signupConfigRef.current = json.data
+
+        if (window.FB) {
+          initializeSdk(json.data)
+          return
+        }
+
+        const existingScript = document.getElementById(
+          META_SDK_SCRIPT_ID
+        ) as HTMLScriptElement | null
+        script =
+          existingScript ??
+          Object.assign(document.createElement("script"), {
+            id: META_SDK_SCRIPT_ID,
+            async: true,
+            defer: true,
+            crossOrigin: "anonymous",
+            src: "https://connect.facebook.net/en_US/sdk.js",
+          })
+
+        handleLoad = () => {
+          initializeSdk(json.data)
+        }
+        handleError = () => {
+          setSdkState("error")
+          setSdkError("Nao foi possivel carregar o SDK da Meta.")
+        }
+
+        window.fbAsyncInit = handleLoad
+        script.addEventListener("load", handleLoad)
+        script.addEventListener("error", handleError)
+
+        if (!existingScript) {
+          document.body.appendChild(script)
+        }
+      } catch (error) {
+        if (cancelled) {
+          return
+        }
+
+        setSdkState("error")
+        setSdkError(
+          error instanceof Error
+            ? error.message
+            : "A conexao com a Meta nao esta disponivel neste ambiente agora."
+        )
+      }
     }
 
-    const handleError = () => {
-      setSdkState("error")
-      setSdkError("Nao foi possivel carregar o SDK da Meta.")
-    }
-
-    window.fbAsyncInit = handleLoad
-    script.addEventListener("load", handleLoad)
-    script.addEventListener("error", handleError)
-
-    if (!existingScript) {
-      document.body.appendChild(script)
-    }
+    void setupSdk()
 
     return () => {
-      script.removeEventListener("load", handleLoad)
-      script.removeEventListener("error", handleError)
+      cancelled = true
+
+      if (script && handleLoad) {
+        script.removeEventListener("load", handleLoad)
+      }
+
+      if (script && handleError) {
+        script.removeEventListener("error", handleError)
+      }
     }
   }, [])
 
@@ -245,13 +307,15 @@ export function EmbeddedSignupButton({
       return
     }
 
-    if (payload.event === "FINISH") {
-      sessionMetadataRef.current = {
+    if (isEmbeddedSignupFinishEvent(payload.event)) {
+      const metadata = {
         ...sessionMetadataRef.current,
         phoneNumberId: payload.data?.phone_number_id,
         wabaId: payload.data?.waba_id,
-        businessId: payload.data?.business_id,
       }
+      sessionMetadataRef.current = metadata
+      resolveSessionMetadataRef.current?.(metadata)
+      resolveSessionMetadataRef.current = null
       setEventMessage(
         "A Meta concluiu o fluxo. O Olyon esta atualizando a conexao da sua loja."
       )
@@ -280,6 +344,29 @@ export function EmbeddedSignupButton({
     }
   }, [])
 
+  async function waitForSessionMetadata() {
+    if (hasSignupAssetMetadata(sessionMetadataRef.current)) {
+      return sessionMetadataRef.current
+    }
+
+    const metadataPromise = sessionMetadataPromiseRef.current
+
+    if (!metadataPromise) {
+      return sessionMetadataRef.current
+    }
+
+    return new Promise<PendingSessionMetadata | null>((resolve) => {
+      const timeoutId = window.setTimeout(() => {
+        resolve(sessionMetadataRef.current)
+      }, META_SESSION_METADATA_TIMEOUT_MS)
+
+      void metadataPromise.then((metadata) => {
+        window.clearTimeout(timeoutId)
+        resolve(metadata)
+      })
+    })
+  }
+
   async function submitSignupCode(response: MetaLoginResponse) {
     const code = response.authResponse?.code?.trim()
 
@@ -290,15 +377,15 @@ export function EmbeddedSignupButton({
     }
 
     try {
+      const sessionMetadata = await waitForSessionMetadata()
       const requestBody = {
         code,
         state:
           response.authResponse?.state?.trim() ||
-          sessionMetadataRef.current?.state ||
+          sessionMetadata?.state ||
           undefined,
-        phoneNumberId: sessionMetadataRef.current?.phoneNumberId,
-        wabaId: sessionMetadataRef.current?.wabaId,
-        businessId: sessionMetadataRef.current?.businessId,
+        phoneNumberId: sessionMetadata?.phoneNumberId,
+        wabaId: sessionMetadata?.wabaId,
       }
 
       const responseApi = await fetch("/api/whatsapp/embedded-signup/callback", {
@@ -343,12 +430,14 @@ export function EmbeddedSignupButton({
   }
 
   function handleConnectClick() {
+    const signupConfig = signupConfigRef.current
+
     if (sdkState === "error") {
       toast.error(sdkError ?? "O SDK da Meta nao esta disponivel.")
       return
     }
 
-    if (sdkState !== "ready" || !window.FB) {
+    if (sdkState !== "ready" || !window.FB || !signupConfig) {
       toast.error("O SDK da Meta ainda esta carregando.")
       return
     }
@@ -358,19 +447,22 @@ export function EmbeddedSignupButton({
     sessionMetadataRef.current = {
       state: crypto.randomUUID(),
     }
+    sessionMetadataPromiseRef.current = new Promise((resolve) => {
+      resolveSessionMetadataRef.current = resolve
+    })
 
     window.FB.login(
       (response) => {
         void submitSignupCode(response)
       },
       {
-        config_id: NEXT_PUBLIC_META_EMBEDDED_SIGNUP_CONFIG_ID,
+        config_id: signupConfig.configId,
         response_type: "code",
         override_default_response_type: true,
         state: sessionMetadataRef.current.state,
         extras: {
+          setup: {},
           featureType: "whatsapp_business_app_onboarding",
-          sessionInfoVersion: 3,
         },
       }
     )
@@ -429,7 +521,8 @@ export function EmbeddedSignupButton({
       </div>
 
       <p className="mt-3 text-sm text-slate-500">
-        A validacao real da coexistencia depende da aprovacao final do app na Meta.
+        O Olyon nao pre-seleciona um portfolio empresarial. A Meta exibe apenas
+        portfolios e contas elegiveis para este app.
       </p>
 
       {sdkError ? (

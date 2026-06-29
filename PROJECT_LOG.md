@@ -6675,3 +6675,55 @@ Corrigir a verificacao `GET /api/webhooks/whatsapp` para usar o segredo publicad
 - `yarn lint app/api/webhooks/whatsapp/route.ts middleware.ts` concluiu sem erros e manteve apenas 2 warnings legados fora do escopo em `app/(auth)/cadastro/controllers/index.tsx` e `app/(auth)/recuperar-senha/controllers/index.tsx`.
 - `yarn build` concluiu com sucesso.
 - O ajuste fica pronto para validacao na Meta assim que a Vercel receber novo deploy com o env `WHATSAPP_WEBHOOK_SECRET` ja configurado.
+
+## 29 de junho de 2026 - Auditoria do Cadastro Incorporado WhatsApp
+
+### Objetivo
+
+Auditar e corrigir o fluxo iniciado em `/configuracoes/whatsapp`, garantindo que o launcher use a configuracao do app `Olyon agendamentos`, nao imponha um portfolio empresarial e persista o retorno somente na Store atual da sessao.
+
+### Diagnostico
+
+- Nao havia `business_id` hardcoded no repositorio.
+- O App ID configurado localmente foi consultado na Graph API e corresponde ao app `Olyon agendamentos`.
+- O frontend lia App ID e Configuration ID diretamente de envs `NEXT_PUBLIC_*`, enquanto o callback podia trocar o `code` usando outro App ID server-side.
+- O `FB.login` nao enviava `extras.setup: {}` e mantinha `sessionInfoVersion: 3`, apesar de o fluxo atual ser definido pelo `config_id`.
+- O listener reconhecia apenas `FINISH`; o fluxo de coexistencia retorna `FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING`, podendo descartar o `waba_id` antes do callback.
+- O callback ja estava corretamente store-scoped: rejeita `storeId` no body, resolve `storeId` via `requireMembershipRole("ADMIN")` e faz `upsert` por esse valor.
+- A leitura do banco antes da alteracao confirmou `Loja Principal` com conexao ativa `CONNECTED` e `Teste Meta` sem `WhatsAppConnection`.
+
+### Arquivos alterados
+
+- `app/(app)/configuracoes/whatsapp/page.tsx`
+- `app/api/whatsapp/embedded-signup/config/route.ts`
+- `app/api/whatsapp/embedded-signup/callback/route.ts`
+- `src/components/whatsapp/embedded-signup-button.tsx`
+- `src/lib/validators/whatsapp-embedded-signup.ts`
+- `src/lib/whatsapp/embedded-signup.ts`
+- `.env.example`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi corrigido
+
+- Criado `GET /api/whatsapp/embedded-signup/config`, protegido por membership `ADMIN`, para entregar `appId`, `configId` e versao da Graph API ao launcher com `Cache-Control: no-store`.
+- A configuracao server-side valida divergencia entre `META_APP_ID` e o fallback legado `NEXT_PUBLIC_META_APP_ID`.
+- O env recomendado para a configuracao passou a ser `META_EMBEDDED_SIGNUP_CONFIG_ID`; `NEXT_PUBLIC_META_EMBEDDED_SIGNUP_CONFIG_ID` permanece apenas como fallback de compatibilidade.
+- O launcher deixou de conter configuracao Meta compilada no bundle e passou a inicializar o SDK com o retorno da rota autenticada.
+- `FB.login` agora envia `extras.setup: {}` e `featureType: "whatsapp_business_app_onboarding"`, sem `business_id` ou outro portfolio pre-preenchido.
+- O `business_id` retornado pela Meta deixou de ser enviado ao backend, pois era inutilizado e nao faz parte do model `WhatsAppConnection`.
+- Eventos de conclusao `FINISH_*` agora sao reconhecidos e o envio do `code` aguarda por ate 3 segundos os metadados `waba_id`/`phone_number_id`, eliminando a corrida entre `postMessage` e o callback do SDK.
+- Os textos da tela deixaram de afirmar que o fluxo dependia de aprovacao futura do app e passaram a explicar que a elegibilidade dos portfolios e definida pela Meta.
+
+### Restricao externa confirmada
+
+O portfolio que possui o Developer App nao e elegivel para auto-onboarding pelo Embedded Signup de Tech Provider, e WABAs originalmente criadas pelo app tambem nao podem ser selecionadas nesse fluxo. Portanto, o bloqueio do portfolio `Olyon agendamentos` nao e causado por `business_id`, `storeId` ou `setup` no codigo. A `Teste Meta` precisa concluir o fluxo com um portfolio de cliente elegivel, separado do owner do app, ou usar outro caminho administrativo suportado pela Meta.
+
+### Validacao executada
+
+- `yarn eslint` concluiu sem erros e manteve 2 warnings legados fora do escopo em `app/(auth)/cadastro/controllers/index.tsx` e `app/(auth)/recuperar-senha/controllers/index.tsx`.
+- `yarn tsc --noEmit --pretty false --incremental false` concluiu sem erros.
+
+### Resultado
+
+O launcher nao pre-seleciona `Loja Principal` nem qualquer outro portfolio, usa uma unica configuracao Meta validada pelo backend e o retorno permanece vinculado exclusivamente a Store atual da sessao. Nenhuma `WhatsAppConnection` existente foi modificada durante a auditoria.

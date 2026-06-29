@@ -156,7 +156,6 @@ export async function POST(req: Request) {
       code: parsed.data.code,
       phoneNumberId: parsed.data.phoneNumberId,
       wabaId: parsed.data.wabaId,
-      businessId: parsed.data.businessId,
     })
 
     const phoneNumberId =

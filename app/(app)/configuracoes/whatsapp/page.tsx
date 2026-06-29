@@ -566,8 +566,9 @@ export default function StoreWhatsAppSettingsPage() {
                     Validacao Meta
                   </div>
                   <p className="mt-2 text-sm text-slate-600">
-                    A validacao real da coexistencia depende da aprovacao final do
-                    app na Meta.
+                    O fluxo nao pre-seleciona um portfolio empresarial. A Meta
+                    define quais portfolios e contas estao elegiveis para
+                    compartilhamento com o app.
                   </p>
                 </div>
               </div>

@@ -1302,10 +1302,56 @@ Resultado:
 
 ---
 
-## 9. Historico resumido
+## 9. Auditoria do Cadastro Incorporado WhatsApp por loja
+
+Objetivo desta correcao:
+
+- auditar o fluxo de `/configuracoes/whatsapp` ate a persistencia da `WhatsAppConnection`
+- eliminar qualquer possibilidade de pre-selecao de portfolio empresarial pelo frontend
+- manter a conexao funcional da `Loja Principal` sem alteracao e salvar novos cadastros somente na Store atual da sessao
+
+Resultado desta correcao:
+
+- o App ID configurado foi validado na Graph API como o app `Olyon agendamentos`
+- `appId`, `configId` e versao da Graph API agora sao lidos no backend e entregues ao componente por `GET /api/whatsapp/embedded-signup/config`, sem valores hardcoded no client
+- o ambiente recomendado passou a usar `META_APP_ID`, `META_APP_SECRET`, `META_EMBEDDED_SIGNUP_CONFIG_ID` e `META_GRAPH_API_VERSION`; os antigos envs `NEXT_PUBLIC_*` continuam apenas como fallback de compatibilidade
+- `FB.login` usa o `config_id` retornado pelo backend e envia `extras.setup` vazio, sem `business_id`, WABA ou portfolio pre-preenchido
+- o `business_id` retornado pela Meta deixou de ser propagado pelo client e pelo callback, pois nao participa da `WhatsAppConnection`
+- o listener passou a aceitar todos os eventos de conclusao `FINISH_*`, incluindo `FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING`, e aguarda os metadados da sessao antes de enviar o `code`
+- o callback continua rejeitando `storeId` no payload e resolve `authResult.storeId` exclusivamente pela sessao/membership antes do `upsert`
+- leitura de verificacao confirmou `Loja Principal` conectada e `Teste Meta` sem conexao antes da correcao; nenhuma conexao existente foi alterada
+
+Diagnostico do bloqueio de portfolio:
+
+- nao existia `business_id` hardcoded no repositorio
+- o portfolio exibido ou bloqueado no popup e decidido pela Meta, nao pelo `storeId` interno do Olyon
+- a Meta nao permite que um Tech Provider use o Embedded Signup para auto-onboard de WABAs criadas pelo app ou pertencentes ao mesmo portfolio que hospeda o Developer App; esse bloqueio nao pode ser removido por parametro de frontend
+- para a `Teste Meta`, o fluxo precisa usar um portfolio elegivel que nao seja o owner do Developer App, ou a WABA deve ser conectada por um caminho administrativo suportado pela Meta
+
+Arquivos alterados nesta correcao:
+
+- `app/(app)/configuracoes/whatsapp/page.tsx`
+- `app/api/whatsapp/embedded-signup/config/route.ts`
+- `app/api/whatsapp/embedded-signup/callback/route.ts`
+- `src/components/whatsapp/embedded-signup-button.tsx`
+- `src/lib/validators/whatsapp-embedded-signup.ts`
+- `src/lib/whatsapp/embedded-signup.ts`
+- `.env.example`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+Validacao executada:
+
+- `yarn eslint` concluiu sem erros e manteve 2 warnings legados fora do escopo nos controllers de cadastro e recuperacao de senha
+- `yarn tsc --noEmit --pretty false --incremental false` concluiu sem erros
+
+---
+
+## 10. Historico resumido
 
 | Data | Mudanca |
 |------|---------|
+| 29/06/2026 | WhatsApp Embedded Signup auditado: configuracao Meta centralizada no backend, `extras.setup` sem portfolio, eventos `FINISH_*` suportados e persistencia confirmada como store-scoped |
 | 02/06/2026 | Configuracoes do Bot por loja: criada model `BotSettings`, API `GET/PUT /api/store/current/bot-settings`, tela `/configuracoes/bot`, mensagens configuraveis no webhook/atendimento e preparo persistido de retorno automatico |
 | 02/06/2026 | WhatsApp atendimento humano: primeira mensagem manual em conversa ainda nao pausada agora envia tambem um aviso automatico ao cliente, persiste essa `OUT` e nao repete o aviso enquanto a conversa ja estiver `PAUSED` |
 | 02/06/2026 | WhatsApp atendimento humano: envio manual em `/atendimento` agora pausa automaticamente a conversa em `PAUSED`, mostra badge `HUMANO`, exibe aviso de bot pausado e permite retomar para `IDLE` pela UI |

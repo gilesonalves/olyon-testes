@@ -71,7 +71,6 @@ export type MetaEmbeddedSignupConnectionDraft = {
   accessToken: string
   phoneNumberId: string | null
   wabaId: string | null
-  businessId: string | null
   displayPhoneNumber: string | null
   verifiedName: string | null
   platformType: string | null
@@ -81,7 +80,6 @@ type ResolveMetaEmbeddedSignupParams = {
   code: string
   phoneNumberId?: string | null
   wabaId?: string | null
-  businessId?: string | null
 }
 
 type MetaServerConfig = {
@@ -90,27 +88,66 @@ type MetaServerConfig = {
   graphApiVersion: string
 }
 
+export type MetaEmbeddedSignupPublicConfig = {
+  appId: string
+  configId: string
+  graphApiVersion: string
+}
+
 function normalizeText(value: string | null | undefined) {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null
 }
 
+function getConfiguredMetaAppId() {
+  const serverAppId = process.env.META_APP_ID?.trim() || ""
+  const legacyPublicAppId = process.env.NEXT_PUBLIC_META_APP_ID?.trim() || ""
+
+  if (serverAppId && legacyPublicAppId && serverAppId !== legacyPublicAppId) {
+    throw new MetaEmbeddedSignupError(
+      "META_EMBEDDED_SIGNUP_NOT_CONFIGURED",
+      "META_APP_ID e NEXT_PUBLIC_META_APP_ID apontam para apps diferentes.",
+      { status: 500 }
+    )
+  }
+
+  const appId = serverAppId || legacyPublicAppId
+
+  if (!appId) {
+    throw new MetaEmbeddedSignupError(
+      "META_EMBEDDED_SIGNUP_NOT_CONFIGURED",
+      "META_APP_ID nao foi configurado para o cadastro incorporado.",
+      { status: 500 }
+    )
+  }
+
+  return appId
+}
+
+function getConfiguredMetaEmbeddedSignupConfigId() {
+  const configId =
+    process.env.META_EMBEDDED_SIGNUP_CONFIG_ID?.trim() ||
+    process.env.NEXT_PUBLIC_META_EMBEDDED_SIGNUP_CONFIG_ID?.trim() ||
+    ""
+
+  if (!configId) {
+    throw new MetaEmbeddedSignupError(
+      "META_EMBEDDED_SIGNUP_NOT_CONFIGURED",
+      "META_EMBEDDED_SIGNUP_CONFIG_ID nao foi configurado.",
+      { status: 500 }
+    )
+  }
+
+  return configId
+}
+
 function toMetaServerConfig(): MetaServerConfig {
-  const appId =
-    process.env.META_APP_ID?.trim() || process.env.NEXT_PUBLIC_META_APP_ID?.trim() || ""
+  const appId = getConfiguredMetaAppId()
   const appSecret =
     process.env.META_APP_SECRET?.trim() ||
     process.env.WHATSAPP_META_APP_SECRET?.trim() ||
     ""
   const graphApiVersion =
     process.env.META_GRAPH_API_VERSION?.trim() || DEFAULT_META_GRAPH_API_VERSION
-
-  if (!appId) {
-    throw new MetaEmbeddedSignupError(
-      "META_EMBEDDED_SIGNUP_NOT_CONFIGURED",
-      "META_APP_ID nao foi configurado para trocar o code da Meta.",
-      { status: 500 }
-    )
-  }
 
   if (!appSecret) {
     throw new MetaEmbeddedSignupError(
@@ -321,13 +358,11 @@ function toConnectionDraft(params: {
   phoneNumber: MetaPhoneNumberResponse | null
   phoneNumberId: string | null
   wabaId: string | null
-  businessId: string | null
 }) {
   return {
     accessToken: params.accessToken,
     phoneNumberId: params.phoneNumber?.id?.trim() || params.phoneNumberId,
     wabaId: params.wabaId,
-    businessId: params.businessId,
     displayPhoneNumber: params.phoneNumber?.display_phone_number?.trim() || null,
     verifiedName: params.phoneNumber?.verified_name?.trim() || null,
     platformType: params.phoneNumber?.platform_type?.trim() || null,
@@ -340,11 +375,11 @@ export function createWhatsAppVerifyToken() {
 
 export function getMetaEmbeddedSignupPublicConfig() {
   return {
-    appId: process.env.NEXT_PUBLIC_META_APP_ID?.trim() || "",
-    configId: process.env.NEXT_PUBLIC_META_EMBEDDED_SIGNUP_CONFIG_ID?.trim() || "",
+    appId: getConfiguredMetaAppId(),
+    configId: getConfiguredMetaEmbeddedSignupConfigId(),
     graphApiVersion:
       process.env.META_GRAPH_API_VERSION?.trim() || DEFAULT_META_GRAPH_API_VERSION,
-  }
+  } satisfies MetaEmbeddedSignupPublicConfig
 }
 
 export async function resolveMetaEmbeddedSignupConnection(
@@ -360,7 +395,6 @@ export async function resolveMetaEmbeddedSignupConnection(
 
   const hintedPhoneNumberId = normalizeText(params.phoneNumberId)
   const hintedWabaId = normalizeText(params.wabaId)
-  const hintedBusinessId = normalizeText(params.businessId)
 
   if (!hintedPhoneNumberId && !hintedWabaId) {
     throw new MetaEmbeddedSignupError(
@@ -382,7 +416,6 @@ export async function resolveMetaEmbeddedSignupConnection(
       phoneNumber,
       phoneNumberId: hintedPhoneNumberId,
       wabaId: hintedWabaId,
-      businessId: hintedBusinessId,
     })
   }
 
@@ -406,6 +439,5 @@ export async function resolveMetaEmbeddedSignupConnection(
     phoneNumber: firstPhoneNumber,
     phoneNumberId: firstPhoneNumber.id.trim(),
     wabaId: hintedWabaId,
-    businessId: hintedBusinessId,
   })
 }
