@@ -1,3 +1,51 @@
+## 30 de junho de 2026 - Inscricao automatica da WABA nos webhooks da Meta
+
+### Objetivo
+
+Garantir que toda WABA conectada pelo Embedded Signup seja inscrita no app Meta via `subscribed_apps` e permitir a recuperacao segura de conexoes ja salvas.
+
+### Arquivos alterados
+
+- `app/api/whatsapp/embedded-signup/callback/route.ts`
+- `app/api/webhooks/whatsapp/route.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### Arquivos criados
+
+- `src/lib/whatsapp/meta-webhook-subscription.ts`
+- `app/api/admin/stores/[id]/whatsapp/subscribe-webhook/route.ts`
+
+### Diagnostico
+
+- O teste fake da Meta chega em `POST /api/webhooks/whatsapp`, confirmando a configuracao do webhook global e a assinatura do campo `messages`.
+- Mensagens reais para a loja Teste Meta nao chegavam ao Vercel.
+- O token do Graph API Explorer nao acessava a WABA criada via Embedded Signup.
+- A WABA nova precisava ser inscrita no app com `POST /{businessAccountId}/subscribed_apps`, usando o `accessToken` salvo na conexao da propria loja.
+
+### O que foi ajustado
+
+- Criado helper server-side para assinar a WABA na Graph API, com timeout, versao configuravel por `META_GRAPH_API_VERSION` e logs sem `accessToken`.
+- O callback do Embedded Signup agora assina a WABA depois do upsert da `WhatsAppConnection`.
+- Se a assinatura falhar, o callback marca a conexao como `ERROR` e retorna `502` com mensagem legivel, evitando manter como `CONNECTED` uma conexao sem inbound funcional.
+- Criada a rota `POST /api/admin/stores/{storeId}/whatsapp/subscribe-webhook`, restrita a `SUPER_ADMIN`, para reassinar uma conexao ativa existente.
+- A rota administrativa valida loja, provider, `businessAccountId` e `accessToken`, nunca devolve o token e restaura o status `CONNECTED` depois da assinatura.
+- O log de conexao inbound nao encontrada agora inclui motivo, `phoneNumberId`, `businessAccountId`, `providerMessageId`, remetente e presenca de texto, sem payload completo.
+
+### Proximo teste manual
+
+1. Fazer deploy da branch.
+2. Chamar `POST /api/admin/stores/cmoinxmwy000004icphodyy2s/whatsapp/subscribe-webhook` autenticado como `SUPER_ADMIN`.
+3. Confirmar resposta de sucesso para a WABA `180613333431995`.
+4. Enviar mensagem real para `+55 27 99823-8437` e confirmar o POST no Vercel.
+5. Confirmar `phoneNumberId` `1041807935681242`, conversa em `/atendimento` e resposta do bot ao comando `menu`.
+6. Repetir o Embedded Signup em outra loja para validar a assinatura automatica.
+
+### Validacao local
+
+- `yarn eslint`
+- `yarn tsc --noEmit --pretty false --incremental false`
+
 ## 2 de junho de 2026 - Favicon oficial do Olyon
 
 ### Objetivo

@@ -1,6 +1,6 @@
 # PROJECT_STATUS.md
 
-**Data de ultima atualizacao:** 2 de junho de 2026
+**Data de ultima atualizacao:** 30 de junho de 2026
 
 ## Status geral do projeto Olyon
 
@@ -137,6 +137,9 @@
 [x] Menu inicial do WhatsApp com `Agendar horário`, `Meus agendamentos`, `Preços` e `Informações`
 [x] Opção `Preços` no WhatsApp usando serviços ativos reais com preço em BRL e paginação simples
 [x] Regressão do bot silencioso no WhatsApp corrigida com logs temporários de actions, normalização por `selectedOptionId` e fallback de outbound em branches vazias
+[x] Embedded Signup agora assina automaticamente a WABA no app Meta via `/{businessAccountId}/subscribed_apps`
+[x] Rota `POST /api/admin/stores/{storeId}/whatsapp/subscribe-webhook` criada para reassinar conexoes existentes com acesso restrito a `SUPER_ADMIN`
+[ ] Teste manual pendente: reassinar a loja Teste Meta e confirmar o recebimento de uma mensagem real no webhook e em `/atendimento`
 
 ---
 
@@ -178,6 +181,10 @@ O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) poss
 - O gargalo atual parece estar no ambiente Meta/destino, nao mais na chamada outbound do Olyon.
 - O teste E2E real ainda esta em diagnostico porque a mensagem segue persistindo no banco, mas ainda nao chega ao usuario final no WhatsApp.
 - Foram adicionados logs diagnosticos de payload inbound, dispatch outbound e request/response/fetch failure da Graph API para rastrear a falha de entrega.
+- O teste fake da Meta chega ao webhook global, mas a mensagem inbound real nao chegava porque a WABA conectada via Embedded Signup ainda precisava ser inscrita no app por `subscribed_apps`.
+- O callback do Embedded Signup agora salva a conexao e assina a WABA com o `accessToken` da propria loja; falhas deixam o status tecnico como `ERROR` e retornam erro legivel.
+- Uma rota administrativa permite reassinar conexoes existentes sem refazer o Embedded Signup e restaura o status tecnico para `CONNECTED` apos sucesso.
+- O proximo teste manual e reassinar a loja Teste Meta, enviar uma mensagem real e confirmar o processamento no webhook, em `/atendimento` e no bot.
 - Foram adicionados logs diagnosticos e persistencia leve de `statusEvents` para callbacks `statuses` da Meta quando a correlacao com a `OUT` e possivel.
 - O criterio de conexao foi alinhado entre inbound e outbound, exigindo `status = CONNECTED` nos dois caminhos.
 - A propria loja autenticada agora possui uma tela store-scoped (`/configuracoes/loja`) para editar telefone, endereco, horario resumido e observacoes, enquanto o admin existente segue disponivel para suporte de `SUPER_ADMIN`.

@@ -3814,9 +3814,12 @@ export async function POST(req: NextRequest) {
         const connection = await findActiveWhatsAppConnectionForInboundMessage(message)
         if (!connection) {
           console.warn("whatsapp webhook connection not found", {
+            reason: "connection not found",
             phoneNumberId: message.phoneNumberId,
             businessAccountId: message.businessAccountId,
             providerMessageId: message.providerMessageId,
+            from: message.from,
+            hasText: Boolean(message.text),
           })
 
           ignored.push({

@@ -8,6 +8,10 @@ import {
   createWhatsAppVerifyToken,
   resolveMetaEmbeddedSignupConnection,
 } from "@/lib/whatsapp/embedded-signup"
+import {
+  MetaWebhookSubscriptionError,
+  subscribeWabaToApp,
+} from "@/lib/whatsapp/meta-webhook-subscription"
 import { whatsAppEmbeddedSignupCallbackSchema } from "@/lib/validators/whatsapp-embedded-signup"
 
 export const runtime = "nodejs"
@@ -257,6 +261,44 @@ export async function POST(req: Request) {
         displayPhoneNumber: true,
       },
     })
+
+    try {
+      await subscribeWabaToApp({
+        businessAccountId: connectedWabaId,
+        accessToken: resolved.accessToken,
+      })
+    } catch (error) {
+      try {
+        await prisma.whatsAppConnection.update({
+          where: {
+            id: savedConnection.id,
+          },
+          data: {
+            status: "ERROR",
+            updatedAt: new Date(),
+          },
+        })
+      } catch (statusUpdateError) {
+        console.error(
+          "[POST /api/whatsapp/embedded-signup/callback] failed to mark subscription error",
+          {
+            storeId: authResult.storeId,
+            connectionId: savedConnection.id,
+            error: statusUpdateError,
+          }
+        )
+      }
+
+      if (error instanceof MetaWebhookSubscriptionError) {
+        return failure(
+          error.status,
+          "WHATSAPP_WEBHOOK_SUBSCRIPTION_FAILED",
+          error.message
+        )
+      }
+
+      throw error
+    }
 
     return success(
       {
