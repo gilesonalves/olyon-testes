@@ -1,3 +1,58 @@
+## 30 de junho de 2026 - Pausa do bot por smb_message_echoes
+
+### Objetivo
+
+Pausar automaticamente o bot quando a loja responder pelo WhatsApp Business, WhatsApp Web ou outro dispositivo vinculado suportado pela Meta, mantendo o atendimento e o historico sincronizados no Olyon.
+
+### Arquivos alterados
+
+- `src/lib/whatsapp/parse.ts`
+- `src/lib/whatsapp/connection.ts`
+- `app/api/webhooks/whatsapp/route.ts`
+- `app/api/store/current/whatsapp/conversations/[id]/messages/send/route.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### Arquivo criado
+
+- `src/lib/whatsapp/human-attendance.ts`
+
+### Diagnostico
+
+- O campo `message_echoes` comum nao e o evento correto para mensagens manuais do WhatsApp Business em coexistencia.
+- O campo Meta correto e `smb_message_echoes`, cujo payload usa `value.message_echoes[]` e identifica o contato do cliente em `to`.
+- O painel `/atendimento` ja pausava a conversa ao enviar manualmente, mas essa transicao estava implementada dentro da propria rota e nao era reutilizavel pelo webhook.
+
+### O que foi ajustado
+
+- O parser Meta agora reconhece somente `changes[].field = "smb_message_echoes"` para esse fluxo e extrai WABA, phone number, contato do cliente, tipo, texto e `providerMessageId`.
+- O webhook resolve a conexao ativa por `phoneNumberId` e procura a conversa WhatsApp da mesma loja pelo contato do cliente.
+- Antes de pausar, o webhook compara o `providerMessageId` com mensagens outbound ja persistidas. Echoes do proprio Olyon/bot sao ignorados.
+- Mensagens desconhecidas enviadas externamente sao persistidas como `ConversationMessage OUT`, com metadados `human`, `manual` e origem `smb_message_echoes`.
+- A atualizacao para `PAUSED` foi extraida para uma helper compartilhada e passou a ser usada tanto pelo painel quanto pelo webhook.
+- Na primeira pausa externa, o aviso usa o `humanHandoffMessage` configurado em `/configuracoes/bot`. Conversas ja pausadas nao recebem o aviso novamente.
+- Logs seguros foram adicionados para recebimento do echo, deteccao de mensagem manual e eventual falha no aviso, sem token ou payload completo.
+
+### Requisito Meta
+
+- O app Meta precisa permanecer assinado no campo `smb_message_echoes`.
+- `message_echoes` nao substitui esse campo no fluxo WhatsApp Business em coexistencia.
+
+### Teste manual pendente
+
+1. Confirmar `smb_message_echoes` assinado na Meta.
+2. Enviar `menu` de um cliente para `+55 27 99823-8437` e confirmar a resposta do bot.
+3. Responder `um momento` pelo WhatsApp Business da loja.
+4. Confirmar os logs `whatsapp smb_message_echo received` e `whatsapp manual external message detected, pausing bot`.
+5. Confirmar a conversa `PAUSED` e a mensagem manual no `/atendimento`.
+6. Enviar `Agendar horario` pelo cliente e confirmar que o bot nao responde.
+7. Retomar ou encerrar pelo fluxo existente e confirmar que o bot so volta quando permitido.
+
+### Validacao local
+
+- `yarn eslint`
+- `yarn tsc --noEmit --pretty false --incremental false`
+
 ## 30 de junho de 2026 - Inscricao automatica da WABA nos webhooks da Meta
 
 ### Objetivo

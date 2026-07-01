@@ -47,10 +47,16 @@ import {
 } from "@/lib/store/public-info"
 import {
   parseIncomingWhatsApp,
+  type ParsedSmbMessageEcho,
 } from "@/lib/whatsapp/parse"
 import {
+  findActiveWhatsAppConnectionByPhoneNumberId,
   findActiveWhatsAppConnectionForInboundMessage,
 } from "@/lib/whatsapp/connection"
+import {
+  pauseWhatsAppConversationForHumanAttendance,
+  sendWhatsAppHumanHandoffNotice,
+} from "@/lib/whatsapp/human-attendance"
 import {
   sendMetaOutboundMessage,
   type MetaOutboundResult,
@@ -1073,6 +1079,372 @@ async function lockConversationForInboundProcessing(
     WHERE id = ${conversationId}
     FOR UPDATE
   `
+}
+
+type ProcessSmbMessageEchoResult = {
+  status: "ignored" | "paused"
+  reason: string | null
+  storeId: string | null
+  phoneNumberId: string | null
+  conversationId: string | null
+  messageId: string | null
+  providerMessageId: string | null
+  alreadyPaused: boolean | null
+  handoffNoticeSent: boolean
+}
+
+function getSmbEchoContactCandidates(contact: string) {
+  const trimmedContact = contact.trim()
+  const digitsOnlyContact = trimmedContact.replace(/\D/g, "")
+
+  return Array.from(
+    new Set(
+      [trimmedContact, digitsOnlyContact].filter(
+        (value) => value.length > 0
+      )
+    )
+  )
+}
+
+function getExistingSmbEchoReason(
+  message: {
+    direction: "IN" | "OUT"
+    payload: Prisma.JsonValue | null
+  }
+) {
+  if (message.direction !== "OUT") {
+    return "PROVIDER_MESSAGE_ID_ALREADY_EXISTS"
+  }
+
+  const payload = getJsonRecord(message.payload)
+
+  return payload.source === "manual_external"
+    ? "SMB_MESSAGE_ECHO_ALREADY_PROCESSED"
+    : "OLYON_OUTBOUND_ECHO"
+}
+
+async function processSmbMessageEcho(
+  echo: ParsedSmbMessageEcho
+): Promise<ProcessSmbMessageEchoResult> {
+  if (!echo.phoneNumberId) {
+    console.info("whatsapp smb_message_echo received", {
+      storeId: null,
+      phoneNumberId: null,
+      businessAccountId: echo.businessAccountId,
+      conversationId: null,
+      providerMessageId: echo.providerMessageId,
+    })
+
+    return {
+      status: "ignored",
+      reason: "MISSING_PHONE_NUMBER_ID",
+      storeId: null,
+      phoneNumberId: null,
+      conversationId: null,
+      messageId: null,
+      providerMessageId: echo.providerMessageId,
+      alreadyPaused: null,
+      handoffNoticeSent: false,
+    }
+  }
+
+  const connection = await findActiveWhatsAppConnectionByPhoneNumberId(
+    echo.phoneNumberId
+  )
+
+  if (!connection) {
+    console.info("whatsapp smb_message_echo received", {
+      storeId: null,
+      phoneNumberId: echo.phoneNumberId,
+      businessAccountId: echo.businessAccountId,
+      conversationId: null,
+      providerMessageId: echo.providerMessageId,
+    })
+
+    return {
+      status: "ignored",
+      reason: "WHATSAPP_CONNECTION_NOT_FOUND",
+      storeId: null,
+      phoneNumberId: echo.phoneNumberId,
+      conversationId: null,
+      messageId: null,
+      providerMessageId: echo.providerMessageId,
+      alreadyPaused: null,
+      handoffNoticeSent: false,
+    }
+  }
+
+  const existingMessage = echo.providerMessageId
+    ? await prisma.conversationMessage.findUnique({
+        where: {
+          storeId_providerMessageId: {
+            storeId: connection.storeId,
+            providerMessageId: echo.providerMessageId,
+          },
+        },
+        select: {
+          id: true,
+          conversationId: true,
+          direction: true,
+          payload: true,
+        },
+      })
+    : null
+
+  if (existingMessage) {
+    console.info("whatsapp smb_message_echo received", {
+      storeId: connection.storeId,
+      phoneNumberId: echo.phoneNumberId,
+      businessAccountId: echo.businessAccountId,
+      conversationId: existingMessage.conversationId,
+      providerMessageId: echo.providerMessageId,
+    })
+
+    return {
+      status: "ignored",
+      reason: getExistingSmbEchoReason(existingMessage),
+      storeId: connection.storeId,
+      phoneNumberId: echo.phoneNumberId,
+      conversationId: existingMessage.conversationId,
+      messageId: existingMessage.id,
+      providerMessageId: echo.providerMessageId,
+      alreadyPaused: null,
+      handoffNoticeSent: false,
+    }
+  }
+
+  const conversation = await prisma.conversation.findFirst({
+    where: {
+      storeId: connection.storeId,
+      channel: "WHATSAPP",
+      contact: {
+        in: getSmbEchoContactCandidates(echo.to),
+      },
+    },
+    select: {
+      id: true,
+    },
+  })
+
+  console.info("whatsapp smb_message_echo received", {
+    storeId: connection.storeId,
+    phoneNumberId: echo.phoneNumberId,
+    businessAccountId: echo.businessAccountId,
+    conversationId: conversation?.id ?? null,
+    providerMessageId: echo.providerMessageId,
+  })
+
+  if (!conversation) {
+    return {
+      status: "ignored",
+      reason: "WHATSAPP_CONVERSATION_NOT_FOUND",
+      storeId: connection.storeId,
+      phoneNumberId: echo.phoneNumberId,
+      conversationId: null,
+      messageId: null,
+      providerMessageId: echo.providerMessageId,
+      alreadyPaused: null,
+      handoffNoticeSent: false,
+    }
+  }
+
+  let persisted:
+    | {
+        status: "persisted"
+        messageId: string
+        alreadyPaused: boolean
+      }
+    | {
+        status: "existing"
+        messageId: string
+        reason: string
+      }
+
+  try {
+    persisted = await prisma.$transaction(async (tx) => {
+      await lockConversationForInboundProcessing(tx, conversation.id)
+
+      if (echo.providerMessageId) {
+        const concurrentExistingMessage =
+          await tx.conversationMessage.findUnique({
+            where: {
+              storeId_providerMessageId: {
+                storeId: connection.storeId,
+                providerMessageId: echo.providerMessageId,
+              },
+            },
+            select: {
+              id: true,
+              direction: true,
+              payload: true,
+            },
+          })
+
+        if (concurrentExistingMessage) {
+          return {
+            status: "existing" as const,
+            messageId: concurrentExistingMessage.id,
+            reason: getExistingSmbEchoReason(concurrentExistingMessage),
+          }
+        }
+      }
+
+      const lockedConversation = await tx.conversation.findFirst({
+        where: {
+          id: conversation.id,
+          storeId: connection.storeId,
+          channel: "WHATSAPP",
+        },
+        select: {
+          id: true,
+          state: true,
+        },
+      })
+
+      if (!lockedConversation) {
+        throw new Error(
+          "Conversation scope mismatch while processing smb_message_echo."
+        )
+      }
+
+      const createdMessage = await tx.conversationMessage.create({
+        data: {
+          storeId: connection.storeId,
+          conversationId: lockedConversation.id,
+          direction: "OUT",
+          providerMessageId: echo.providerMessageId ?? undefined,
+          text: echo.text ?? undefined,
+          payload: toJsonValue({
+            source: "manual_external",
+            human: true,
+            manual: true,
+            origin: "smb_message_echoes",
+            provider: "META_WHATSAPP",
+            whatsappConnectionId: connection.id,
+            phoneNumberId: echo.phoneNumberId,
+            displayPhoneNumber: echo.displayPhoneNumber,
+            businessAccountId: echo.businessAccountId,
+            timestamp: echo.timestamp,
+            messageType: echo.messageType,
+            raw: echo.raw,
+          }),
+        },
+        select: {
+          id: true,
+          createdAt: true,
+        },
+      })
+
+      await pauseWhatsAppConversationForHumanAttendance({
+        db: tx,
+        storeId: connection.storeId,
+        conversationId: lockedConversation.id,
+        lastMessageAt: createdMessage.createdAt,
+      })
+
+      return {
+        status: "persisted" as const,
+        messageId: createdMessage.id,
+        alreadyPaused: lockedConversation.state === "PAUSED",
+      }
+    })
+  } catch (error) {
+    if (
+      echo.providerMessageId &&
+      isProviderMessageUniqueConflict(error)
+    ) {
+      const duplicateMessage =
+        await prisma.conversationMessage.findUnique({
+          where: {
+            storeId_providerMessageId: {
+              storeId: connection.storeId,
+              providerMessageId: echo.providerMessageId,
+            },
+          },
+          select: {
+            id: true,
+            direction: true,
+            payload: true,
+          },
+        })
+
+      if (duplicateMessage) {
+        persisted = {
+          status: "existing",
+          messageId: duplicateMessage.id,
+          reason: getExistingSmbEchoReason(duplicateMessage),
+        }
+      } else {
+        throw error
+      }
+    } else {
+      throw error
+    }
+  }
+
+  if (persisted.status === "existing") {
+    return {
+      status: "ignored",
+      reason: persisted.reason,
+      storeId: connection.storeId,
+      phoneNumberId: echo.phoneNumberId,
+      conversationId: conversation.id,
+      messageId: persisted.messageId,
+      providerMessageId: echo.providerMessageId,
+      alreadyPaused: null,
+      handoffNoticeSent: false,
+    }
+  }
+
+  console.info(
+    "whatsapp manual external message detected, pausing bot",
+    {
+      storeId: connection.storeId,
+      phoneNumberId: echo.phoneNumberId,
+      businessAccountId: echo.businessAccountId,
+      conversationId: conversation.id,
+      providerMessageId: echo.providerMessageId,
+      alreadyPaused: persisted.alreadyPaused,
+    }
+  )
+
+  let handoffNoticeSent = false
+
+  if (!persisted.alreadyPaused) {
+    const handoffResult = await sendWhatsAppHumanHandoffNotice({
+      storeId: connection.storeId,
+      conversationId: conversation.id,
+      to: echo.to,
+      trigger: "smb_message_echoes",
+    })
+
+    if (handoffResult.ok) {
+      handoffNoticeSent = true
+    } else {
+      console.error("whatsapp smb_message_echo handoff notice failed", {
+        storeId: connection.storeId,
+        phoneNumberId: echo.phoneNumberId,
+        businessAccountId: echo.businessAccountId,
+        conversationId: conversation.id,
+        providerMessageId: echo.providerMessageId,
+        statusCode: handoffResult.sendResult.statusCode,
+        errorCode: handoffResult.sendResult.errorCode,
+        error: handoffResult.sendResult.error,
+      })
+    }
+  }
+
+  return {
+    status: "paused",
+    reason: null,
+    storeId: connection.storeId,
+    phoneNumberId: echo.phoneNumberId,
+    conversationId: conversation.id,
+    messageId: persisted.messageId,
+    providerMessageId: echo.providerMessageId,
+    alreadyPaused: persisted.alreadyPaused,
+    handoffNoticeSent,
+  }
 }
 
 async function deliverPersistedOutboundMessages(params: {
@@ -3744,6 +4116,7 @@ export async function POST(req: NextRequest) {
 
       console.info("whatsapp webhook meta payload received", {
         messagesCount: parsedPayload.messages.length,
+        smbMessageEchoesCount: parsedPayload.messageEchoes.length,
       })
 
       console.info("whatsapp webhook meta statuses received", {
@@ -3776,12 +4149,37 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      if (!parsedPayload.messages.length) {
+      const results: Array<ProcessIncomingMessageResult & { storeId: string; phoneNumberId: string }> = []
+      const smbMessageEchoResults: ProcessSmbMessageEchoResult[] = []
+      const ignored: Array<Record<string, string | null>> = []
+
+      for (const echo of parsedPayload.messageEchoes) {
+        const echoResult = await processSmbMessageEcho(echo)
+
+        if (echoResult.status === "ignored") {
+          ignored.push({
+            reason: echoResult.reason,
+            storeId: echoResult.storeId,
+            phoneNumberId: echoResult.phoneNumberId,
+            conversationId: echoResult.conversationId,
+            providerMessageId: echoResult.providerMessageId,
+          })
+          continue
+        }
+
+        smbMessageEchoResults.push(echoResult)
+      }
+
+      if (
+        !parsedPayload.messages.length &&
+        !parsedPayload.messageEchoes.length
+      ) {
         return ok({
           source: "meta",
           processedCount: 0,
           ignoredCount: 1,
           results: [],
+          smbMessageEchoResults: [],
           ignored: [
             {
               reason: "NO_INBOUND_MESSAGES",
@@ -3789,9 +4187,6 @@ export async function POST(req: NextRequest) {
           ],
         })
       }
-
-      const results: Array<ProcessIncomingMessageResult & { storeId: string; phoneNumberId: string }> = []
-      const ignored: Array<Record<string, string | null>> = []
 
       for (const message of parsedPayload.messages) {
         console.info("whatsapp webhook meta inbound message", {
@@ -3872,9 +4267,10 @@ export async function POST(req: NextRequest) {
 
       return ok({
         source: "meta",
-        processedCount: results.length,
+        processedCount: results.length + smbMessageEchoResults.length,
         ignoredCount: ignored.length,
         results,
+        smbMessageEchoResults,
         ignored,
       })
     }

@@ -139,7 +139,10 @@
 [x] Regressão do bot silencioso no WhatsApp corrigida com logs temporários de actions, normalização por `selectedOptionId` e fallback de outbound em branches vazias
 [x] Embedded Signup agora assina automaticamente a WABA no app Meta via `/{businessAccountId}/subscribed_apps`
 [x] Rota `POST /api/admin/stores/{storeId}/whatsapp/subscribe-webhook` criada para reassinar conexoes existentes com acesso restrito a `SUPER_ADMIN`
-[ ] Teste manual pendente: reassinar a loja Teste Meta e confirmar o recebimento de uma mensagem real no webhook e em `/atendimento`
+[x] Loja Teste Meta reassinada com sucesso; mensagens reais chegam ao webhook e o bot responde
+[x] Webhook trata `smb_message_echoes` e pausa o bot quando a loja responde manualmente pelo WhatsApp Business ou dispositivo vinculado
+[x] Echo com `providerMessageId` ja persistido pelo Olyon e ignorado para nao pausar o bot por mensagem propria
+[ ] Teste manual pendente: responder pelo WhatsApp Business da loja e confirmar pausa automatica, historico no `/atendimento` e ausencia de resposta do bot
 
 ---
 
@@ -185,6 +188,10 @@ O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) poss
 - O callback do Embedded Signup agora salva a conexao e assina a WABA com o `accessToken` da propria loja; falhas deixam o status tecnico como `ERROR` e retornam erro legivel.
 - Uma rota administrativa permite reassinar conexoes existentes sem refazer o Embedded Signup e restaura o status tecnico para `CONNECTED` apos sucesso.
 - O proximo teste manual e reassinar a loja Teste Meta, enviar uma mensagem real e confirmar o processamento no webhook, em `/atendimento` e no bot.
+- Para WhatsApp Business em coexistencia, `smb_message_echoes` e o campo correto para detectar mensagens enviadas manualmente pelo app ou dispositivo vinculado; `message_echoes` comum nao atende esse fluxo.
+- O webhook agora identifica o cliente pelo campo `to`, ignora echoes cujo `providerMessageId` pertence a um outbound ja salvo pelo Olyon e trata os demais como atendimento humano externo.
+- A mensagem manual externa e persistida como `OUT` com origem `smb_message_echoes`, a conversa passa para `PAUSED` pela mesma helper usada pelo painel e o aviso configuravel `humanHandoffMessage` e enviado apenas na primeira pausa.
+- A pausa automatica por resposta manual externa exige que o app Meta permaneça assinado no campo `smb_message_echoes`.
 - Foram adicionados logs diagnosticos e persistencia leve de `statusEvents` para callbacks `statuses` da Meta quando a correlacao com a `OUT` e possivel.
 - O criterio de conexao foi alinhado entre inbound e outbound, exigindo `status = CONNECTED` nos dois caminhos.
 - A propria loja autenticada agora possui uma tela store-scoped (`/configuracoes/loja`) para editar telefone, endereco, horario resumido e observacoes, enquanto o admin existente segue disponivel para suporte de `SUPER_ADMIN`.

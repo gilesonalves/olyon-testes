@@ -19,9 +19,24 @@ export type ParsedIncomingWhatsAppMessage = {
   raw: unknown
 }
 
+export type ParsedSmbMessageEcho = {
+  source: "meta"
+  providerMessageId: string | null
+  from: string | null
+  to: string
+  text: string | null
+  phoneNumberId: string | null
+  displayPhoneNumber: string | null
+  businessAccountId: string | null
+  timestamp: string | null
+  messageType: string
+  raw: unknown
+}
+
 export type ParsedWhatsAppWebhookPayload = {
   source: "meta" | "test"
   messages: ParsedIncomingWhatsAppMessage[]
+  messageEchoes: ParsedSmbMessageEcho[]
   raw: unknown
 }
 
@@ -84,6 +99,26 @@ function parseInteractiveReply(payload: unknown): ParsedIncomingInteractiveReply
   return null
 }
 
+function parseProviderMessageText(
+  providerMessage: Record<string, unknown>,
+  messageType: string
+) {
+  if (messageType === "text" && isObject(providerMessage.text)) {
+    return toOptionalString(providerMessage.text.body)
+  }
+
+  if (
+    (messageType === "image" ||
+      messageType === "video" ||
+      messageType === "document") &&
+    isObject(providerMessage[messageType])
+  ) {
+    return toOptionalString(providerMessage[messageType].caption)
+  }
+
+  return null
+}
+
 function parseLegacyTestPayload(payload: unknown): ParsedWhatsAppWebhookPayload | null {
   if (!isObject(payload)) {
     return null
@@ -98,6 +133,7 @@ function parseLegacyTestPayload(payload: unknown): ParsedWhatsAppWebhookPayload 
   return {
     source: "test",
     raw: payload,
+    messageEchoes: [],
     messages: [
       {
         source: "test",
@@ -139,6 +175,7 @@ function parseMetaWebhookPayload(payload: unknown): ParsedWhatsAppWebhookPayload
 
   const entry = Array.isArray(payload.entry) ? payload.entry : []
   const messages: ParsedIncomingWhatsAppMessage[] = []
+  const messageEchoes: ParsedSmbMessageEcho[] = []
 
   for (const entryItem of entry) {
     if (!isObject(entryItem)) {
@@ -157,8 +194,13 @@ function parseMetaWebhookPayload(payload: unknown): ParsedWhatsAppWebhookPayload
       const metadata = isObject(value.metadata) ? value.metadata : null
       const phoneNumberId = metadata ? toOptionalString(metadata.phone_number_id) : null
       const displayPhoneNumber = metadata ? toOptionalString(metadata.display_phone_number) : null
+      const field = toOptionalString(changeItem.field)
       const contacts = Array.isArray(value.contacts) ? value.contacts : []
       const providerMessages = Array.isArray(value.messages) ? value.messages : []
+      const providerMessageEchoes =
+        field === "smb_message_echoes" && Array.isArray(value.message_echoes)
+          ? value.message_echoes
+          : []
 
       for (const providerMessage of providerMessages) {
         if (!isObject(providerMessage)) {
@@ -178,9 +220,9 @@ function parseMetaWebhookPayload(payload: unknown): ParsedWhatsAppWebhookPayload
             ? parseInteractiveReply(providerMessage.interactive)
             : null
         const text =
-          messageType === "text" && isObject(providerMessage.text)
-            ? toOptionalString(providerMessage.text.body)
-            : interactiveReply?.title ?? null
+          parseProviderMessageText(providerMessage, messageType) ??
+          interactiveReply?.title ??
+          null
 
         messages.push({
           source: "meta",
@@ -195,10 +237,44 @@ function parseMetaWebhookPayload(payload: unknown): ParsedWhatsAppWebhookPayload
           messageType,
           raw: {
             entryId: businessAccountId,
-            field: toOptionalString(changeItem.field),
+            field,
             metadata,
             contacts,
             message: providerMessage,
+          },
+        })
+      }
+
+      for (const providerMessageEcho of providerMessageEchoes) {
+        if (!isObject(providerMessageEcho)) {
+          continue
+        }
+
+        const to = toOptionalString(providerMessageEcho.to)
+        if (!to) {
+          continue
+        }
+
+        const messageType =
+          toOptionalString(providerMessageEcho.type) ?? "unknown"
+
+        messageEchoes.push({
+          source: "meta",
+          providerMessageId: toOptionalString(providerMessageEcho.id),
+          from: toOptionalString(providerMessageEcho.from),
+          to,
+          text: parseProviderMessageText(providerMessageEcho, messageType),
+          phoneNumberId,
+          displayPhoneNumber,
+          businessAccountId:
+            businessAccountId ?? toOptionalString(value.wabaId),
+          timestamp: toOptionalString(providerMessageEcho.timestamp),
+          messageType,
+          raw: {
+            entryId: businessAccountId,
+            field,
+            metadata,
+            messageEcho: providerMessageEcho,
           },
         })
       }
@@ -208,6 +284,7 @@ function parseMetaWebhookPayload(payload: unknown): ParsedWhatsAppWebhookPayload
   return {
     source: "meta",
     messages,
+    messageEchoes,
     raw: payload,
   }
 }

@@ -39,10 +39,16 @@ export async function findActiveWhatsAppConnectionForInboundMessage(
     return null
   }
 
+  return findActiveWhatsAppConnectionByPhoneNumberId(message.phoneNumberId)
+}
+
+export async function findActiveWhatsAppConnectionByPhoneNumberId(
+  phoneNumberId: string
+) {
   return prisma.whatsAppConnection.findFirst({
     where: {
       provider: "META_WHATSAPP",
-      phoneNumberId: message.phoneNumberId,
+      phoneNumberId,
       isActive: true,
       status: "CONNECTED",
     },

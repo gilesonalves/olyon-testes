@@ -8,8 +8,12 @@ import {
   unauthorized,
 } from "@/lib/api/response"
 import { requireMembershipRole } from "@/lib/guards/require-membership-role"
-import { getBotSettingsForStore } from "@/lib/bot/settings"
 import { prisma, Prisma } from "@/lib/prisma"
+import {
+  buildManualAttendanceOutboundPayload,
+  pauseWhatsAppConversationForHumanAttendance,
+  sendWhatsAppHumanHandoffNotice,
+} from "@/lib/whatsapp/human-attendance"
 import {
   sendMetaTextMessage,
   type MetaTextOutboundResult,
@@ -79,10 +83,6 @@ function badGateway(error: string, details?: Record<string, unknown>) {
     },
     { status: 502 }
   )
-}
-
-function toJsonValue(value: unknown): Prisma.InputJsonValue {
-  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue
 }
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
@@ -171,47 +171,6 @@ function getMessageStatusFromPayload(payload: Prisma.JsonValue | null) {
     : "SENT"
 }
 
-function buildOutboundTextPayload(params: {
-  source: "manual_attendance" | "manual_attendance_handoff_notice"
-  text: string
-  sendResult: MetaTextOutboundResult
-  attemptedAt: Date
-  sentByUserId: string
-}) {
-  const payload = {
-    source: params.source,
-    text: params.text,
-    outbound: {
-      kind: "text",
-      text: params.text,
-    },
-    provider: params.sendResult.provider,
-    whatsappConnectionId: params.sendResult.whatsappConnectionId,
-    phoneNumberId: params.sendResult.phoneNumberId,
-    graphMessageId: params.sendResult.graphMessageId,
-    providerMessageId: params.sendResult.graphMessageId,
-    deliveryRequest: {
-      ok: params.sendResult.ok,
-      statusCode: params.sendResult.statusCode,
-      attemptedAt: params.attemptedAt.toISOString(),
-    },
-    graphResponse: params.sendResult.graphResponse,
-    sentByUserId: params.sentByUserId,
-  }
-
-  if (params.sendResult.ok) {
-    return toJsonValue(payload)
-  }
-
-  return toJsonValue({
-    ...payload,
-    errorCode: params.sendResult.errorCode,
-    error: params.sendResult.error,
-    graphError: params.sendResult.graphError,
-    responsePreview: params.sendResult.responsePreview,
-  })
-}
-
 function toMessageResponse(message: OutboundMessageRecord) {
   return {
     id: message.id,
@@ -285,68 +244,23 @@ export async function POST(req: Request, { params }: RouteContext) {
       )
     }
 
-    const botSettings = await getBotSettingsForStore(authResult.storeId)
     const shouldSendHandoffMessage = conversation.state !== "PAUSED"
     let handoffMessage: OutboundMessageRecord | null = null
 
     if (shouldSendHandoffMessage) {
-      const handoffSentAt = new Date()
-      const handoffSendResult = await sendMetaTextMessage({
+      const handoffResult = await sendWhatsAppHumanHandoffNotice({
         storeId: authResult.storeId,
+        conversationId: conversation.id,
         to,
-        text: botSettings.humanHandoffMessage,
+        sentByUserId: authResult.userId,
+        trigger: "panel",
       })
 
-      if (!handoffSendResult.ok) {
-        return metaSendErrorResponse(handoffSendResult)
+      if (!handoffResult.ok) {
+        return metaSendErrorResponse(handoffResult.sendResult)
       }
 
-      const handoffPayload = buildOutboundTextPayload({
-        source: "manual_attendance_handoff_notice",
-        text: botSettings.humanHandoffMessage,
-        sendResult: handoffSendResult,
-        attemptedAt: handoffSentAt,
-        sentByUserId: authResult.userId,
-      })
-
-      handoffMessage = await prisma.$transaction(async (tx) => {
-        const createdHandoffMessage = await tx.conversationMessage.create({
-          data: {
-            storeId: authResult.storeId,
-            conversationId: conversation.id,
-            direction: "OUT",
-            providerMessageId: handoffSendResult.graphMessageId ?? undefined,
-            text: botSettings.humanHandoffMessage,
-            payload: handoffPayload,
-          },
-          select: {
-            id: true,
-            direction: true,
-            text: true,
-            payload: true,
-            providerMessageId: true,
-            createdAt: true,
-          },
-        })
-
-        const conversationUpdate = await tx.conversation.updateMany({
-          where: {
-            id: conversation.id,
-            storeId: authResult.storeId,
-            channel: "WHATSAPP",
-          },
-          data: {
-            state: "PAUSED",
-            lastMessageAt: createdHandoffMessage.createdAt,
-          },
-        })
-
-        if (conversationUpdate.count !== 1) {
-          throw new Error("Conversation scope mismatch during handoff notice.")
-        }
-
-        return createdHandoffMessage
-      })
+      handoffMessage = handoffResult.message
     }
 
     const sentAt = new Date()
@@ -360,7 +274,7 @@ export async function POST(req: Request, { params }: RouteContext) {
       return metaSendErrorResponse(sendResult)
     }
 
-    const payload = buildOutboundTextPayload({
+    const payload = buildManualAttendanceOutboundPayload({
       source: "manual_attendance",
       text: parsed.data.text,
       sendResult,
@@ -388,21 +302,12 @@ export async function POST(req: Request, { params }: RouteContext) {
         },
       })
 
-      const conversationUpdate = await tx.conversation.updateMany({
-        where: {
-          id: conversation.id,
-          storeId: authResult.storeId,
-          channel: "WHATSAPP",
-        },
-        data: {
-          state: "PAUSED",
-          lastMessageAt: createdMessage.createdAt,
-        },
+      await pauseWhatsAppConversationForHumanAttendance({
+        db: tx,
+        storeId: authResult.storeId,
+        conversationId: conversation.id,
+        lastMessageAt: createdMessage.createdAt,
       })
-
-      if (conversationUpdate.count !== 1) {
-        throw new Error("Conversation scope mismatch during manual send.")
-      }
 
       const updatedConversation = await tx.conversation.findFirst({
         where: {
@@ -435,8 +340,8 @@ export async function POST(req: Request, { params }: RouteContext) {
         id: result.conversation.id,
         state: result.conversation.state,
         lastMessageAt:
-          handoffMessage?.createdAt.toISOString() ??
           result.conversation.lastMessageAt?.toISOString() ??
+          handoffMessage?.createdAt.toISOString() ??
           null,
       },
       graphMessageId: sendResult.graphMessageId,
