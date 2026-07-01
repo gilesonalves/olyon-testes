@@ -46,50 +46,49 @@ export async function createOwner(
     }
   }
 
-  const existingUser = await prisma.user.findUnique({
-    where: { email },
-    select: { id: true },
-  })
-
-  if (existingUser) {
-    return {
-      success: false,
-      error: "EMAIL_ALREADY_EXISTS",
-      message: "Já existe um usuário com esse e-mail",
-    }
-  }
-
   try {
     await prisma.$transaction(async (tx) => {
       // 1) acha owner atual da loja
       const currentOwnerMembership = await tx.membership.findFirst({
         where: { storeId, role: MembershipRole.OWNER },
-        select: { id: true },
+        select: { id: true, userId: true },
       })
 
-      // 2) cria user novo + membership OWNER
+      // 2) cria ou reutiliza o usuario sem sobrescrever uma senha existente
       const passwordHash = await bcrypt.hash(password, 10)
 
-      const newOwner = await tx.user.create({
-        data: {
+      const newOwner = await tx.user.upsert({
+        where: { email },
+        create: {
           name,
           email,
           password: passwordHash,
           globalRole: null,
         },
+        update: {},
         select: { id: true },
       })
 
-      await tx.membership.create({
-        data: {
+      await tx.membership.upsert({
+        where: {
+          userId_storeId: {
+            userId: newOwner.id,
+            storeId,
+          },
+        },
+        create: {
           storeId,
           userId: newOwner.id,
           role: MembershipRole.OWNER,
         },
+        update: { role: MembershipRole.OWNER },
       })
 
       // 3) rebaixa owner antigo para ADMIN (se existir)
-      if (currentOwnerMembership) {
+      if (
+        currentOwnerMembership &&
+        currentOwnerMembership.userId !== newOwner.id
+      ) {
         await tx.membership.update({
           where: { id: currentOwnerMembership.id },
           data: { role: MembershipRole.ADMIN },

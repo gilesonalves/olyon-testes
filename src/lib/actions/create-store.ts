@@ -45,13 +45,6 @@ export async function createStore(
     }
   }
 
-  const existingUser = await prisma.user.findUnique({
-    where: { email: ownerEmail },
-  })
-  if (existingUser) {
-    return { success: false, error: "DUPLICATE_EMAIL", message: "Já existe um usuário com esse e-mail" }
-  }
-
   try {
     const result = await prisma.$transaction(async (tx) => {
       const store = await tx.store.create({
@@ -60,21 +53,31 @@ export async function createStore(
 
       const passwordHash = await bcrypt.hash(password, 10)
 
-      const owner = await tx.user.create({
-        data: {
+      const owner = await tx.user.upsert({
+        where: { email: ownerEmail },
+        create: {
           name: ownerName,
           email: ownerEmail,
           password: passwordHash,
           globalRole: null,
         },
+        update: {},
+        select: { id: true },
       })
 
-      await tx.membership.create({
-        data: {
+      await tx.membership.upsert({
+        where: {
+          userId_storeId: {
+            userId: owner.id,
+            storeId: store.id,
+          },
+        },
+        create: {
           storeId: store.id,
           userId: owner.id,
           role: MembershipRole.OWNER,
         },
+        update: { role: MembershipRole.OWNER },
       })
 
       return { storeId: store.id, ownerId: owner.id }

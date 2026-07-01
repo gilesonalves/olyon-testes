@@ -41,7 +41,7 @@ export function NewOwnerForm({ storeId }: NewOwnerFormProps) {
       const result = await createOwner(storeId, data)
 
       if (result.success) {
-        toast.success("Proprietario criado com sucesso")
+        toast.success("Proprietário definido com sucesso")
         router.push("/admin/dashboard")
         return
       }
@@ -61,11 +61,6 @@ export function NewOwnerForm({ storeId }: NewOwnerFormProps) {
             form.setError("confirmPassword", { message: result.message })
           }
 
-          break
-
-        case "EMAIL_ALREADY_EXISTS":
-          toast.error(result.message)
-          form.setError("email", { message: result.message })
           break
 
         case "STORE_NOT_FOUND":
@@ -144,6 +139,9 @@ export function NewOwnerForm({ storeId }: NewOwnerFormProps) {
                 {form.formState.errors.password.message}
               </p>
             )}
+            <p className="text-xs text-muted-foreground">
+              Se o e-mail já existir, a senha atual será preservada.
+            </p>
           </div>
 
           <div className="space-y-2">

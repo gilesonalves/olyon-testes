@@ -95,7 +95,7 @@ export default async function AdminStoreDetailsPage({ params }: Props) {
           href={`/admin/dashboard/stores/${store.id}/owner`}
           className="inline-flex items-center justify-center rounded-md text-sm font-medium h-10 px-4 border"
         >
-          Gerenciar owner
+          Gerenciar proprietário
         </Link>
       </header>
 

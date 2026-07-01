@@ -1,6 +1,6 @@
 # PROJECT_STATUS.md
 
-**Data de ultima atualizacao:** 30 de junho de 2026
+**Data de ultima atualizacao:** 1 de julho de 2026
 
 ## Status geral do projeto Olyon
 
@@ -9,6 +9,7 @@
 [x] CRUD de Clientes no codigo com UI, validacao e rotas dedicadas
 [ ] Migracao Prisma de Clientes aplicada no banco de desenvolvimento
 [x] CRUD de Usuarios  
+[x] Login Credentials com diagnostico seguro e gerenciamento admin de dados/senha do owner atual
 [x] CRUD de Servicos  
 [x] CRUD de Equipe  
 [x] Tela redundante `/eventos` removida com Servicos como fonte principal para combinacoes
@@ -1363,10 +1364,47 @@ Validacao executada:
 
 ---
 
+## 9.1 Diagnostico e gerenciamento do owner criado pelo admin
+
+Diagnostico confirmado para `jhonatan@olyon.com`:
+
+- o `User` existe e possui senha nao vazia no formato bcrypt
+- existe `Membership` com role `OWNER`
+- a `Store` associada esta ativa
+- portanto, a falha nao e causada por hash ausente, membership ausente, role invalida ou loja inativa
+- com o e-mail exato, o unico bloqueio restante no `authorize()` e a senha informada nao conferir com o hash salvo; o codigo tambem nao normalizava espacos e maiusculas no e-mail antes da busca
+
+Correcao aplicada:
+
+- o `authorize()` normaliza e-mail com `trim().toLowerCase()`
+- logs internos distinguem `user not found`, `missing password hash`, `invalid password`, `user without membership`, `inactive store` e `success`
+- os logs incluem apenas identificadores operacionais e nunca senha, hash ou token
+- a mensagem publica continua `Credenciais inválidas ou acesso negado.`
+- o formulario admin ja possuia senha inicial validada por Zod, hash bcrypt com custo 10, criacao de Store ativa e `Membership OWNER`
+- criacao de loja e troca de owner agora reutilizam um `User` existente por e-mail, preservam sua senha e criam ou promovem apenas o `Membership` da loja alvo
+- o owner anterior so e rebaixado para `ADMIN` quando for um usuario diferente
+- `/admin/dashboard/stores/[id]/owner` agora consulta o `Membership OWNER`: exibe o gerenciamento do proprietario atual ou preserva o formulario de criacao quando a loja nao possui owner
+- o gerenciamento mostra nome, e-mail, `userId` e role sem selecionar ou expor `User.password`
+- `PATCH /api/admin/stores/[id]/owner` edita nome/e-mail com Zod, bloqueia conflito com outro `User` e nao mescla contas
+- `PATCH /api/admin/stores/[id]/owner/password` valida confirmacao, gera bcrypt com custo 10 e atualiza somente a senha do owner atual
+- ambos os endpoints exigem `SUPER_ADMIN` e retornam o contrato `{ ok, data/error }`
+
+Validacao:
+
+- auditoria segura no banco confirmou a estrutura do usuario, membership e loja sem imprimir o hash
+- teste transacional com rollback confirmou bcrypt valido para owner novo, `Membership OWNER` e preservacao da senha de usuario existente, sem deixar registros temporarios
+- teste transacional do gerenciamento confirmou edicao de nome/e-mail e redefinicao bcrypt do owner da Brunela, com rollback limpo e sem imprimir credenciais
+- `yarn eslint` concluiu sem erros e manteve 2 warnings legados nos controllers de cadastro e recuperacao de senha
+- `yarn tsc --noEmit --pretty false --incremental false` concluiu sem erros
+- o teste manual completo de redefinicao e login permanece pendente para ser executado pelo admin com uma nova senha controlada
+
+---
+
 ## 10. Historico resumido
 
 | Data | Mudanca |
 |------|---------|
+| 01/07/2026 | Login e owner auditados: Jhonatan possui bcrypt, Membership OWNER e Store ativa; admin ganhou edicao de dados e redefinicao segura da senha do proprietario atual |
 | 29/06/2026 | WhatsApp Embedded Signup auditado: configuracao Meta centralizada no backend, `extras.setup` sem portfolio, eventos `FINISH_*` suportados e persistencia confirmada como store-scoped |
 | 02/06/2026 | Configuracoes do Bot por loja: criada model `BotSettings`, API `GET/PUT /api/store/current/bot-settings`, tela `/configuracoes/bot`, mensagens configuraveis no webhook/atendimento e preparo persistido de retorno automatico |
 | 02/06/2026 | WhatsApp atendimento humano: primeira mensagem manual em conversa ainda nao pausada agora envia tambem um aviso automatico ao cliente, persiste essa `OUT` e nao repete o aviso enquanto a conversa ja estiver `PAUSED` |

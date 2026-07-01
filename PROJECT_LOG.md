@@ -1,3 +1,69 @@
+## 1 de julho de 2026 - Diagnostico e correcao do login de owner criado pelo admin
+
+### Objetivo
+
+Diagnosticar o `CredentialsSignin` de `jhonatan@olyon.com`, tornar as recusas do `authorize()` observaveis sem dados sensiveis e transformar `Gerenciar owner` em uma tela capaz de editar e redefinir a senha do proprietario atual.
+
+### Diagnostico
+
+- A leitura segura do banco confirmou que o `User` existe e que a senha salva e nao vazia e possui formato bcrypt.
+- O usuario possui `Membership OWNER` na loja `Brunela`, e essa `Store` esta ativa.
+- Assim, foram descartadas as hipoteses de senha ausente, membership ausente, role invalida e loja inativa.
+- Para o e-mail exato, o fluxo atual so pode chegar a `CredentialsSignin` porque a senha informada nao confere com o hash salvo. O valor em texto usado na criacao nao existe no banco e nao foi registrado em log.
+- Havia ainda uma falha independente: o `authorize()` buscava o e-mail sem `trim` ou normalizacao para minusculas, podendo classificar variacoes do mesmo e-mail como `user not found`.
+- O cadastro publico atual e apenas uma tela sem persistencia e nao oferece um fluxo reutilizavel de convite ou definicao de senha.
+- Os formularios admin de nova loja e novo owner ja exigiam senha inicial por Zod; as actions ja usavam `bcrypt.hash(..., 10)`, criavam Store ativa e `Membership OWNER`.
+- O bug confirmado nessas actions era a rejeicao de um e-mail ja cadastrado, impedindo que o mesmo usuario recebesse membership em outra Store.
+- A rota `/admin/dashboard/stores/[id]/owner` nao consultava a loja nem o `Membership OWNER`; ela sempre mostrava `Novo proprietario`, mesmo quando o owner ja existia.
+- Nao havia API ou action administrativa para editar os dados do owner atual ou redefinir `User.password`.
+
+### O que foi corrigido
+
+- `authorize()` agora normaliza o e-mail antes do `findUnique`.
+- Foram adicionados logs para `user not found`, `missing password hash`, `invalid password`, `user without membership`, `inactive store` e `success`.
+- Nenhum desses logs inclui senha, hash, token ou payload de credenciais.
+- A mensagem publica da tela de login continua generica: `Credenciais inválidas ou acesso negado.`
+- `createStore` passou a fazer `upsert` do owner por e-mail: cria um usuario novo com bcrypt ou reutiliza o existente com `update: {}`, sem sobrescrever nome, senha ou role global.
+- `createOwner` recebeu o mesmo comportamento e agora cria ou promove o `Membership` da Store alvo para `OWNER`.
+- A troca de owner preserva o usuario atual quando ele ja e o owner e rebaixa para `ADMIN` apenas um owner anterior diferente.
+- Os formularios informam que a senha atual sera preservada quando o e-mail ja existir.
+- A pagina de owner agora busca somente `user.id`, nome, e-mail e role do `Membership OWNER`; nenhum hash e selecionado ou enviado ao client.
+- Quando existe owner, a tela mostra `Proprietario atual`, formulario separado de nome/e-mail e formulario separado de redefinicao de senha com mostrar/ocultar.
+- Quando nao existe owner, o formulario anterior de `Novo proprietario` continua sendo usado.
+- `PATCH /api/admin/stores/[id]/owner` atualiza nome/e-mail, recusa e-mail pertencente a outro usuario com 409 e nao faz merge automatico.
+- `PATCH /api/admin/stores/[id]/owner/password` valida senha/confirmacao com Zod e usa o helper bcrypt de custo 10 para atualizar `User.password`.
+- Os dois endpoints exigem `SUPER_ADMIN` e usam respostas `{ ok: true, data }` ou `{ ok: false, error }`.
+
+### Arquivos alterados
+
+- `src/lib/auth-options.ts`
+- `src/lib/actions/create-store.ts`
+- `src/lib/actions/create-store.types.ts`
+- `src/lib/actions/create-owner.ts`
+- `src/lib/actions/create-owner.types.ts`
+- `src/lib/admin/require-super-admin.ts`
+- `src/lib/admin/store-owner.ts`
+- `app/(auth)/login/page.tsx`
+- `app/api/admin/stores/[id]/owner/route.ts`
+- `app/api/admin/stores/[id]/owner/password/route.ts`
+- `app/admin/dashboard/stores/new/page.tsx`
+- `app/admin/dashboard/stores/[id]/page.tsx`
+- `app/admin/dashboard/stores/[id]/owner/page.tsx`
+- `app/admin/dashboard/stores/[id]/owner/owner-form.tsx`
+- `app/admin/dashboard/stores/[id]/owner/owner-management.tsx`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### Validacao
+
+- A consulta diagnostica selecionou apenas indicadores seguros: existencia do usuario, presenca/formato do hash, role do membership e status da loja.
+- Um teste transacional isolado confirmou owner novo com bcrypt valido, criacao de `Membership OWNER`, preservacao da senha do usuario existente e rollback sem residuos.
+- Um segundo teste transacional confirmou edicao de nome/e-mail e redefinicao bcrypt do owner da Brunela; o rollback restaurou nome, e-mail e hash originais sem imprimir esses valores.
+- `yarn eslint` concluiu sem erros e apresentou somente os 2 warnings legados de variavel `data` nao utilizada em cadastro e recuperacao de senha.
+- `yarn tsc --noEmit --pretty false --incremental false` concluiu sem erros.
+- O teste manual de redefinicao e login de Jhonatan nao foi executado automaticamente para evitar escolher ou expor uma nova credencial sem orientacao do operador.
+- A verificacao manual final deve redefinir uma senha controlada pela nova tela, confirmar login, recusa da senha errada, Store Brunela selecionada e logs seguros de sucesso/falha.
+
 ## 30 de junho de 2026 - Retomada automatica apos 30 minutos de inatividade
 
 ### Objetivo

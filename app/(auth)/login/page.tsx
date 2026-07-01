@@ -18,7 +18,7 @@ function LoginErrorMessage() {
 
   return (
     <p className="mt-4 text-sm font-medium text-red-600">
-      Credenciais invalidas ou acesso negado.
+      Credenciais inválidas ou acesso negado.
     </p>
   )
 }

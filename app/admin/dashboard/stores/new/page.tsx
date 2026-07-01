@@ -49,10 +49,6 @@ export default function NewStorePage() {
           toast.error(result.message)
           form.setError("name", { message: result.message })
           break
-        case "DUPLICATE_EMAIL":
-          toast.error(result.message)
-          form.setError("ownerEmail", { message: result.message })
-          break
         case "FORBIDDEN":
           toast.error(result.message)
           break
@@ -143,6 +139,9 @@ export default function NewStorePage() {
                 {form.formState.errors.password.message}
               </p>
             )}
+            <p className="text-xs text-muted-foreground">
+              Se o e-mail já existir, a senha atual será preservada.
+            </p>
           </div>
 
           <div className="space-y-2">

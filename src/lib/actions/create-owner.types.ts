@@ -7,7 +7,6 @@ export type CreateOwnerError =
   | "INVALID_INPUT"
   | "FORBIDDEN"
   | "STORE_NOT_FOUND"
-  | "EMAIL_ALREADY_EXISTS"
   | "UNKNOWN"
 
 export type CreateOwnerResult =
