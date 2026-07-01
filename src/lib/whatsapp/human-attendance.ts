@@ -1,5 +1,10 @@
+import { buildBotFlowResetContext } from "@/lib/bot/flow"
 import { getBotSettingsForStore } from "@/lib/bot/settings"
-import { Prisma, prisma } from "@/lib/prisma"
+import {
+  Prisma,
+  prisma,
+  type ConversationState,
+} from "@/lib/prisma"
 import {
   sendMetaTextMessage,
   type MetaTextOutboundResult,
@@ -14,6 +19,28 @@ export type HumanAttendanceOutboundMessage = {
   createdAt: Date
 }
 
+export const HUMAN_ATTENDANCE_AUTO_RESUME_MINUTES = 30
+
+export type HumanAttendanceExpirationResult =
+  | {
+      status: "wasNotPaused"
+      inactiveMinutes: null
+      lastMessageAt: Date | null
+      context: null
+    }
+  | {
+      status: "stillPaused"
+      inactiveMinutes: number | null
+      lastMessageAt: Date | null
+      context: null
+    }
+  | {
+      status: "resumedByInactivity"
+      inactiveMinutes: number
+      lastMessageAt: Date
+      context: Record<string, unknown>
+    }
+
 type HumanHandoffNoticeResult =
   | {
       ok: true
@@ -27,6 +54,108 @@ type HumanHandoffNoticeResult =
 
 function toJsonValue(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue
+}
+
+function getJsonRecord(value: Prisma.JsonValue | null | undefined) {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return { ...(value as Record<string, unknown>) }
+  }
+
+  return {}
+}
+
+function getInactiveMinutes(lastMessageAt: Date, now: Date) {
+  const inactiveMilliseconds = Math.max(
+    0,
+    now.getTime() - lastMessageAt.getTime()
+  )
+
+  return Math.floor((inactiveMilliseconds / 60_000) * 10) / 10
+}
+
+export async function resolveHumanAttendanceExpiration(params: {
+  db: Prisma.TransactionClient
+  storeId: string
+  conversation: {
+    id: string
+    state: ConversationState
+    lastMessageAt: Date | null
+    context: Prisma.JsonValue | null
+  }
+  now: Date
+}): Promise<HumanAttendanceExpirationResult> {
+  if (params.conversation.state !== "PAUSED") {
+    return {
+      status: "wasNotPaused",
+      inactiveMinutes: null,
+      lastMessageAt: params.conversation.lastMessageAt,
+      context: null,
+    }
+  }
+
+  const lastMessageAt = params.conversation.lastMessageAt
+
+  if (!lastMessageAt) {
+    return {
+      status: "stillPaused",
+      inactiveMinutes: null,
+      lastMessageAt: null,
+      context: null,
+    }
+  }
+
+  const inactiveMinutes = getInactiveMinutes(lastMessageAt, params.now)
+
+  if (inactiveMinutes < HUMAN_ATTENDANCE_AUTO_RESUME_MINUTES) {
+    return {
+      status: "stillPaused",
+      inactiveMinutes,
+      lastMessageAt,
+      context: null,
+    }
+  }
+
+  const resetContext = {
+    ...getJsonRecord(params.conversation.context),
+    ...buildBotFlowResetContext(false),
+  }
+
+  await params.db.appointmentDraft.updateMany({
+    where: {
+      storeId: params.storeId,
+      conversationId: params.conversation.id,
+      status: "DRAFT",
+    },
+    data: {
+      status: "ABANDONED",
+    },
+  })
+
+  const resumedConversation = await params.db.conversation.updateMany({
+    where: {
+      id: params.conversation.id,
+      storeId: params.storeId,
+      channel: "WHATSAPP",
+      state: "PAUSED",
+    },
+    data: {
+      state: "IDLE",
+      context: toJsonValue(resetContext),
+    },
+  })
+
+  if (resumedConversation.count !== 1) {
+    throw new Error(
+      "Conversation scope mismatch during inactivity auto-resume."
+    )
+  }
+
+  return {
+    status: "resumedByInactivity",
+    inactiveMinutes,
+    lastMessageAt,
+    context: resetContext,
+  }
 }
 
 export function buildManualAttendanceOutboundPayload(params: {

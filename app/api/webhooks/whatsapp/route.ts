@@ -55,6 +55,7 @@ import {
 } from "@/lib/whatsapp/connection"
 import {
   pauseWhatsAppConversationForHumanAttendance,
+  resolveHumanAttendanceExpiration,
   sendWhatsAppHumanHandoffNotice,
 } from "@/lib/whatsapp/human-attendance"
 import {
@@ -157,6 +158,7 @@ const CHATBOT_TIMEOUT_MESSAGE =
   "Encerramos este atendimento por falta de intera\u00e7\u00e3o. Quando quiser agendar novamente, \u00e9 s\u00f3 me chamar."
 const CHATBOT_CLOSED_MESSAGE =
   "Atendimento encerrado. Quando quiser agendar novamente, \u00e9 s\u00f3 me chamar."
+const CHATBOT_RESUMED_MESSAGE = "Atendimento automático retomado."
 const brlCurrencyFormatter = new Intl.NumberFormat("pt-BR", {
   style: "currency",
   currency: "BRL",
@@ -903,7 +905,7 @@ function resolveConversationTimezone(context: Prisma.JsonValue | null | undefine
   return getBotTimezone()
 }
 
-function getConversationContextRecord(context: Prisma.JsonValue | null | undefined) {
+function getConversationContextRecord(context: unknown) {
   if (context && typeof context === "object" && !Array.isArray(context)) {
     return { ...(context as Record<string, unknown>) }
   }
@@ -911,7 +913,7 @@ function getConversationContextRecord(context: Prisma.JsonValue | null | undefin
   return {}
 }
 
-function buildBotContext(context: Prisma.JsonValue | null | undefined): BotConversationContext {
+function buildBotContext(context: unknown): BotConversationContext {
   const record = getConversationContextRecord(context)
 
   return {
@@ -1570,6 +1572,7 @@ async function processIncomingWhatsAppMessage(
   try {
     transactionResult = await prisma.$transaction(async (tx) => {
       const defaultTimezone = getBotTimezone()
+      const inboundReceivedAt = new Date()
 
       const conversation = await tx.conversation.upsert({
         where: {
@@ -1579,16 +1582,14 @@ async function processIncomingWhatsAppMessage(
             contact: incomingMessage.from,
           },
         },
-        update: {
-          lastMessageAt: new Date(),
-        },
+        update: {},
         create: {
           storeId: currentStoreId,
           channel: "WHATSAPP",
           contact: incomingMessage.from,
           state: "IDLE",
           context: toJsonValue({ timezone: defaultTimezone }),
-          lastMessageAt: new Date(),
+          lastMessageAt: inboundReceivedAt,
         },
       })
 
@@ -1622,6 +1623,15 @@ async function processIncomingWhatsAppMessage(
         },
       })
 
+      await tx.conversation.update({
+        where: {
+          id: conversation.id,
+        },
+        data: {
+          lastMessageAt: savedIn.createdAt,
+        },
+      })
+
       const previousInteraction = await tx.conversationMessage.findFirst({
         where: {
           conversationId: conversation.id,
@@ -1633,6 +1643,14 @@ async function processIncomingWhatsAppMessage(
         },
       })
 
+      const lastActivityAt =
+        previousInteraction?.createdAt &&
+        (!conversation.lastMessageAt ||
+          previousInteraction.createdAt > conversation.lastMessageAt)
+          ? previousInteraction.createdAt
+          : conversation.lastMessageAt
+
+      let currentConversationState = conversation.state
       let nextState: ConversationState | null = null
       let ensuredDraftId: string | null = null
       let createdAppointmentId: string | null = null
@@ -1643,7 +1661,7 @@ async function processIncomingWhatsAppMessage(
       console.info("whatsapp bot inbound routing", {
         storeId: currentStoreId,
         conversationId: conversation.id,
-        state: conversation.state,
+        state: currentConversationState,
         text: incomingMessage.text,
         effectiveText: effectiveIncomingText,
         selectedOptionId: incomingMessage.selectedOptionId,
@@ -1673,6 +1691,7 @@ async function processIncomingWhatsAppMessage(
           | "CONFIRMING"
           | "CONFIRMING_APPOINTMENT_CANCELLATION"
       ) {
+        currentConversationState = state
         nextState = state
         await tx.conversation.update({
           where: { id: conversation.id },
@@ -2365,12 +2384,15 @@ async function processIncomingWhatsAppMessage(
       }
 
       async function handleBackOneStep() {
-        if (conversation.state === "IDLE" || conversation.state === "CHOOSING_SERVICE") {
+        if (
+          currentConversationState === "IDLE" ||
+          currentConversationState === "CHOOSING_SERVICE"
+        ) {
           await returnToMainMenu()
           return
         }
 
-        if (conversation.state === "CHOOSING_STAFF") {
+        if (currentConversationState === "CHOOSING_STAFF") {
           const isRescheduleFlow =
             typeof conversationContext.rescheduleAppointmentId === "string"
 
@@ -2383,7 +2405,7 @@ async function processIncomingWhatsAppMessage(
           return
         }
 
-        if (conversation.state === "CHOOSING_TIME") {
+        if (currentConversationState === "CHOOSING_TIME") {
           if (getTimeSelectionStage(conversationContext) === "TIME") {
             await persistConversationContext({
               selectedDateKey: null,
@@ -2434,7 +2456,7 @@ async function processIncomingWhatsAppMessage(
           return
         }
 
-        if (conversation.state === "CONFIRMING") {
+        if (currentConversationState === "CONFIRMING") {
           await persistConversationContext({
             timeSelectionStage: "TIME",
           })
@@ -2442,17 +2464,20 @@ async function processIncomingWhatsAppMessage(
           return
         }
 
-        if (conversation.state === "CHOOSING_APPOINTMENT") {
+        if (currentConversationState === "CHOOSING_APPOINTMENT") {
           await returnToMainMenu()
           return
         }
 
-        if (conversation.state === "CHOOSING_APPOINTMENT_ACTION") {
+        if (currentConversationState === "CHOOSING_APPOINTMENT_ACTION") {
           await reopenAppointmentSelection()
           return
         }
 
-        if (conversation.state === "CONFIRMING_APPOINTMENT_CANCELLATION") {
+        if (
+          currentConversationState ===
+          "CONFIRMING_APPOINTMENT_CANCELLATION"
+        ) {
           await reopenAppointmentAction()
           return
         }
@@ -2461,6 +2486,7 @@ async function processIncomingWhatsAppMessage(
       }
 
       async function pauseConversation() {
+        currentConversationState = "PAUSED"
         nextState = "PAUSED"
 
         await tx.conversation.update({
@@ -2477,7 +2503,55 @@ async function processIncomingWhatsAppMessage(
         })
       }
 
-      if (conversation.state === "PAUSED") {
+      const humanAttendanceExpiration =
+        await resolveHumanAttendanceExpiration({
+          db: tx,
+          storeId: currentStoreId,
+          conversation: {
+            id: conversation.id,
+            state: currentConversationState,
+            lastMessageAt: lastActivityAt,
+            context: conversation.context,
+          },
+          now: savedIn.createdAt,
+        })
+
+      if (humanAttendanceExpiration.status === "stillPaused") {
+        console.info("whatsapp human attendance still paused", {
+          storeId: currentStoreId,
+          conversationId: conversation.id,
+          lastMessageAt:
+            humanAttendanceExpiration.lastMessageAt?.toISOString() ?? null,
+          inactiveMinutes: humanAttendanceExpiration.inactiveMinutes,
+        })
+      }
+
+      if (
+        humanAttendanceExpiration.status === "resumedByInactivity"
+      ) {
+        currentConversationState = "IDLE"
+        nextState = "IDLE"
+        conversationContext = humanAttendanceExpiration.context
+
+        console.info(
+          "whatsapp human attendance resumed by inactivity",
+          {
+            storeId: currentStoreId,
+            conversationId: conversation.id,
+            lastMessageAt:
+              humanAttendanceExpiration.lastMessageAt.toISOString(),
+            inactiveMinutes: humanAttendanceExpiration.inactiveMinutes,
+          }
+        )
+
+        await appendBotReply(CHATBOT_RESUMED_MESSAGE, {
+          reason: "CHATBOT_RESUMED_BY_INACTIVITY",
+          resumedByMessageId: savedIn.id,
+          inactiveMinutes: humanAttendanceExpiration.inactiveMinutes,
+        })
+      }
+
+      if (currentConversationState === "PAUSED") {
         if (isResumeChatbotTriggerText(effectiveIncomingText)) {
           console.info("whatsapp bot paused conversation resumed by customer", {
             storeId: currentStoreId,
@@ -2493,7 +2567,7 @@ async function processIncomingWhatsAppMessage(
             abandonDraft: true,
           })
           await appendBotReply(
-            "Atendimento automático retomado.",
+            CHATBOT_RESUMED_MESSAGE,
             {
               reason: "CHATBOT_RESUMED_BY_CUSTOMER",
               resumedByMessageId: savedIn.id,
@@ -2542,7 +2616,7 @@ async function processIncomingWhatsAppMessage(
 
       if (
         hasConversationFlowTimedOut({
-          state: conversation.state,
+          state: currentConversationState,
           lastInteractionAt: previousInteraction?.createdAt,
           now: savedIn.createdAt,
         })
@@ -2603,15 +2677,15 @@ async function processIncomingWhatsAppMessage(
       }
 
       const bot = handleIncomingMessage({
-        state: conversation.state,
+        state: currentConversationState,
         text: effectiveIncomingText,
-        context: buildBotContext(conversation.context),
+        context: buildBotContext(conversationContext),
       })
 
       console.info("whatsapp bot actions resolved", {
         storeId: currentStoreId,
         conversationId: conversation.id,
-        state: conversation.state,
+        state: currentConversationState,
         text: incomingMessage.text,
         effectiveText: effectiveIncomingText,
         selectedOptionId: incomingMessage.selectedOptionId,
@@ -2919,7 +2993,7 @@ async function processIncomingWhatsAppMessage(
           storeId: currentStoreId,
           conversationId: conversation.id,
           actionType: action.type,
-          state: nextState ?? conversation.state,
+          state: nextState ?? currentConversationState,
           repliesCount: outMessages.length,
           persistedOutboundMessagesCount: persistedOutboundMessages.length,
         })
@@ -3956,7 +4030,7 @@ async function processIncomingWhatsAppMessage(
       console.info("whatsapp bot action loop finished", {
         storeId: currentStoreId,
         conversationId: conversation.id,
-        state: nextState ?? conversation.state,
+        state: nextState ?? currentConversationState,
         text: incomingMessage.text,
         effectiveText: effectiveIncomingText,
         selectedOptionId: incomingMessage.selectedOptionId,
@@ -3970,14 +4044,14 @@ async function processIncomingWhatsAppMessage(
         console.warn("whatsapp bot no outbound generated after actions", {
           storeId: currentStoreId,
           conversationId: conversation.id,
-          state: nextState ?? conversation.state,
+          state: nextState ?? currentConversationState,
           text: incomingMessage.text,
           effectiveText: effectiveIncomingText,
           selectedOptionId: incomingMessage.selectedOptionId,
           actionTypes: bot.actions.map((action) => action.type),
         })
 
-        if ((nextState ?? conversation.state) === "IDLE") {
+        if ((nextState ?? currentConversationState) === "IDLE") {
           await persistConversationContext({
             mainMenuShown: true,
             priceListPage: null,
@@ -3990,7 +4064,7 @@ async function processIncomingWhatsAppMessage(
             "Não consegui continuar por aqui. Me envie 'menu' para recomeçar.",
             {
               reason: "EMPTY_OUTBOUND_FALLBACK_REPLY",
-              state: nextState ?? conversation.state,
+              state: nextState ?? currentConversationState,
             }
           )
         }

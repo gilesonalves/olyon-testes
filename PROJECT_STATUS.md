@@ -142,7 +142,9 @@
 [x] Loja Teste Meta reassinada com sucesso; mensagens reais chegam ao webhook e o bot responde
 [x] Webhook trata `smb_message_echoes` e pausa o bot quando a loja responde manualmente pelo WhatsApp Business ou dispositivo vinculado
 [x] Echo com `providerMessageId` ja persistido pelo Olyon e ignorado para nao pausar o bot por mensagem propria
-[ ] Teste manual pendente: responder pelo WhatsApp Business da loja e confirmar pausa automatica, historico no `/atendimento` e ausencia de resposta do bot
+[x] Pausa por atendimento humano validada no painel Olyon, WhatsApp Business/celular e WhatsApp Web/Desktop
+[x] Conversa `PAUSED` retoma automaticamente no proximo inbound apos 30 minutos sem movimentacao
+[ ] Teste forcado pendente: envelhecer `lastMessageAt` de uma conversa de teste e confirmar retomada por inatividade
 
 ---
 
@@ -206,7 +208,7 @@ O projeto Olyon (Next.js App Router + TypeScript + Prisma + NextAuth + Zod) poss
 - Ao enviar mensagem manual em `/atendimento`, a conversa passa imediatamente para `PAUSED`, a lista mostra badge `HUMANO` e o painel exibe o aviso de atendimento humano ativo com acao para `Retomar bot`.
 - Quando o atendimento humano comeca pelo `/atendimento`, o cliente recebe uma mensagem automatica curta de handoff; conversas que ja estavam `PAUSED` nao recebem aviso duplicado.
 - As mensagens principais do bot agora podem ser configuradas por loja em `/configuracoes/bot`, com persistencia em `BotSettings`, API store-scoped e defaults seguros quando a loja ainda nao salvou configuracao.
-- O tempo de retorno automatico do bot ja fica persistido por loja, mas o job/cron de retomada ainda nao foi ativado nesta etapa.
+- Conversas em atendimento humano continuam pausadas antes de 30 minutos e retomam automaticamente no proximo inbound quando `lastMessageAt` completar 30 minutos de inatividade, sem job/cron.
 - Tela `/agendamentos` com calendario mensal limpo, resumo por dia, sheet de detalhe, skeletons reais e criacao/edicao guiadas por disponibilidade real.
 - Tela `/agendamentos` agora com agenda diaria operacional por profissional como experiencia principal, preservando criacao, detalhe, edicao e disponibilidade reais.
 - Criacao manual e remarcacao em `/agendamentos` agora trafegam `date + time`, montam `startAt/endAt` de forma explicita no backend e mantem a mesma engine de disponibilidade como fonte de verdade.

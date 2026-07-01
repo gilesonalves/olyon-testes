@@ -1,3 +1,48 @@
+## 30 de junho de 2026 - Retomada automatica apos 30 minutos de inatividade
+
+### Objetivo
+
+Evitar que uma conversa em atendimento humano fique presa em `PAUSED`: no primeiro inbound recebido apos 30 minutos sem movimentacao, o bot deve retomar e processar normalmente a mensagem do cliente.
+
+### Arquivos alterados
+
+- `src/lib/whatsapp/human-attendance.ts`
+- `app/api/webhooks/whatsapp/route.ts`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### Diagnostico
+
+- `Conversation.lastMessageAt` e o campo atual que representa a ultima movimentacao da conversa.
+- O webhook atualizava `lastMessageAt` no `upsert` antes de verificar `PAUSED`; isso apagaria a referencia anterior e impediria qualquer expiracao por inatividade.
+- O schema ja possui campos antigos de auto-retomada em `BotSettings`, mas a nova regra de negocio foi definida globalmente em 30 minutos e nao exige nova tela ou migration.
+
+### O que foi ajustado
+
+- Criada a constante `HUMAN_ATTENDANCE_AUTO_RESUME_MINUTES = 30`.
+- A helper compartilhada classifica a conversa como `wasNotPaused`, `stillPaused` ou `resumedByInactivity`.
+- A helper usa o timestamp mais recente entre o `lastMessageAt` anterior ao inbound e a ultima mensagem persistida, abandona drafts ativos, reseta o contexto do bot e move a conversa expirada de `PAUSED` para `IDLE`.
+- O inbound agora preserva o timestamp anterior para a verificacao e atualiza `lastMessageAt` somente depois de persistir a nova `ConversationMessage IN`.
+- Antes de 30 minutos, a mensagem continua salva no historico, a conversa permanece pausada e o bot nao responde automaticamente.
+- Apos 30 minutos, o webhook reutiliza `Atendimento automatico retomado.`, registra o log de retomada e continua o fluxo normal para o texto recebido.
+- Comandos de retomada existentes, como `menu`, `agendar`, `retomar bot` e `atendimento automatico`, permanecem preservados quando a pausa ainda nao expirou.
+- Foram adicionados os logs seguros `whatsapp human attendance still paused` e `whatsapp human attendance resumed by inactivity`, contendo somente loja, conversa, timestamp e minutos aproximados.
+
+### Estrategia de teste segura
+
+1. Usar somente uma conversa de teste e anotar seu `id` e `lastMessageAt` original.
+2. Confirmar primeiro que um inbound antes de 30 minutos permanece sem resposta automatica, exceto pelos comandos de retomada ja existentes.
+3. Em ambiente controlado, alterar apenas o `lastMessageAt` dessa conversa para pelo menos 31 minutos no passado.
+4. Enviar uma nova mensagem do cliente e confirmar o log `whatsapp human attendance resumed by inactivity`, a mensagem de retomada e a resposta normal do bot.
+5. O proprio inbound deve atualizar `lastMessageAt` para o horario atual; se o teste falhar antes do inbound, restaurar imediatamente o valor original anotado.
+6. Nao aplicar o ajuste temporario em conversas reais de clientes.
+
+### Validacao local
+
+- `yarn eslint`
+- `yarn tsc --noEmit --pretty false --incremental false`
+- `git diff --check`
+
 ## 30 de junho de 2026 - Pausa do bot por smb_message_echoes
 
 ### Objetivo
