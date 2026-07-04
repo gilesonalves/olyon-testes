@@ -6941,3 +6941,85 @@ O portfolio que possui o Developer App nao e elegivel para auto-onboarding pelo 
 ### Resultado
 
 O launcher nao pre-seleciona `Loja Principal` nem qualquer outro portfolio, usa uma unica configuracao Meta validada pelo backend e o retorno permanece vinculado exclusivamente a Store atual da sessao. Nenhuma `WhatsAppConnection` existente foi modificada durante a auditoria.
+
+## 03 de julho de 2026 - MVP de lembretes automaticos de agendamento por WhatsApp
+
+### Objetivo
+
+Implementar lembretes automaticos 1 hora e 15 minutos antes do agendamento, limitados a `Appointment.source = WHATSAPP`, com template aprovado da Meta, idempotencia persistente e endpoint de cron protegido.
+
+### Arquivos alterados
+
+- `prisma/schema.prisma`
+- `prisma/migrations/20260703165408_add_appointment_reminders/migration.sql`
+- `src/lib/appointments/reminders.ts`
+- `src/lib/whatsapp/appointment-reminder.ts`
+- `app/api/cron/appointment-reminders/route.ts`
+- `app/api/webhooks/whatsapp/route.ts`
+- `.env.example`
+- `PROJECT_STATUS.md`
+- `PROJECT_LOG.md`
+
+### O que foi implementado
+
+#### 1. Outbox persistente
+
+- Criados os enums `AppointmentReminderKind` (`ONE_HOUR`, `FIFTEEN_MINUTES`) e `AppointmentReminderStatus` (`PENDING`, `PROCESSING`, `SENT`, `FAILED`, `SKIPPED`).
+- Criada a model `AppointmentReminder` ligada a `Store` e `Appointment`.
+- A model registra snapshot de `appointmentStartAt`, `scheduledFor`, tentativas, lock, envio, identificador/status da Meta, motivo e erro.
+- A constraint `@@unique([appointmentId, kind, appointmentStartAt])` impede duplicidade e diferencia uma nova data/hora do mesmo appointment.
+- Foram adicionados indices para `status + scheduledFor`, `storeId` e `providerMessageId`.
+- A migration `20260703165408_add_appointment_reminders` foi criada e aplicada com Prisma Migrate.
+
+#### 2. Reconciliador e dispatcher
+
+- O reconciliador busca apenas appointments `WHATSAPP`, `SCHEDULED` ou `CONFIRMED`, com inicio nas proximas 24 horas.
+- Para cada appointment, calcula `scheduledFor` subtraindo 60 ou 15 minutos diretamente de `startAt`.
+- `createMany({ skipDuplicates: true })` materializa os lembretes sem duplicar.
+- Existe tolerancia de 5 minutos; janelas antigas ficam `SKIPPED` em vez de disparar lembrete atrasado.
+- O dispatcher busca vencidos `PENDING` em lotes de ate 50.
+- O claim usa update condicional por `id + status = PENDING`, incrementa `attempts` e muda para `PROCESSING`; chamadas concorrentes nao enviam a mesma linha.
+- Antes da Meta, o appointment e recarregado e source, status, Store, telefone e snapshot de `startAt` sao revalidados.
+- Cancelado, concluido, no-show, remarcado, telefone invalido ou fora da janela vira `SKIPPED`.
+- Falha de template, conexao ou envio vira `FAILED`.
+
+#### 3. Template Meta e inbox
+
+- O helper de lembrete resolve a conexao por `findActiveWhatsAppConnectionByStoreId`.
+- O envio reutiliza `sendMetaWhatsAppTemplate`; nenhum texto livre e enviado pelo cron.
+- Sao usados dois nomes de template configuraveis, um para 1h e outro para 15min, ambos com idioma configuravel.
+- Contrato do BODY: `{{1}}` recebe o nome do cliente e `{{2}}` recebe a data/hora formatada no timezone atual do bot.
+- O token permanece somente no backend e nao e incluido em logs ou payloads persistidos.
+- Envio aceito persiste `ConversationMessage OUT` com origem `appointment_reminder` e dados operacionais do template/provider.
+- Falha apenas na persistencia do inbox nao muda um envio aceito para `FAILED`, evitando retry duplicado; o outbox registra `CONVERSATION_MESSAGE_PERSIST_FAILED`.
+
+#### 4. Cron e callbacks
+
+- Criado `GET /api/cron/appointment-reminders`.
+- A rota exige `Authorization: Bearer ${CRON_SECRET}` e nao recebe `storeId`.
+- A resposta segue o contrato `{ ok, data }` e inclui `created`, `claimed`, `sent`, `skipped` e `failed`.
+- O callback de statuses da Meta preserva a atualizacao idempotente de `ConversationMessage.payload.statusEvents`.
+- Quando o mesmo `providerMessageId` pertence a um `AppointmentReminder`, o callback tambem atualiza `providerStatus` e `statusReason`.
+
+### Env e operacao
+
+Foram documentados em `.env.example`:
+
+- `CRON_SECRET`
+- `WHATSAPP_APPOINTMENT_REMINDER_ONE_HOUR_TEMPLATE_NAME`
+- `WHATSAPP_APPOINTMENT_REMINDER_FIFTEEN_MINUTES_TEMPLATE_NAME`
+- `WHATSAPP_APPOINTMENT_REMINDER_TEMPLATE_LANGUAGE`
+
+O scheduler de producao deve chamar a rota a cada minuto. O plano Vercel Hobby pode nao suportar essa frequencia; nesse caso sera necessario Vercel Pro ou scheduler externo. Os templates precisam estar aprovados na WABA da conexao usada.
+
+WEB e ADMIN permanecem fora do MVP ate existir normalizacao confiavel do telefone e registro de consentimento para mensagens proativas.
+
+### Validacao executada
+
+- `yarn prisma migrate dev --name add_appointment_reminders`
+- `yarn prisma generate`
+- `yarn eslint`
+- `yarn tsc --noEmit --pretty false --incremental false`
+- `git diff --check`
+
+O lint concluiu sem erros e manteve apenas 2 warnings legados fora do escopo em `app/(auth)/cadastro/controllers/index.tsx` e `app/(auth)/recuperar-senha/controllers/index.tsx`. O typecheck concluiu sem erros.

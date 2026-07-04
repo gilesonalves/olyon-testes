@@ -358,23 +358,53 @@ function isDuplicateMetaStatusEvent(
   })
 }
 
+function buildAppointmentReminderProviderStatusReason(
+  statusItem: MetaStatusCallbackItem
+) {
+  const normalizedStatus = statusItem.status?.trim().toUpperCase()
+
+  if (statusItem.errors?.length) {
+    try {
+      return `META_${normalizedStatus ?? "FAILED"}: ${JSON.stringify(
+        statusItem.errors
+      ).slice(0, 3_900)}`
+    } catch {
+      return `META_${normalizedStatus ?? "FAILED"}`
+    }
+  }
+
+  return normalizedStatus
+    ? `META_${normalizedStatus}`
+    : "META_STATUS_CALLBACK"
+}
+
 async function persistMetaStatusEvent(statusItem: MetaStatusCallbackItem) {
   if (!statusItem.id) {
     return false
   }
 
-  const matchedMessage = await prisma.conversationMessage.findFirst({
-    where: {
-      direction: "OUT",
-      providerMessageId: statusItem.id,
-    },
-    select: {
-      id: true,
-      payload: true,
-    },
-  })
+  const [matchedMessage, matchedReminder] = await Promise.all([
+    prisma.conversationMessage.findFirst({
+      where: {
+        direction: "OUT",
+        providerMessageId: statusItem.id,
+      },
+      select: {
+        id: true,
+        payload: true,
+      },
+    }),
+    prisma.appointmentReminder.findFirst({
+      where: {
+        providerMessageId: statusItem.id,
+      },
+      select: {
+        id: true,
+      },
+    }),
+  ])
 
-  if (!matchedMessage) {
+  if (!matchedMessage && !matchedReminder) {
     console.warn("whatsapp webhook meta status unmatched", {
       providerMessageId: statusItem.id,
       recipientId: statusItem.recipientId,
@@ -384,30 +414,42 @@ async function persistMetaStatusEvent(statusItem: MetaStatusCallbackItem) {
     return false
   }
 
-  const payload = getJsonRecord(matchedMessage.payload)
-  const existingStatusEvents = Array.isArray(payload.statusEvents)
-    ? payload.statusEvents.filter(isObjectRecord)
-    : []
+  if (matchedMessage) {
+    const payload = getJsonRecord(matchedMessage.payload)
+    const existingStatusEvents = Array.isArray(payload.statusEvents)
+      ? payload.statusEvents.filter(isObjectRecord)
+      : []
 
-  if (isDuplicateMetaStatusEvent(existingStatusEvents, statusItem)) {
-    return true
+    if (!isDuplicateMetaStatusEvent(existingStatusEvents, statusItem)) {
+      await prisma.conversationMessage.update({
+        where: { id: matchedMessage.id },
+        data: {
+          payload: toJsonValue({
+            ...payload,
+            statusEvents: [
+              ...existingStatusEvents,
+              {
+                ...statusItem,
+                receivedAt: new Date().toISOString(),
+              },
+            ],
+          }),
+        },
+      })
+    }
   }
 
-  await prisma.conversationMessage.update({
-    where: { id: matchedMessage.id },
-    data: {
-      payload: toJsonValue({
-        ...payload,
-        statusEvents: [
-          ...existingStatusEvents,
-          {
-            ...statusItem,
-            receivedAt: new Date().toISOString(),
-          },
-        ],
-      }),
-    },
-  })
+  if (matchedReminder) {
+    await prisma.appointmentReminder.update({
+      where: {
+        id: matchedReminder.id,
+      },
+      data: {
+        providerStatus: statusItem.status ?? undefined,
+        statusReason: buildAppointmentReminderProviderStatusReason(statusItem),
+      },
+    })
+  }
 
   return true
 }
