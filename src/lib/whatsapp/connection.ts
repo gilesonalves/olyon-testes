@@ -51,6 +51,12 @@ export async function findActiveWhatsAppConnectionByPhoneNumberId(
       phoneNumberId,
       isActive: true,
       status: "CONNECTED",
+      Store: {
+        OR: [
+          { billing: { is: null } },
+          { billing: { operationalStatus: "ACTIVE" } },
+        ],
+      },
     },
     select: inboundConnectionSelect,
   })
@@ -63,6 +69,12 @@ export async function findActiveWhatsAppConnectionByStoreId(storeId: string) {
       provider: "META_WHATSAPP",
       isActive: true,
       status: "CONNECTED",
+      Store: {
+        OR: [
+          { billing: { is: null } },
+          { billing: { operationalStatus: "ACTIVE" } },
+        ],
+      },
     },
     select: outboundConnectionSelect,
   })

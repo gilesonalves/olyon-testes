@@ -12,6 +12,7 @@ export async function middleware(req: NextRequest) {
   const token = await getToken({ req })
 
   const isLogin = pathname === "/login"
+  const isApiRoute = pathname.startsWith("/api/")
   const isAdminRoute = pathname.startsWith("/admin")
   const isAppRoute = [
     "/dashboard",
@@ -25,7 +26,64 @@ export async function middleware(req: NextRequest) {
     "/contas-a-pagar",
     "/controle-pagamentos",
     "/equipe",
+    "/financeiro",
+    "/clientes",
+    "/agenda-online",
   ].some(route => pathname.startsWith(route))
+  const isOperationalApiRoute = [
+    "/api/appointments",
+    "/api/clients",
+    "/api/finance",
+    "/api/schedule",
+    "/api/services",
+    "/api/team",
+    "/api/users",
+    "/api/store/current/bot-settings",
+    "/api/store/current/whatsapp",
+    "/api/store/current/whatsapp-connection",
+    "/api/whatsapp/embedded-signup",
+  ].some(route => pathname.startsWith(route))
+
+  if (isApiRoute) {
+    if (!isOperationalApiRoute || !token?.storeId) {
+      return NextResponse.next()
+    }
+
+    try {
+      const billingResponse = await fetch(
+        new URL("/api/store/current/billing", req.url),
+        {
+          headers: {
+            cookie: req.headers.get("cookie") ?? "",
+          },
+          cache: "no-store",
+        }
+      )
+      const billingJson = (await billingResponse.json().catch(() => null)) as {
+        ok?: boolean
+        data?: { operationalStatus?: string }
+      } | null
+
+      if (
+        billingResponse.ok &&
+        billingJson?.ok &&
+        billingJson.data?.operationalStatus === "SUSPENDED"
+      ) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error:
+              "Sua loja esta suspensa. Acesse Financeiro para consultar a assinatura.",
+          },
+          { status: 403 }
+        )
+      }
+    } catch {
+      // Os guards das rotas continuam sendo a segunda camada de bloqueio.
+    }
+
+    return NextResponse.next()
+  }
 
   // ─────────────────────────────────────────────
   // 🔓 LOGIN (rota pública)
@@ -82,6 +140,39 @@ export async function middleware(req: NextRequest) {
       )
     }
 
+    const isAllowedWhenSuspended =
+      pathname.startsWith("/dashboard") || pathname.startsWith("/financeiro")
+
+    if (!isAllowedWhenSuspended) {
+      try {
+        const billingResponse = await fetch(
+          new URL("/api/store/current/billing", req.url),
+          {
+            headers: {
+              cookie: req.headers.get("cookie") ?? "",
+            },
+            cache: "no-store",
+          }
+        )
+        const billingJson = (await billingResponse.json().catch(() => null)) as {
+          ok?: boolean
+          data?: { operationalStatus?: string }
+        } | null
+
+        if (
+          billingResponse.ok &&
+          billingJson?.ok &&
+          billingJson.data?.operationalStatus === "SUSPENDED"
+        ) {
+          return NextResponse.redirect(
+            new URL("/dashboard?billing=suspended", req.url)
+          )
+        }
+      } catch {
+        // Uma indisponibilidade de billing nao deve derrubar toda a navegacao.
+      }
+    }
+
     return NextResponse.next()
   }
 
@@ -103,5 +194,10 @@ export const config = {
     "/contas-a-pagar/:path*",
     "/controle-pagamentos/:path*",
     "/equipe/:path*",
+    "/financeiro/:path*",
+    "/clientes/:path*",
+    "/agenda-online/:path*",
+    "/agendamentos-lab/:path*",
+    "/api/:path*",
   ],
 }

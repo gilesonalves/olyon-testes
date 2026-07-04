@@ -2,6 +2,10 @@ import type { NextRequest } from "next/server"
 import { cookies } from "next/headers"
 import { getToken } from "next-auth/jwt"
 import { prisma } from "@/lib/prisma"
+import {
+  isStoreSuspended,
+  STORE_SUSPENDED_ERROR,
+} from "@/lib/billing/access"
 
 type AdminSessionPayload = {
   adminId?: string
@@ -161,11 +165,21 @@ export async function getCurrentStoreContext(
   }
 }
 
-export async function getCurrentStoreIdOrThrow(req: NextRequest) {
+export async function getCurrentStoreIdOrThrow(
+  req: NextRequest,
+  options: { allowSuspended?: boolean } = {}
+) {
   const context = await getCurrentStoreContext(req)
 
   if (!context.store?.id) {
     throw new Error("Nenhuma loja selecionada")
+  }
+
+  if (
+    !options.allowSuspended &&
+    (await isStoreSuspended(context.store.id))
+  ) {
+    throw new Error(STORE_SUSPENDED_ERROR)
   }
 
   return {

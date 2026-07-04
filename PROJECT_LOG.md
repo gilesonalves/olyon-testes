@@ -7023,3 +7023,81 @@ WEB e ADMIN permanecem fora do MVP ate existir normalizacao confiavel do telefon
 - `git diff --check`
 
 O lint concluiu sem erros e manteve apenas 2 warnings legados fora do escopo em `app/(auth)/cadastro/controllers/index.tsx` e `app/(auth)/recuperar-senha/controllers/index.tsx`. O typecheck concluiu sem erros.
+
+## 04 de julho de 2026 - MVP de financeiro das lojas e controle de assinatura
+
+### Objetivo
+
+Permitir que o `SUPER_ADMIN` controle manualmente a assinatura mensal de cada loja e que o owner consulte sua situacao, mantendo o status financeiro separado do bloqueio operacional.
+
+### Modelagem
+
+- Criados os enums `StoreBillingStatus` (`PAID`, `PENDING`, `OVERDUE`) e `StoreOperationalStatus` (`ACTIVE`, `SUSPENDED`).
+- Criada `StoreBilling`, com uma configuracao por Store, valor mensal, dia de vencimento, proxima data calculada, periodo, ultimo pagamento e observacao.
+- Criada `StoreBillingPayment`, com historico por Store, periodo, valor, data, observacao e `createdById`.
+- `FinanceEntry` nao foi reutilizada porque representa o fluxo de caixa interno da loja.
+- `Store.active` foi preservado e nao e sincronizado com a suspensao financeira.
+- Criada a migration `20260704120000_add_store_billing`.
+
+### SUPER_ADMIN
+
+- Criada `/admin/dashboard/financeiro`, acessivel pelo dashboard administrativo.
+- A tela lista todas as lojas e owners, permite busca e filtros por pago, pendente, atrasado e suspenso.
+- O administrador pode configurar valor/vencimento/observacao, registrar pagamento, marcar pendencia/atraso e suspender/reativar.
+- O registro de pagamento cria historico, atualiza periodo e ultimo pagamento e calcula o proximo vencimento quando existe `dueDay`.
+- Uma loja suspensa pode ser reativada junto do registro do pagamento.
+- Criadas APIs padronizadas em `/api/admin/billing/stores`, todas protegidas por `SUPER_ADMIN`.
+
+### Loja
+
+- Criada `/financeiro` com status financeiro e operacional, valor mensal, periodo, ultimo pagamento e proximo vencimento.
+- Criada `GET /api/store/current/billing`, resolvendo a Store somente pela sessao/membership.
+- Billing ainda nao configurado retorna `PENDING` e `ACTIVE` sem quebrar a tela.
+- Adicionada `Minha assinatura` no menu lateral.
+- Banners globais informam pendencia/atraso sem bloqueio e suspensao com aviso bloqueante.
+
+### Bloqueio operacional
+
+- A loja suspensa continua com acesso a login, dashboard, financeiro e logout.
+- O middleware redireciona as demais paginas de gestao e devolve `403` nas APIs operacionais.
+- `requireMembershipRole`, `requireStoreId` e `getCurrentStoreIdOrThrow` ganharam verificacao compartilhada de suspensao.
+- A agenda publica nao retorna lojas suspensas.
+- A resolucao das conexoes WhatsApp inbound/outbound ignora lojas suspensas, interrompendo bot, atendimento e envios automaticos.
+- O `SUPER_ADMIN` e as APIs administrativas continuam acessiveis.
+
+### Fora do MVP
+
+- Pagamento online, gateway, Pix automatico, conciliacao bancaria e recorrencia.
+- Atualizacao automatica de `PENDING` para `OVERDUE` por data.
+
+### Validacao
+
+- `yarn prisma generate`
+- `yarn eslint`
+- `yarn tsc --noEmit --pretty false --incremental false`
+- `git diff --check`
+- `yarn build`
+
+A migration foi criada, mas deve ser aplicada separadamente no banco de cada ambiente antes do deploy.
+
+### Ajuste de UX - proximo vencimento automatico
+
+- O campo manual `nextDueAt` foi removido do payload e da modal de edicao da assinatura.
+- O administrador informa somente `monthlyAmount`, `dueDay` e `notes`.
+- O backend calcula `nextDueAt` usando `APP_TIMEZONE` e o helper de timezone existente, persistindo a data ao meio-dia local.
+- Se o dia atual ainda nao passou do `dueDay`, o vencimento fica no mes atual; caso contrario, avanca para o proximo mes.
+- `dueDay` continua limitado ao intervalo de 1 a 31.
+- Quando o mes nao possui o dia configurado, o calculo usa seu ultimo dia valido.
+- Quando `dueDay` e removido, `nextDueAt` tambem e limpo.
+- Ao registrar pagamento, o proximo vencimento e calculado no ciclo seguinte ao periodo pago.
+- A modal exibe a previa `Proximo vencimento calculado: DD/MM/AAAA`, mas o backend permanece como fonte de verdade.
+- A tela `/financeiro` do owner continua mostrando o `nextDueAt` persistido, agora formatado no timezone de billing.
+
+Como o projeto nao possui infraestrutura de testes automatizados, o helper foi validado isoladamente com estes casos:
+
+- hoje 04/07/2026 e `dueDay = 5` resulta em 05/07/2026
+- hoje 04/07/2026 e `dueDay = 3` resulta em 03/08/2026
+- `dueDay = 31` em fevereiro de 2026 resulta em 28/02/2026
+- `dueDay = 31` em fevereiro de 2028 resulta em 29/02/2028
+- periodo pago `2026-07` com `dueDay = 5` resulta em 05/08/2026
+- `dueDay = 32` e rejeitado

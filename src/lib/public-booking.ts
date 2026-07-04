@@ -59,6 +59,10 @@ export async function findActiveStoreBySlug(slug: string) {
     where: {
       slug,
       active: true,
+      OR: [
+        { billing: { is: null } },
+        { billing: { operationalStatus: "ACTIVE" } },
+      ],
     },
     select: publicStoreSummarySelect,
   })

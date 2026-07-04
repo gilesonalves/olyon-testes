@@ -54,6 +54,10 @@ import {
   findActiveWhatsAppConnectionForInboundMessage,
 } from "@/lib/whatsapp/connection"
 import {
+  isStoreSuspended,
+  STORE_SUSPENDED_ERROR,
+} from "@/lib/billing/access"
+import {
   pauseWhatsAppConversationForHumanAttendance,
   resolveHumanAttendanceExpiration,
   sendWhatsAppHumanHandoffNotice,
@@ -4405,6 +4409,13 @@ export async function POST(req: NextRequest) {
 
     if (expectedSecret && secret !== expectedSecret) {
       return unauthorized("Unauthorized")
+    }
+
+    if (await isStoreSuspended(storeId)) {
+      return Response.json(
+        { ok: false, error: STORE_SUSPENDED_ERROR },
+        { status: 403 }
+      )
     }
 
     const incomingMessage = parsedPayload.messages[0]

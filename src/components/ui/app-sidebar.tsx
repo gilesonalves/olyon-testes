@@ -121,6 +121,10 @@ const data: {
           title: "Controle de Pagamentos",
           url: "/controle-pagamentos",
         },
+        {
+          title: "Minha assinatura",
+          url: "/financeiro",
+        },
       ],
     },
     {
@@ -162,12 +166,29 @@ function handleLogout() {
   signOut({ callbackUrl: "/login" })
 }
 
-export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+export function AppSidebar({
+  operationalStatus,
+  ...props
+}: React.ComponentProps<typeof Sidebar> & {
+  operationalStatus: "ACTIVE" | "SUSPENDED"
+}) {
   const [activeStoreId, setActiveStoreId] = React.useState("")
   const [stores, setStores] = React.useState<Store[]>([])
   const { data: session } = useSession()
   const router = useRouter()
   const pathname = usePathname()
+  const navGroups =
+    operationalStatus === "SUSPENDED"
+      ? data.navMain
+          .map((group) => ({
+            ...group,
+            items: group.items.filter(
+              (item) =>
+                item.url === "/dashboard" || item.url === "/financeiro"
+            ),
+          }))
+          .filter((group) => group.items.length > 0)
+      : data.navMain
 
   React.useEffect(() => {
     if (session?.user.storeId && stores.length > 0) {
@@ -222,7 +243,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarHeader>
 
       <SidebarContent>
-        {data.navMain.map((item) => (
+        {navGroups.map((item) => (
           <SidebarGroup key={item.title}>
             <SidebarGroupLabel>{item.title}</SidebarGroupLabel>
             <SidebarGroupContent>

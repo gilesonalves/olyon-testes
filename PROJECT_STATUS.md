@@ -1,6 +1,6 @@
 # PROJECT_STATUS.md
 
-**Data de ultima atualizacao:** 1 de julho de 2026
+**Data de ultima atualizacao:** 4 de julho de 2026
 
 ## Status geral do projeto Olyon
 
@@ -85,6 +85,12 @@
 [x] Fase 8.6 do financeiro: responsivo mobile refinado na listagem de entradas-saidas
 [x] Fase 6.2 do financeiro: filtros por status e periodo em controle-pagamentos
 [x] Fase 9 do financeiro: card de resumo do dashboard integrado com dados reais
+[x] MVP de financeiro das lojas/assinaturas separado do fluxo de caixa da loja
+[x] SUPER_ADMIN pode configurar cobranca, registrar pagamento e marcar pendencia/atraso
+[x] SUPER_ADMIN pode suspender e reativar funcionalidades sem alterar `Store.active`
+[x] Loja visualiza status, valor, periodo, ultimo pagamento e proximo vencimento em `/financeiro`
+[x] Proximo vencimento da assinatura calculado automaticamente pelo `dueDay` no timezone da aplicacao
+[x] Suspensao bloqueia telas, APIs operacionais, agenda publica e automacoes WhatsApp, preservando dashboard, assinatura e logout
 [x] Dashboard `/dashboard` com labels financeiros alinhados ao dominio real de Entradas/Saidas, Contas a Pagar e Controle de Pagamentos
 [x] Dashboard `/dashboard` com proximos agendamentos reais da loja e acoes rapidas revisadas
 [x] Dashboard `/dashboard` com card `Status da agenda` alimentado por slots reais da store atual
@@ -1460,10 +1466,62 @@ Validacao executada:
 
 ---
 
+## 9.3 MVP de financeiro das lojas e controle de assinatura
+
+Escopo implementado:
+
+- controle manual mensal por `Store`, sem pagamento online
+- `StoreBilling` concentra valor, vencimento, status financeiro e status operacional
+- `StoreBillingPayment` preserva o historico dos pagamentos registrados e o usuario SUPER_ADMIN responsavel
+- status financeiro `PAID`, `PENDING` e `OVERDUE` permanece separado do status operacional `ACTIVE` e `SUSPENDED`
+- `FinanceEntry` continua exclusivo ao fluxo de caixa da propria loja
+
+SUPER_ADMIN:
+
+- pagina `/admin/dashboard/financeiro` com busca por loja/owner, filtros e tabela operacional
+- configuracao de valor mensal, dia do vencimento e observacao
+- proximo vencimento calculado automaticamente no backend pelo `dueDay`
+- meses curtos limitam `dueDay` ao ultimo dia valido, incluindo fevereiro bissexto
+- registro de pagamento por periodo, valor, data e observacao
+- marcacao manual de pendencia e atraso
+- suspensao e reativacao, com reativacao opcional no registro do pagamento
+- APIs protegidas em `/api/admin/billing/stores`
+
+Loja:
+
+- pagina `/financeiro` e API store-scoped `GET /api/store/current/billing`
+- estado padrao pendente e operacionalmente ativo quando ainda nao existe configuracao
+- `nextDueAt` exibido ao owner usa o valor calculado e persistido pelo backend
+- banners globais para pendencia, atraso e suspensao
+- loja suspensa continua autenticando e acessando dashboard, assinatura e logout
+- sidebar suspensa exibe somente as entradas permitidas
+
+Bloqueio operacional:
+
+- `Store.active` nao e alterado pela suspensao financeira
+- middleware bloqueia as paginas e APIs operacionais autenticadas
+- guards compartilhados validam o status operacional no backend
+- agenda publica deixa de localizar uma loja suspensa
+- conexoes WhatsApp inbound/outbound deixam de ser resolvidas para loja suspensa
+- SUPER_ADMIN e rotas administrativas permanecem fora do bloqueio
+
+Persistencia:
+
+- migration `20260704120000_add_store_billing` criada
+- a migration precisa ser aplicada no banco de cada ambiente antes do deploy da feature
+
+Fora do MVP:
+
+- checkout, gateway, Pix automatico, conciliacao bancaria e cobranca recorrente
+- automacao temporal para converter `PENDING` em `OVERDUE`
+
+---
+
 ## 10. Historico resumido
 
 | Data | Mudanca |
 |------|---------|
+| 04/07/2026 | Financeiro das lojas: billing mensal manual, vencimento automatico por `dueDay`, historico de pagamentos, painel SUPER_ADMIN, visao da loja e bloqueio seguro de lojas suspensas |
 | 03/07/2026 | WhatsApp: MVP de lembretes automaticos 1h/15min para Appointment WHATSAPP, com outbox persistente idempotente, template Meta, ConversationMessage OUT, cron protegido e callbacks de delivery |
 | 01/07/2026 | Login e owner auditados: Jhonatan possui bcrypt, Membership OWNER e Store ativa; admin ganhou edicao de dados e redefinicao segura da senha do proprietario atual |
 | 29/06/2026 | WhatsApp Embedded Signup auditado: configuracao Meta centralizada no backend, `extras.setup` sem portfolio, eventos `FINISH_*` suportados e persistencia confirmada como store-scoped |

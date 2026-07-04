@@ -1,6 +1,10 @@
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth-options"
 import type { MembershipRole } from "@/lib/auth"
+import {
+  isStoreSuspended,
+  STORE_SUSPENDED_ERROR,
+} from "@/lib/billing/access"
 
 const ROLE_RANK: Record<MembershipRole, number> = {
   OWNER: 3,
@@ -20,7 +24,8 @@ export type RequireMembershipResult =
  * - role >= minRole
  */
 export async function requireMembershipRole(
-  minRole: MembershipRole
+  minRole: MembershipRole,
+  options: { allowSuspended?: boolean } = {}
 ): Promise<RequireMembershipResult> {
   const session = await getServerSession(authOptions)
 
@@ -41,6 +46,10 @@ export async function requireMembershipRole(
 
   if (userRank < minRank) {
     return { ok: false, status: 403, error: "Sem permissão para executar esta ação." }
+  }
+
+  if (!options.allowSuspended && (await isStoreSuspended(storeId))) {
+    return { ok: false, status: 403, error: STORE_SUSPENDED_ERROR }
   }
 
   return { ok: true, storeId, role, userId: session.user.id }

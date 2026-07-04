@@ -80,8 +80,8 @@ export default function AgendaOnlinePage() {
         if (!response.ok || !json?.ok) {
           throw new Error(
             json && !json.ok
-              ? (json.message ?? "Nao foi possivel carregar o hub da agenda online.")
-              : "Nao foi possivel carregar o hub da agenda online."
+              ? (json.message ?? "Nao foi possivel carregar o painel da agenda online.")
+              : "Nao foi possivel carregar o painel da agenda online."
           )
         }
 
@@ -100,7 +100,7 @@ export default function AgendaOnlinePage() {
         setError(
           loadError instanceof Error
             ? loadError.message
-            : "Nao foi possivel carregar o hub da agenda online."
+            : "Nao foi possivel carregar o painel da agenda online."
         )
       } finally {
         if (alive) {
@@ -141,7 +141,7 @@ export default function AgendaOnlinePage() {
       <div className="w-full max-w-5xl bg-white px-4 py-6 sm:px-6 sm:py-7">
         {loading ? (
           <div className="rounded-3xl border border-dashed border-slate-300 bg-[linear-gradient(135deg,#f8fafc_0%,#ffffff_38%,#eef6ff_100%)] px-5 py-10 text-center text-sm text-slate-600">
-            Carregando hub da agenda online...
+            Carregando painel da agenda online...
           </div>
         ) : !store ? (
           <div className="rounded-3xl border border-dashed border-amber-300 bg-amber-50/80 px-5 py-10 text-center text-sm text-amber-800">
@@ -155,7 +155,7 @@ export default function AgendaOnlinePage() {
                 <div className="space-y-3">
                   <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-slate-500">
                     <Globe className="size-3.5" />
-                    Hub do link publico
+                    Painel do link publico
                   </div>
 
                   <div>

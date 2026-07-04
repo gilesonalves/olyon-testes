@@ -105,6 +105,8 @@ type ResumeConversationResponse = {
   state: string
 }
 
+const IS_DEVELOPMENT = process.env.NODE_ENV === "development"
+
 function formatDateTime(value: string | null | undefined) {
   if (!value) {
     return "-"
@@ -150,20 +152,131 @@ function getConversationTitle(
 function getStateClassName(state: string | null | undefined) {
   switch (state) {
     case "PAUSED":
+    case "HUMAN":
+    case "HUMANO":
       return "border-amber-200 bg-amber-50 text-amber-800"
-    case "IDLE":
-      return "border-emerald-200 bg-emerald-50 text-emerald-700"
+    case "CLOSED":
+    case "DONE":
+      return "border-slate-200 bg-slate-100 text-slate-700"
     default:
-      return "border-sky-200 bg-sky-50 text-sky-700"
+      return "border-emerald-200 bg-emerald-50 text-emerald-700"
   }
 }
 
 function getStateLabel(state: string | null | undefined) {
-  if (state === "PAUSED") {
-    return "HUMANO"
+  switch (state) {
+    case "PAUSED":
+    case "HUMAN":
+    case "HUMANO":
+      return "Atendimento humano"
+    case "CLOSED":
+    case "DONE":
+      return "Encerrado"
+    case null:
+    case undefined:
+      return "-"
+    default:
+      return "Bot ativo"
+  }
+}
+
+function getConversationPreview(conversation: ConversationSummary) {
+  if (!conversation.lastMessage) {
+    return "Sem mensagens"
   }
 
-  return state ?? "-"
+  const body = conversation.lastMessage.body?.trim()
+  if (body && body.toLowerCase() !== "[mensagem sem texto]") {
+    return body
+  }
+
+  return conversation.lastMessage.direction === "IN"
+    ? "Interação recebida"
+    : "Interação enviada"
+}
+
+function getMessageStatusLabel(message: ConversationMessage) {
+  if (message.direction !== "OUT" || !message.status) {
+    return null
+  }
+
+  switch (message.status.toUpperCase()) {
+    case "SENT":
+    case "ACCEPTED":
+      return "Enviado"
+    case "DELIVERED":
+      return "Entregue"
+    case "READ":
+      return "Lido"
+    case "FAILED":
+      return "Falhou"
+    default:
+      return null
+  }
+}
+
+function getMessagePresentation(message: ConversationMessage) {
+  const body = message.body?.trim()
+  if (body && body.toLowerCase() !== "[mensagem sem texto]") {
+    return { text: body, technicalFallback: false }
+  }
+
+  const type = message.type?.trim().toUpperCase() ?? ""
+  const inbound = message.direction === "IN"
+
+  if (
+    type.includes("INTERACTIVE") ||
+    type.includes("BUTTON") ||
+    type.includes("LIST")
+  ) {
+    return {
+      text: inbound
+        ? "Cliente selecionou uma opção"
+        : "Opção interativa enviada",
+      technicalFallback: false,
+    }
+  }
+
+  if (type.includes("LOCATION")) {
+    return {
+      text: inbound ? "Localização recebida" : "Localização enviada",
+      technicalFallback: false,
+    }
+  }
+
+  if (type.includes("CONTACT")) {
+    return {
+      text: inbound ? "Contato recebido" : "Contato enviado",
+      technicalFallback: false,
+    }
+  }
+
+  if (type.includes("REACTION")) {
+    return {
+      text: inbound ? "Cliente reagiu a uma mensagem" : "Reação enviada",
+      technicalFallback: false,
+    }
+  }
+
+  if (
+    ["IMAGE", "VIDEO", "AUDIO", "DOCUMENT", "STICKER", "MEDIA"].some(
+      (mediaType) => type.includes(mediaType)
+    )
+  ) {
+    return {
+      text: inbound ? "Mídia recebida" : "Mídia enviada",
+      technicalFallback: false,
+    }
+  }
+
+  if (IS_DEVELOPMENT) {
+    return {
+      text: "Interação sem conteúdo textual",
+      technicalFallback: true,
+    }
+  }
+
+  return null
 }
 
 function getApiErrorMessage(
@@ -236,6 +349,15 @@ export default function AttendancePage() {
       conversations.find((conversation) => conversation.id === selectedConversationId) ??
       null,
     [conversations, selectedConversationId]
+  )
+  const displayedMessages = useMemo(
+    () =>
+      messages.flatMap((message) => {
+        const presentation = getMessagePresentation(message)
+
+        return presentation ? [{ message, presentation }] : []
+      }),
+    [messages]
   )
 
   const activeConversation = selectedConversation ?? selectedConversationSummary
@@ -657,49 +779,60 @@ export default function AttendancePage() {
               <div className="flex items-center gap-2">
                 <MessageCircle className="size-5 text-emerald-700" />
                 <h2 className="text-base font-semibold text-slate-950">
-                  WhatsApp conectado
+                  {connection ? "WhatsApp conectado" : "WhatsApp desconectado"}
                 </h2>
               </div>
               <p className="mt-1 text-sm text-slate-600">
-                O token de acesso fica restrito ao servidor.
+                {connection
+                  ? "Canal disponível para atendimento aos clientes."
+                  : "Conecte o WhatsApp da loja para iniciar atendimentos."}
               </p>
             </div>
 
             {connection ? (
               <span className="inline-flex w-fit items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-700">
                 <CheckCircle2 className="size-4" />
-                {connection.status}
+                Conexão ativa
               </span>
             ) : (
               <span className="inline-flex w-fit items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-1 text-sm font-medium text-amber-800">
                 <AlertTriangle className="size-4" />
-                Sem conexao ativa
+                Sem conexão ativa
               </span>
             )}
           </div>
 
           {connection ? (
-            <div className="mt-4 grid gap-3 md:grid-cols-3">
-              <ConnectionValue
-                icon={Phone}
-                label="displayPhoneNumber"
-                value={connection.displayPhoneNumber}
-              />
-              <ConnectionValue
-                icon={Hash}
-                label="phoneNumberId"
-                value={connection.phoneNumberId}
-              />
-              <ConnectionValue
-                icon={Building2}
-                label="businessAccountId"
-                value={connection.businessAccountId}
-              />
-            </div>
+            <>
+              <div className="mt-4 flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                <Phone className="size-4 text-slate-500" />
+                <span className="font-medium">Número conectado:</span>
+                <span>{connection.displayPhoneNumber}</span>
+              </div>
+
+              {IS_DEVELOPMENT ? (
+                <details className="mt-3 text-xs text-slate-500">
+                  <summary className="cursor-pointer select-none">
+                    Detalhes técnicos
+                  </summary>
+                  <div className="mt-2 grid gap-3 md:grid-cols-2">
+                    <ConnectionValue
+                      icon={Hash}
+                      label="phoneNumberId"
+                      value={connection.phoneNumberId}
+                    />
+                    <ConnectionValue
+                      icon={Building2}
+                      label="businessAccountId"
+                      value={connection.businessAccountId}
+                    />
+                  </div>
+                </details>
+              ) : null}
+            </>
           ) : (
             <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-              Nenhuma `WhatsAppConnection` ativa com status `CONNECTED` foi
-              encontrada para esta loja.
+              Nenhuma conexão ativa do WhatsApp foi encontrada para esta loja.
             </div>
           )}
         </section>
@@ -813,7 +946,7 @@ export default function AttendancePage() {
                         </div>
 
                         <p className="mt-2 line-clamp-2 text-sm text-slate-600">
-                          {conversation.lastMessage?.body ?? "Sem mensagens"}
+                          {getConversationPreview(conversation)}
                         </p>
 
                         <div className="mt-2 flex items-center justify-between gap-3 text-xs text-slate-400">
@@ -900,17 +1033,18 @@ export default function AttendancePage() {
                       <Loader2 className="size-4 animate-spin" />
                       Carregando historico...
                     </div>
-                  ) : messages.length === 0 ? (
+                  ) : displayedMessages.length === 0 ? (
                     <div className="flex h-48 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white text-sm text-slate-500">
                       Nenhuma mensagem nesta conversa.
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {messages.map((message) => {
+                      {displayedMessages.map(({ message, presentation }) => {
                         const outbound = message.direction === "OUT"
+                        const friendlyStatus = getMessageStatusLabel(message)
                         const messageFooter = [
                           formatTime(message.createdAt),
-                          message.status,
+                          friendlyStatus,
                         ]
                           .filter(Boolean)
                           .join(" · ")
@@ -926,24 +1060,39 @@ export default function AttendancePage() {
                             <div
                               className={cn(
                                 "max-w-[min(78%,720px)] rounded-lg border px-3 py-2 shadow-sm",
-                                outbound
-                                  ? "border-sky-200 bg-sky-600 text-white"
-                                  : "border-slate-200 bg-white text-slate-900"
+                                presentation.technicalFallback
+                                  ? "border-dashed border-slate-300 bg-slate-100 text-slate-500"
+                                  : outbound
+                                    ? "border-sky-200 bg-sky-600 text-white"
+                                    : "border-slate-200 bg-white text-slate-900"
                               )}
+                              title={
+                                IS_DEVELOPMENT
+                                  ? [
+                                      message.externalId,
+                                      message.type,
+                                      message.status,
+                                    ]
+                                      .filter(Boolean)
+                                      .join(" · ") || undefined
+                                  : undefined
+                              }
                             >
                               <p className="whitespace-pre-wrap break-words text-sm leading-6">
-                                {message.body ?? "[mensagem sem texto]"}
+                                {presentation.text}
                               </p>
 
                               <div
                                 className={cn(
                                   "mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]",
-                                  outbound ? "text-sky-100" : "text-slate-500"
+                                  presentation.technicalFallback
+                                    ? "text-slate-400"
+                                    : outbound
+                                      ? "text-sky-100"
+                                      : "text-slate-500"
                                 )}
                               >
-                                <span title={message.externalId ?? undefined}>
-                                  {messageFooter}
-                                </span>
+                                <span>{messageFooter}</span>
                               </div>
                             </div>
                           </div>

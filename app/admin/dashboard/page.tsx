@@ -49,6 +49,13 @@ export default async function AdminDashboardPage() {
           >
             Ver lojas
           </Link>
+
+          <Link
+            href="/admin/dashboard/financeiro"
+            className="inline-flex items-center justify-center rounded-md text-sm font-medium h-10 px-4 border"
+          >
+            Financeiro das lojas
+          </Link>
         </div>
       </main>
     </div>

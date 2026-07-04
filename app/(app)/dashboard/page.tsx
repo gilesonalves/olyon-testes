@@ -7,7 +7,7 @@ import { requireStoreId } from "@/lib/current-store"
 import { getDashboardOverview } from "@/lib/dashboard/overview"
 
 export default async function DashboardPage() {
-  const storeId = await requireStoreId()
+  const storeId = await requireStoreId({ allowSuspended: true })
   const dashboardOverview = await getDashboardOverview(storeId)
 
   return (
