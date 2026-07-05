@@ -29,9 +29,9 @@ export const WHATSAPP_CONNECTION_STATUS_LABELS: Record<
 }
 
 export const WHATSAPP_CONNECTION_STATE_LABELS = {
-  missing: "Sem conexao",
-  active: "Conexao ativa",
-  inactive: "Conexao inativa",
+  missing: "Sem conexão",
+  active: "Conexão ativa",
+  inactive: "Conexão inativa",
 } as const
 
 export type WhatsAppConnectionState =
@@ -54,7 +54,7 @@ function requiredText(label: string, maxLength: number) {
     .string()
     .trim()
     .min(1, `Informe ${label}`)
-    .max(maxLength, `${label} deve ter no maximo ${maxLength} caracteres`)
+    .max(maxLength, `${label} deve ter no máximo ${maxLength} caracteres`)
 }
 
 export const whatsAppConnectionSchema = z.object({

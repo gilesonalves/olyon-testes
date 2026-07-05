@@ -1,17 +1,11 @@
-import { NextResponse } from "next/server"
 import {
-  badRequest,
   forbidden,
   ok,
   serverError,
   unauthorized,
 } from "@/lib/api/response"
-import {
-  listMetaWhatsAppTemplates,
-  MetaWhatsAppTemplatesError,
-} from "@/lib/meta/meta-templates"
 import { requireMembershipRole } from "@/lib/guards/require-membership-role"
-import { findActiveWhatsAppConnectionByStoreId } from "@/lib/whatsapp/connection"
+import { getDefaultWhatsAppTemplateProvisionsForStore } from "@/lib/whatsapp/template-provisioning"
 
 export const runtime = "nodejs"
 
@@ -27,21 +21,6 @@ async function requireStoreAdmin() {
   return guard
 }
 
-function metaErrorResponse(error: MetaWhatsAppTemplatesError) {
-  return NextResponse.json(
-    {
-      ok: false,
-      error: error.message,
-      details: {
-        metaStatusCode: error.metaStatusCode,
-        graphError: error.graphError,
-        responsePreview: error.responsePreview,
-      },
-    },
-    { status: error.statusCode }
-  )
-}
-
 export async function GET() {
   try {
     const authResult = await requireStoreAdmin()
@@ -49,28 +28,15 @@ export async function GET() {
       return authResult
     }
 
-    const connection = await findActiveWhatsAppConnectionByStoreId(
+    const templates = await getDefaultWhatsAppTemplateProvisionsForStore(
       authResult.storeId
     )
 
-    if (!connection) {
-      return badRequest(
-        "Conexao WhatsApp ativa da loja atual nao encontrada. Conecte a loja antes de listar templates."
-      )
-    }
-
-    const templates = await listMetaWhatsAppTemplates({
-      wabaId: connection.businessAccountId,
-      accessToken: connection.accessToken,
-    })
-
     return ok(templates)
   } catch (error) {
-    if (error instanceof MetaWhatsAppTemplatesError) {
-      return metaErrorResponse(error)
-    }
-
     console.error("[GET /api/store/current/whatsapp/templates]", error)
-    return serverError("Nao foi possivel listar templates WhatsApp.")
+    return serverError(
+      "Não foi possível carregar o status dos templates WhatsApp."
+    )
   }
 }

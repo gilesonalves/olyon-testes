@@ -9,6 +9,11 @@ import {
 import { requireMembershipRole } from "@/lib/guards/require-membership-role"
 import { prisma, Prisma } from "@/lib/prisma"
 import { whatsappConversationListQuerySchema } from "@/lib/validators/whatsapp-attendance"
+import {
+  extractWhatsAppProfileName,
+  getUsableWhatsAppCustomerName,
+  getWhatsAppCustomerNameFromConversationContext,
+} from "@/lib/whatsapp/customer-name"
 
 export const runtime = "nodejs"
 
@@ -31,6 +36,7 @@ const SEARCH_CANDIDATE_LIMIT = 500
 const conversationListSelect = {
   id: true,
   contact: true,
+  context: true,
   state: true,
   lastMessageAt: true,
   updatedAt: true,
@@ -138,41 +144,29 @@ function getMessageBody(message: MessagePreview | null | undefined) {
   return toOptionalString(textPayload?.body)
 }
 
-function getCustomerNameFromPayload(payload: Prisma.JsonValue | null | undefined) {
-  const record = getJsonRecord(payload)
-  const contacts = Array.isArray(record.contacts) ? record.contacts : []
-
-  for (const contact of contacts) {
-    if (!isRecord(contact)) {
-      continue
-    }
-
-    const profile = isRecord(contact.profile) ? contact.profile : null
-    const name = toOptionalString(profile?.name)
-
-    if (name) {
-      return name
-    }
-  }
-
-  return null
-}
-
 function getCustomerName(params: {
   drafts: DraftPreview[]
   messages: MessagePreview[]
+  context: Prisma.JsonValue | null
 }) {
   const draftName = params.drafts
-    .map((draft) => toOptionalString(draft.customerName))
+    .map((draft) => getUsableWhatsAppCustomerName(draft.customerName))
     .find(Boolean)
 
   if (draftName) {
     return draftName
   }
 
+  const conversationName =
+    getWhatsAppCustomerNameFromConversationContext(params.context)
+
+  if (conversationName) {
+    return conversationName
+  }
+
   const inboundProfileName = params.messages
     .filter((message) => message.direction === "IN")
-    .map((message) => getCustomerNameFromPayload(message.payload))
+    .map((message) => extractWhatsAppProfileName(message.payload))
     .find(Boolean)
 
   return inboundProfileName ?? null
@@ -287,6 +281,7 @@ function buildConversationSummary(conversation: ConversationListRecord) {
     customerName: getCustomerName({
       drafts: conversation.drafts,
       messages: conversation.messages,
+      context: conversation.context,
     }),
     customerPhone: getCustomerPhone({
       contact: conversation.contact,
@@ -323,7 +318,7 @@ function conversationMatchesNormalizedQuery(params: {
       message.text,
       message.providerMessageId,
       getMessageBody(message),
-      getCustomerNameFromPayload(message.payload),
+      extractWhatsAppProfileName(message.payload),
     ]),
   ]
 

@@ -336,7 +336,7 @@ export default function WhatsAppTemplatesTestPage() {
     setResult(null)
 
     try {
-      const response = await fetch("/api/store/current/whatsapp/templates", {
+      const response = await fetch("/api/store/current/whatsapp/templates/meta", {
         method: "GET",
         cache: "no-store",
       })

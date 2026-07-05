@@ -114,9 +114,9 @@ export default async function AdminStoreDetailsPage({ params }: Props) {
 
         <div className="border rounded-lg p-4 space-y-4">
           <div>
-            <h2 className="font-semibold">Informacoes publicas da loja</h2>
+            <h2 className="font-semibold">Informações públicas da loja</h2>
             <p className="text-sm text-muted-foreground">
-              Esses dados alimentam a opcao 3 do menu do WhatsApp.
+              Esses dados alimentam a opção 3 do menu do WhatsApp.
             </p>
           </div>
 
@@ -128,9 +128,9 @@ export default async function AdminStoreDetailsPage({ params }: Props) {
 
         <div className="border rounded-lg p-4 space-y-4">
           <div>
-            <h2 className="font-semibold">Conexao WhatsApp</h2>
+            <h2 className="font-semibold">Conexão WhatsApp</h2>
             <p className="text-sm text-muted-foreground">
-              Configuracao tecnica da integracao Meta/WhatsApp desta loja.
+              Configuração técnica da integração Meta/WhatsApp desta loja.
             </p>
           </div>
 
@@ -141,14 +141,14 @@ export default async function AdminStoreDetailsPage({ params }: Props) {
         </div>
 
         <div className="border rounded-lg p-4 space-y-2">
-          <h2 className="font-semibold">Owner (dono)</h2>
+          <h2 className="font-semibold">Proprietário</h2>
           {owner ? (
             <>
               <div>
                 <b>Nome:</b> {owner.name}
               </div>
               <div>
-                <b>Email:</b> {owner.email}
+                <b>E-mail:</b> {owner.email}
               </div>
               <div>
                 <b>User ID:</b> {owner.id}
@@ -159,7 +159,7 @@ export default async function AdminStoreDetailsPage({ params }: Props) {
             </>
           ) : (
             <p className="text-sm text-muted-foreground">
-              Nenhum owner encontrado para esta loja.
+              Nenhum proprietário encontrado para esta loja.
             </p>
           )}
         </div>

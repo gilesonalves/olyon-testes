@@ -69,7 +69,7 @@ export function NewOwnerForm({ storeId }: NewOwnerFormProps) {
           break
 
         default:
-          toast.error("Erro ao criar proprietario")
+          toast.error("Erro ao criar proprietário")
       }
     } finally {
       setIsSubmitting(false)
@@ -91,14 +91,14 @@ export function NewOwnerForm({ storeId }: NewOwnerFormProps) {
       </header>
 
       <main className="flex-1 p-6 max-w-md">
-        <h2 className="text-lg font-medium mb-6">Novo proprietario</h2>
+        <h2 className="text-lg font-medium mb-6">Novo proprietário</h2>
 
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="name">Nome do usuario</Label>
+            <Label htmlFor="name">Nome do usuário</Label>
             <Input
               id="name"
-              placeholder="Ex: Joao Silva"
+              placeholder="Ex: João Silva"
               {...form.register("name")}
               aria-invalid={!!form.formState.errors.name}
             />
@@ -110,7 +110,7 @@ export function NewOwnerForm({ storeId }: NewOwnerFormProps) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="email">Email do usuario</Label>
+            <Label htmlFor="email">E-mail do usuário</Label>
             <Input
               id="email"
               type="email"

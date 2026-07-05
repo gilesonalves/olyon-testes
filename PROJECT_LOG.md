@@ -1,3 +1,16 @@
+## 4 de julho de 2026 - Ajuste fino de acentuação e português em textos visíveis
+
+### Objetivo
+
+Refinar acentuação e padronização de português do Brasil em labels, títulos, botões, mensagens amigáveis e telas do app/admin, preservando lógica, rotas, enums, keys e comandos técnicos do bot.
+
+### Registro
+
+- Textos visíveis ao usuário foram revisados em autenticação, atendimento, configurações, agenda online, financeiro e painéis administrativos.
+- Termos como E-mail, Configurações, Horários, Conexão, Próximo vencimento e Proprietário foram padronizados na interface.
+- Estados e mensagens do atendimento foram tornados mais amigáveis, sem alterar enums, comparações lógicas ou comandos aceitos pelo bot.
+- Nenhuma rota, slug, migration antiga, env real ou integração técnica foi alterada por este ajuste.
+
 ## 1 de julho de 2026 - Diagnostico e correcao do login de owner criado pelo admin
 
 ### Objetivo
@@ -7101,3 +7114,193 @@ Como o projeto nao possui infraestrutura de testes automatizados, o helper foi v
 - `dueDay = 31` em fevereiro de 2028 resulta em 29/02/2028
 - periodo pago `2026-07` com `dueDay = 5` resulta em 05/08/2026
 - `dueDay = 32` e rejeitado
+
+## 05 de julho de 2026 - Provisionamento automático de templates WhatsApp
+
+### Objetivo
+
+Eliminar a dependência de criação manual dos templates de lembrete na Meta e manter o estado técnico isolado por loja e WABA.
+
+### Modelagem
+
+- criada `WhatsAppTemplateProvision`, relacionada à `Store` e à `WhatsAppConnection`
+- adicionados os tipos `APPOINTMENT_REMINDER_ONE_HOUR` e `APPOINTMENT_REMINDER_FIFTEEN_MINUTES`
+- adicionados os status `NOT_CREATED`, `PENDING`, `APPROVED`, `REJECTED`, `PAUSED`, `DISABLED`, `UNKNOWN` e `ERROR`
+- a constraint `storeId + kind + language` garante idempotência local sem misturar lojas
+- criada a migration `20260705120000_add_whatsapp_template_provisions`
+
+### Meta Graph API
+
+- `src/lib/meta/meta-templates.ts` passou a criar templates e paginar a listagem da WABA
+- a versão vem de `META_GRAPH_API_VERSION`, com fallback `v25.0`
+- os templates `lembrete_agendamento_1h` e `lembrete_agendamento_15min` são enviados como `UTILITY`, `pt_BR` e `parameter_format = NAMED`
+- o BODY usa `cliente_nome`, `servico_nome`, `profissional_nome`, `data_agendamento` e `horario_agendamento`, com `body_text_named_params`
+- não existem header, footer ou botões
+- erros persistidos são truncados e sanitizados; nenhum log novo inclui `accessToken` ou payload completo da Meta
+
+### Provisionamento e sincronização
+
+- `ensureDefaultWhatsAppTemplatesForStore` busca a conexão ativa, consulta a WABA, reaproveita templates existentes e cria somente os ausentes
+- um claim local em `PENDING` evita que duas requisições concorrentes criem o mesmo template
+- `syncTemplateStatusesForStore` atualiza ID Meta, status, datas e motivo de reprovação
+- troca de `businessAccountId` limpa o estado da WABA anterior
+- depois de `subscribed_apps`, o Embedded Signup chama o provisionamento em modo seguro
+- falha nessa etapa não quebra a conexão; o callback registra apenas `whatsapp template provisioning failed` com identificadores não sensíveis
+
+### APIs e UI
+
+- `GET /api/store/current/whatsapp/templates`
+- `POST /api/store/current/whatsapp/templates/provision`
+- `POST /api/store/current/whatsapp/templates/sync`
+- `POST /api/admin/stores/[id]/whatsapp/templates/provision`, restrito a `SUPER_ADMIN`
+- `GET /api/store/current/whatsapp/templates/meta` preserva a listagem técnica usada pela tela de teste
+- a tela `/configuracoes/whatsapp` ganhou cards de 1h e 15min, status amigável, última sincronização, reprovação/erro e botões de provisionar/sincronizar
+
+### Dispatcher de lembretes
+
+- se existe `WhatsAppTemplateProvision`, o envio exige status `APPROVED` para a conexão/WABA atual
+- template não aprovado não chama a Meta e deixa o reminder como `FAILED` com `TEMPLATE_NOT_APPROVED`
+- template provisionado usa os cinco parâmetros nomeados
+- quando não existe registro local, os envs antigos continuam disponíveis como fallback administrativo e mantêm o contrato posicional anterior
+
+### Operação
+
+- templates continuam sujeitos à aprovação da Meta
+- o cliente não precisa criá-los manualmente no WhatsApp Manager
+- a migration deve ser aplicada antes do deploy
+- os envs de nome/idioma de template permanecem documentados como fallback
+
+### Validação
+
+- `yarn prisma generate`
+- `yarn prisma validate`
+- `yarn eslint`
+- `yarn tsc --noEmit --pretty false --incremental false`
+- teste isolado do payload de criação Meta com `NAMED` e `body_text_named_params`
+- `git diff --check`
+- `yarn build`
+
+O lint terminou sem erros e manteve somente os dois warnings legados nos controllers de cadastro e recuperação de senha. O build terminou com sucesso e reconheceu todas as novas rotas.
+
+## 05 de julho de 2026 - Lembretes expandidos para agenda online e painel
+
+### Objetivo
+
+Expandir os lembretes automáticos de 1h e 15min para appointments criados por WhatsApp, agenda online/link público e painel/app/admin, mantendo a idempotência e o envio por template Meta.
+
+### Inspeção
+
+- `Appointment.source` possui os valores reais `WHATSAPP`, `WEB` e `ADMIN`
+- o webhook cria appointments `WHATSAPP`
+- `POST /api/public/agenda/[slug]/appointments` usa `source = WEB`
+- `POST /api/appointments` usa `source = ADMIN`
+- o schema não possui campo de consentimento por canal
+- `Conversation` já possui chave única `storeId + channel + contact`, permitindo reaproveitar o padrão seguro para appointments externos ao WhatsApp
+
+### Normalização brasileira
+
+- criado `normalizeBrazilianPhoneForWhatsApp` em `src/lib/whatsapp/phone.ts`
+- remove caracteres não numéricos
+- aceita telefone brasileiro local com 10 ou 11 dígitos
+- aceita número já iniciado por DDI 55 com 12 ou 13 dígitos
+- retorna sempre o destinatário Meta com DDI 55
+- números vazios, curtos ou fora desse contrato retornam `null`
+- validação internacional permanece fora do MVP
+
+### Reconciliador
+
+- removido o filtro `source = WHATSAPP`
+- appointments `WHATSAPP`, `WEB` e `ADMIN` passam pela mesma consulta de elegibilidade
+- somente `SCHEDULED` e `CONFIRMED`, futuros e dentro do horizonte entram no fluxo
+- appointment sem telefone brasileiro minimamente válido não materializa `AppointmentReminder`
+- conexão e aprovação do template continuam verificadas no dispatcher porque podem mudar entre reconciliação e envio
+- `appointmentId + kind + appointmentStartAt` continua impedindo duplicidade e preservando o comportamento de remarcação
+
+### Dispatcher e rastreabilidade
+
+- o telefone é normalizado novamente imediatamente antes do envio
+- telefone inválido fica `SKIPPED` com `INVALID_CUSTOMER_PHONE`
+- status cancelado, concluído ou no-show fica `SKIPPED` com `APPOINTMENT_STATUS_NOT_ELIGIBLE`
+- mudança de horário fica `SKIPPED` com `APPOINTMENT_RESCHEDULED`
+- loja sem conexão ativa `CONNECTED` fica `SKIPPED` com `STORE_WHATSAPP_NOT_CONNECTED`
+- template local não aprovado fica `SKIPPED` com `TEMPLATE_NOT_APPROVED`
+- erros reais da Meta permanecem `FAILED`
+- envio aceito continua registrando `providerMessageId` e status no `AppointmentReminder`
+- `Conversation` e `ConversationMessage OUT` são criadas ou reaproveitadas por loja e telefone normalizado também para appointments `WEB` e `ADMIN`
+
+### Consentimento
+
+- neste MVP, o telefone informado pelo cliente na agenda pública ou pela loja no painel é usado para os lembretes operacionais do agendamento
+- não foi criada tela nem campo novo de consentimento
+- consentimento explícito por canal fica registrado como possível próxima etapa, caso a operação exija granularidade adicional
+
+### Validação
+
+- `yarn prisma generate`
+- `yarn eslint`
+- `yarn tsc --noEmit --pretty false --incremental false`
+- teste isolado de `normalizeBrazilianPhoneForWhatsApp` com formatos locais e DDI 55
+- `git diff --check`
+- `yarn build`
+
+Todos os comandos terminaram com sucesso. O lint manteve apenas os dois warnings legados nos controllers de cadastro e recuperação de senha.
+
+## 05 de julho de 2026 - Nome real no WhatsApp e polling da agenda
+
+### Objetivo
+
+Evitar que novos agendamentos WhatsApp apareçam como `Cliente WhatsApp` quando existe nome real e atualizar `/agendamentos` automaticamente sem recarregar a página.
+
+### Diagnóstico do nome
+
+- o draft era criado apenas com telefone
+- a criação final usava `draft.customerName?.trim() || "Cliente WhatsApp"`
+- o parser já preservava `contacts[].profile.name` dentro de `ConversationMessage.payload`
+- `Conversation` não possui coluna de nome; o contexto JSON e o histórico de mensagens já permitem manter a informação sem migration
+- o cadastro `Client` não tem relação direta com `Conversation`, então o vínculo seguro possível é loja + telefone brasileiro normalizado
+
+### Resolução implementada
+
+- criado `src/lib/whatsapp/customer-name.ts`
+- nomes genéricos, vazios e valores que sejam apenas telefone são descartados
+- prioridade: draft real, `Client` ativo da mesma loja com telefone correspondente, contexto da conversa, profile Meta e nome coletado
+- um nome real só substitui draft/contexto quando o valor atual não é utilizável
+- criação e remarcação resolvem novamente o nome antes do `Appointment.create`
+- confirmações de criação/remarcação incluem o nome quando ele é real
+- o endpoint de conversas também passou a ignorar `Cliente WhatsApp` no draft e considerar o nome salvo no contexto
+- o fallback continua disponível para mensagens sem nome
+- nenhum registro antigo foi alterado em massa
+
+### Lembretes
+
+- nenhuma mudança foi necessária no dispatcher
+- novos appointments carregam o nome resolvido em `Appointment.customerName`
+- o template de lembrete continua lendo esse mesmo campo
+
+### Atualização automática de `/agendamentos`
+
+- `loadAppointments` ganhou modo background sem ativar `appointmentsLoading`
+- polling executa a cada 30 segundos para a data atualmente selecionada
+- respostas antigas são ignoradas por identificador de requisição
+- filtros permanecem em estado independente e não são resetados
+- polling pausa enquanto modais, conflitos ou salvamentos estão ativos
+- polling não executa com a aba oculta
+- botão manual `Atualizar` usa o mesmo refetch silencioso
+- a tela mostra o horário da última atualização sem alterar a agenda durante edição
+
+### Escopo de dados
+
+- toda busca de `Client`, draft, conversa e appointment permanece limitada à loja atual resolvida pelo webhook
+- nenhum `storeId` novo foi aceito por payload
+- nenhum payload Meta completo ou token foi adicionado aos logs
+- não houve mudança de schema ou migration
+
+### Validação
+
+- teste isolado da resolução de nome com draft, cliente, contexto, profile, fallback e telefone
+- `yarn eslint`
+- `yarn tsc --noEmit --pretty false --incremental false`
+- `git diff --check`
+- `yarn build`
+
+Todos os comandos terminaram com sucesso. O lint manteve somente os dois warnings legados nos controllers de cadastro e recuperação de senha.

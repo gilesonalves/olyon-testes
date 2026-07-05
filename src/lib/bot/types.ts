@@ -17,6 +17,7 @@ export type TimeSelectionStage = "DAY" | "TIME"
 
 export type BotConversationContext = {
   timezone?: string | null
+  customerName?: string | null
   mainMenuShown?: boolean | null
   priceListPage?: number | null
   appointmentOptions?:

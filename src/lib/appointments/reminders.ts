@@ -6,9 +6,9 @@ import {
   prisma,
 } from "@/lib/prisma"
 import {
-  normalizeWhatsAppReminderRecipient,
   sendAppointmentReminderTemplate,
 } from "@/lib/whatsapp/appointment-reminder"
+import { normalizeBrazilianPhoneForWhatsApp } from "@/lib/whatsapp/phone"
 
 const ACTIVE_APPOINTMENT_STATUSES: AppointmentStatus[] = [
   AppointmentStatus.SCHEDULED,
@@ -92,7 +92,6 @@ export async function reconcileAppointmentReminders(params?: {
 
   const appointments = await prisma.appointment.findMany({
     where: {
-      source: "WHATSAPP",
       status: {
         in: ACTIVE_APPOINTMENT_STATUSES,
       },
@@ -105,6 +104,7 @@ export async function reconcileAppointmentReminders(params?: {
       id: true,
       storeId: true,
       startAt: true,
+      customerPhone: true,
     },
     orderBy: {
       startAt: "asc",
@@ -116,6 +116,10 @@ export async function reconcileAppointmentReminders(params?: {
   const skipped: Prisma.AppointmentReminderCreateManyInput[] = []
 
   for (const appointment of appointments) {
+    if (!normalizeBrazilianPhoneForWhatsApp(appointment.customerPhone)) {
+      continue
+    }
+
     for (const kind of Object.values(AppointmentReminderKind)) {
       const scheduledFor = getScheduledFor(appointment.startAt, kind)
       const isMissed = scheduledFor < missedBefore
@@ -225,7 +229,6 @@ export async function dispatchPendingAppointmentReminders(params?: {
           select: {
             id: true,
             storeId: true,
-            source: true,
             status: true,
             customerName: true,
             customerPhone: true,
@@ -233,6 +236,15 @@ export async function dispatchPendingAppointmentReminders(params?: {
             service: {
               select: {
                 name: true,
+              },
+            },
+            membership: {
+              select: {
+                user: {
+                  select: {
+                    name: true,
+                  },
+                },
               },
             },
           },
@@ -252,14 +264,11 @@ export async function dispatchPendingAppointmentReminders(params?: {
       continue
     }
 
-    if (appointment.source !== "WHATSAPP") {
-      await markReminderSkipped(reminder.id, "APPOINTMENT_SOURCE_NOT_WHATSAPP")
-      result.skipped += 1
-      continue
-    }
-
     if (!ACTIVE_APPOINTMENT_STATUSES.includes(appointment.status)) {
-      await markReminderSkipped(reminder.id, "APPOINTMENT_STATUS_NOT_ACTIVE")
+      await markReminderSkipped(
+        reminder.id,
+        "APPOINTMENT_STATUS_NOT_ELIGIBLE"
+      )
       result.skipped += 1
       continue
     }
@@ -281,7 +290,7 @@ export async function dispatchPendingAppointmentReminders(params?: {
       continue
     }
 
-    const recipient = normalizeWhatsAppReminderRecipient(
+    const recipient = normalizeBrazilianPhoneForWhatsApp(
       appointment.customerPhone
     )
 
@@ -300,10 +309,20 @@ export async function dispatchPendingAppointmentReminders(params?: {
         to: recipient,
         customerName: appointment.customerName,
         serviceName: appointment.service?.name ?? null,
+        professionalName: appointment.membership?.user.name ?? null,
         appointmentStartAt: appointment.startAt,
       })
 
       if (!sendResult.ok) {
+        if (
+          sendResult.statusReason === "STORE_WHATSAPP_NOT_CONNECTED" ||
+          sendResult.statusReason === "TEMPLATE_NOT_APPROVED"
+        ) {
+          await markReminderSkipped(reminder.id, sendResult.statusReason)
+          result.skipped += 1
+          continue
+        }
+
         await markReminderFailed({
           id: reminder.id,
           statusReason: sendResult.statusReason,

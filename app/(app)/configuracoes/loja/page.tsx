@@ -126,8 +126,8 @@ export default function StoreSettingsPage() {
         if (!response.ok || !json?.ok) {
           throw new Error(
             json && !json.ok
-              ? (json.message ?? "Nao foi possivel carregar os dados da loja.")
-              : "Nao foi possivel carregar os dados da loja."
+              ? (json.message ?? "Não foi possível carregar os dados da loja.")
+              : "Não foi possível carregar os dados da loja."
           )
         }
 
@@ -147,7 +147,7 @@ export default function StoreSettingsPage() {
         setError(
           loadError instanceof Error
             ? loadError.message
-            : "Nao foi possivel carregar os dados da loja."
+            : "Não foi possível carregar os dados da loja."
         )
       } finally {
         if (alive) {
@@ -165,7 +165,7 @@ export default function StoreSettingsPage() {
 
   async function onSubmit(values: StorePublicInfoFormValues) {
     if (!canEdit) {
-      toast.error("Seu perfil atual nao pode editar os dados da loja.")
+      toast.error("Seu perfil atual não pode editar os dados da loja.")
       return
     }
 
@@ -196,8 +196,8 @@ export default function StoreSettingsPage() {
 
         throw new Error(
           json && !json.ok
-            ? (json.message ?? "Nao foi possivel salvar os dados da loja.")
-            : "Nao foi possivel salvar os dados da loja."
+            ? (json.message ?? "Não foi possível salvar os dados da loja.")
+            : "Não foi possível salvar os dados da loja."
         )
       }
 
@@ -209,7 +209,7 @@ export default function StoreSettingsPage() {
       const message =
         saveError instanceof Error
           ? saveError.message
-          : "Nao foi possivel salvar os dados da loja."
+          : "Não foi possível salvar os dados da loja."
 
       setError(message)
       toast.error(message)
@@ -222,7 +222,7 @@ export default function StoreSettingsPage() {
     <>
       <HeaderPage>
         <div className="flex items-center justify-between">
-          <span className="font-normal text-foreground">Configuracoes da loja</span>
+          <span className="font-normal text-foreground">Configurações da loja</span>
         </div>
       </HeaderPage>
 
@@ -234,7 +234,7 @@ export default function StoreSettingsPage() {
         ) : !store ? (
           <div className="rounded-3xl border border-dashed border-amber-300 bg-amber-50/80 px-5 py-10 text-center text-sm text-amber-800">
             {error ??
-              "Nenhuma loja selecionada. Escolha uma loja para editar os dados publicos."}
+              "Nenhuma loja selecionada. Escolha uma loja para editar os dados públicos."}
           </div>
         ) : (
           <div className="space-y-6">
@@ -243,7 +243,7 @@ export default function StoreSettingsPage() {
                 <div className="space-y-3">
                   <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-slate-500">
                     <Settings2 className="size-3.5" />
-                    Store publica
+                    Loja pública
                   </div>
 
                   <div>
@@ -251,8 +251,8 @@ export default function StoreSettingsPage() {
                       {store.name}
                     </h2>
                     <p className="mt-1 text-sm text-slate-600">
-                      Esta tela e a fonte principal para editar telefone, endereco e
-                      informacoes institucionais da sua loja.
+                      Esta tela é a fonte principal para editar telefone, endereço e
+                      informações institucionais da sua loja.
                     </p>
                   </div>
                 </div>
@@ -267,7 +267,7 @@ export default function StoreSettingsPage() {
                   <Button asChild>
                     <Link href={publicAgendaHref ?? `/agenda/${store.slug}`} target="_blank">
                       <ExternalLink className="size-4" />
-                      Abrir agenda publica
+                      Abrir agenda pública
                     </Link>
                   </Button>
                 </div>
@@ -276,7 +276,7 @@ export default function StoreSettingsPage() {
               <div className="mt-5 grid gap-3 lg:grid-cols-2">
                 <div className="rounded-2xl border border-slate-200 bg-white/80 px-4 py-3">
                   <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
-                    Link publico
+                    Link público
                   </p>
                   <p className="mt-1 break-all text-sm text-slate-900">
                     {publicAgendaHref ?? `/agenda/${store.slug}`}
@@ -285,11 +285,11 @@ export default function StoreSettingsPage() {
 
                 <div className="rounded-2xl border border-slate-200 bg-white/80 px-4 py-3">
                   <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
-                    Como esses dados sao usados
+                    Como esses dados são usados
                   </p>
                   <p className="mt-1 text-sm text-slate-600">
-                    A agenda publica e os textos institucionais da loja leem estas
-                    informacoes diretamente da `Store`.
+                    A agenda pública e os textos institucionais da loja leem estas
+                    informações diretamente da loja.
                   </p>
                 </div>
               </div>
@@ -297,8 +297,8 @@ export default function StoreSettingsPage() {
 
             {!canEdit ? (
               <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                Seu perfil atual pode visualizar estas informacoes, mas nao pode
-                edita-las. Use um usuario com perfil `ADMIN` ou `OWNER`.
+                Seu perfil atual pode visualizar estas informações, mas não pode
+                editá-las. Use um usuário com perfil ADMIN ou OWNER.
               </div>
             ) : null}
 
@@ -312,10 +312,10 @@ export default function StoreSettingsPage() {
               <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="mb-4">
                   <h3 className="text-lg font-semibold text-slate-950">
-                    Contato e localizacao
+                    Contato e localização
                   </h3>
                   <p className="text-sm text-slate-600">
-                    Estes campos aparecem no bloco institucional da agenda publica.
+                    Estes campos aparecem no bloco institucional da agenda pública.
                   </p>
                 </div>
 

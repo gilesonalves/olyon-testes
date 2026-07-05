@@ -17,6 +17,7 @@ import {
 import { toast } from "sonner"
 import HeaderPage from "@/components/headerPage"
 import { EmbeddedSignupButton } from "@/components/whatsapp/embedded-signup-button"
+import { WhatsAppTemplateProvisioningPanel } from "@/components/whatsapp/template-provisioning-panel"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -82,7 +83,7 @@ type EmbeddedSignupStatusTone = "connected" | "pending" | "disconnected" | "erro
 const EMPTY_DATA: StoreScopedWhatsAppConnectionData = {
   connection: null,
   state: "missing",
-  stateLabel: "Sem conexao",
+  stateLabel: "Sem conexão",
   formValues: {
     provider: "META_WHATSAPP",
     phoneNumberId: "",
@@ -118,7 +119,7 @@ const REAL_CHECK_STATUS_STYLES: Record<MetaConnectionCheckStatus, string> = {
 function getEmbeddedSignupStatus(data: StoreScopedWhatsAppConnectionData) {
   if (!data.connection?.id || data.connection.isActive === false) {
     return {
-      label: "Nao conectado",
+      label: "Não conectado",
       tone: "disconnected" as EmbeddedSignupStatusTone,
     }
   }
@@ -132,7 +133,7 @@ function getEmbeddedSignupStatus(data: StoreScopedWhatsAppConnectionData) {
 
   if (data.connection.status === "ERROR") {
     return {
-      label: "Erro na conexao",
+      label: "Erro na conexão",
       tone: "error" as EmbeddedSignupStatusTone,
     }
   }
@@ -153,13 +154,13 @@ const EMBEDDED_SIGNUP_STATUS_STYLES: Record<EmbeddedSignupStatusTone, string> = 
 function getFriendlyStatusSummary(statusTone: EmbeddedSignupStatusTone) {
   switch (statusTone) {
     case "connected":
-      return "A loja ja possui uma conexao pronta para uso com o WhatsApp Business."
+      return "A loja já possui uma conexão pronta para uso com o WhatsApp Business."
     case "error":
-      return "A loja precisa revisar ou refazer a conexao com a Meta para voltar a operar."
+      return "A loja precisa revisar ou refazer a conexão com a Meta para voltar a operar."
     case "pending":
-      return "A conexao foi iniciada, mas ainda nao foi concluida ou validada por completo."
+      return "A conexão foi iniciada, mas ainda não foi concluída ou validada por completo."
     default:
-      return "A loja ainda nao concluiu a conexao do WhatsApp Business com o Olyon."
+      return "A loja ainda não concluiu a conexão do WhatsApp Business com o Olyon."
   }
 }
 
@@ -169,17 +170,17 @@ function formatCheckFlag(value: boolean | null) {
   }
 
   if (value === false) {
-    return "Nao"
+    return "Não"
   }
 
-  return "Nao verificado"
+  return "Não verificado"
 }
 
 function formatAccessTokenRead(
   value: WhatsAppConnectionRealCheckResult["details"]["accessTokenRead"]
 ) {
   if (!value.present) {
-    return "Nao lido"
+    return "Não lido"
   }
 
   return `Sim (${value.trimmedLength} chars, sha256 ${value.sha256Prefix ?? "-"})`
@@ -347,8 +348,8 @@ export default function StoreWhatsAppSettingsPage() {
       if (!response.ok || !json?.ok) {
         throw new Error(
           json && !json.ok
-            ? (json.error ?? "Nao foi possivel carregar a conexao WhatsApp da loja.")
-            : "Nao foi possivel carregar a conexao WhatsApp da loja."
+            ? (json.error ?? "Não foi possível carregar a conexão do WhatsApp da loja.")
+            : "Não foi possível carregar a conexão do WhatsApp da loja."
         )
       }
 
@@ -359,7 +360,7 @@ export default function StoreWhatsAppSettingsPage() {
       const message =
         error instanceof Error
           ? error.message
-          : "Nao foi possivel carregar a conexao WhatsApp da loja."
+          : "Não foi possível carregar a conexão do WhatsApp da loja."
 
       setReady(false)
       setFeedback({ tone: "error", message })
@@ -397,8 +398,8 @@ export default function StoreWhatsAppSettingsPage() {
 
         throw new Error(
           json && !json.ok
-            ? (json.error ?? "Nao foi possivel salvar a conexao WhatsApp da loja.")
-            : "Nao foi possivel salvar a conexao WhatsApp da loja."
+            ? (json.error ?? "Não foi possível salvar a conexão do WhatsApp da loja.")
+            : "Não foi possível salvar a conexão do WhatsApp da loja."
         )
       }
 
@@ -411,19 +412,19 @@ export default function StoreWhatsAppSettingsPage() {
       setFeedback({
         tone: "success",
         message: createdNow
-          ? "Conexao WhatsApp criada com sucesso."
-          : "Conexao WhatsApp atualizada com sucesso.",
+          ? "Conexão do WhatsApp criada com sucesso."
+          : "Conexão do WhatsApp atualizada com sucesso.",
       })
       toast.success(
         createdNow
-          ? "Conexao WhatsApp criada com sucesso."
-          : "Conexao WhatsApp atualizada com sucesso."
+          ? "Conexão do WhatsApp criada com sucesso."
+          : "Conexão do WhatsApp atualizada com sucesso."
       )
     } catch (error) {
       const message =
         error instanceof Error
           ? error.message
-          : "Nao foi possivel salvar a conexao WhatsApp da loja."
+          : "Não foi possível salvar a conexão do WhatsApp da loja."
 
       setFeedback({ tone: "error", message })
       toast.error(message)
@@ -450,8 +451,8 @@ export default function StoreWhatsAppSettingsPage() {
         throw new Error(
           json && !json.ok
             ? (json.error ??
-              "Nao foi possivel executar a verificacao real da conexao Meta.")
-            : "Nao foi possivel executar a verificacao real da conexao Meta."
+              "Não foi possível executar a verificação real da conexão Meta.")
+            : "Não foi possível executar a verificação real da conexão Meta."
         )
       }
 
@@ -466,7 +467,7 @@ export default function StoreWhatsAppSettingsPage() {
       const message =
         error instanceof Error
           ? error.message
-          : "Nao foi possivel executar a verificacao real da conexao Meta."
+          : "Não foi possível executar a verificação real da conexão Meta."
 
       setCheckResult(createRequestFailureCheckResult(data, message))
       toast.error(message)
@@ -488,7 +489,7 @@ export default function StoreWhatsAppSettingsPage() {
       <div className="w-full max-w-6xl bg-white px-4 py-6 sm:px-6 sm:py-7">
         {loading ? (
           <div className="rounded-3xl border border-dashed border-slate-300 bg-[linear-gradient(135deg,#f8fafc_0%,#ffffff_40%,#eef6ff_100%)] px-5 py-10 text-center text-sm text-slate-600">
-            Carregando conexao do WhatsApp...
+            Carregando conexão do WhatsApp...
           </div>
         ) : (
           <div className="space-y-6">
@@ -551,11 +552,11 @@ export default function StoreWhatsAppSettingsPage() {
                 <div className="rounded-2xl border border-slate-200 bg-white/80 p-4">
                   <div className="flex items-center gap-2 text-sm font-medium text-slate-900">
                     <KeyRound className="size-4 text-sky-700" />
-                    Permissao Meta
+                    Permissão Meta
                   </div>
                   <p className="mt-2 text-sm text-slate-600">
-                    Para conectar, use uma conta que tenha permissao de
-                    administrador no Gerenciador de Negocios/WhatsApp Business da
+                    Para conectar, use uma conta que tenha permissão de
+                    administrador no Gerenciador de Negócios/WhatsApp Business da
                     Meta.
                   </p>
                 </div>
@@ -563,11 +564,11 @@ export default function StoreWhatsAppSettingsPage() {
                 <div className="rounded-2xl border border-slate-200 bg-white/80 p-4">
                   <div className="flex items-center gap-2 text-sm font-medium text-slate-900">
                     <CircleAlert className="size-4 text-amber-700" />
-                    Validacao Meta
+                    Validação Meta
                   </div>
                   <p className="mt-2 text-sm text-slate-600">
-                    O fluxo nao pre-seleciona um portfolio empresarial. A Meta
-                    define quais portfolios e contas estao elegiveis para
+                    O fluxo não pré-seleciona um portfólio empresarial. A Meta
+                    define quais portfólios e contas estão elegíveis para
                     compartilhamento com o app.
                   </p>
                 </div>
@@ -575,9 +576,9 @@ export default function StoreWhatsAppSettingsPage() {
 
               {canSeeTechnicalDiagnostics ? (
                 <div className="mt-4 rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-600">
-                  Diagnostico tecnico habilitado para a `WhatsAppConnection` da
-                  Store atual da sessao. Esta visualizacao continua store-scoped e
-                  nunca representa uma conexao global do sistema.
+                  Diagnóstico técnico habilitado para a conexão WhatsApp da loja
+                  atual da sessão. Esta visualização continua restrita à loja e
+                  nunca representa uma conexão global do sistema.
                 </div>
               ) : null}
             </section>
@@ -601,6 +602,14 @@ export default function StoreWhatsAppSettingsPage() {
               onConnectionUpdated={loadConnection}
             />
 
+            <WhatsAppTemplateProvisioningPanel
+              refreshKey={[
+                data.connection?.id ?? "missing",
+                data.connection?.businessAccountId ?? "",
+                data.connection?.status ?? "",
+              ].join(":")}
+            />
+
             {canSeeTechnicalDiagnostics ? (
               <>
                 <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -608,17 +617,17 @@ export default function StoreWhatsAppSettingsPage() {
                     <div className="space-y-3">
                       <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-slate-500">
                         <MessageSquareShare className="size-3.5" />
-                        Diagnostico tecnico
+                        Diagnóstico técnico
                       </div>
 
                       <div>
                         <h3 className="text-lg font-semibold text-slate-950">
-                          WhatsAppConnection da Store atual
+                          Conexão WhatsApp da loja atual
                         </h3>
                         <p className="mt-1 max-w-3xl text-sm text-slate-600">
-                          Os dados abaixo diagnosticam apenas a conexao vinculada a
-                          `storeId` da sessao atual. Nada aqui representa uma
-                          conexao global unica do sistema.
+                          Os dados abaixo diagnosticam apenas a conexão vinculada à
+                          loja da sessão atual. Nada aqui representa uma conexão
+                          global única do sistema.
                         </p>
                       </div>
                     </div>
@@ -644,22 +653,22 @@ export default function StoreWhatsAppSettingsPage() {
                     <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
                       <div className="flex items-center gap-2 text-sm font-medium text-slate-900">
                         <KeyRound className="size-4 text-sky-700" />
-                        Auditoria minima
+                        Auditoria mínima
                       </div>
                       <p className="mt-2 text-sm text-slate-600">
                         {data.operational.completedChecks}/{data.operational.totalChecks} checks
-                        operacionais concluidos para a Store atual.
+                        operacionais concluídos para a loja atual.
                       </p>
                     </div>
 
                     <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
                       <div className="text-sm font-medium text-slate-900">
-                        Prontidao atual
+                        Prontidão atual
                       </div>
                       <p className="mt-2 text-sm text-slate-600">
                         {data.operational.isReady
-                          ? "A conexao desta Store esta pronta para uso operacional com a configuracao minima atual."
-                          : `${data.operational.blockingIssues.length} pendencia(s) ainda impedem o uso operacional confiavel desta Store.`}
+                          ? "A conexão desta loja está pronta para uso operacional com a configuração mínima atual."
+                          : `${data.operational.blockingIssues.length} pendência(s) ainda impedem o uso operacional confiável desta loja.`}
                       </p>
                     </div>
                   </div>
@@ -673,7 +682,7 @@ export default function StoreWhatsAppSettingsPage() {
                       </h3>
                       <p className="mt-1 max-w-3xl text-sm text-slate-600">
                         Este teste faz uma chamada real na Graph API usando a
-                        conexao salva da Store atual. O resultado abaixo e
+                        conexão salva da loja atual. O resultado abaixo é
                         separado da auditoria operacional local.
                       </p>
                     </div>
@@ -700,15 +709,15 @@ export default function StoreWhatsAppSettingsPage() {
                         <RefreshCw
                           className={checkingConnection ? "size-4 animate-spin" : "size-4"}
                         />
-                        {checkingConnection ? "Verificando..." : "Verificar conexao real"}
+                        {checkingConnection ? "Verificando..." : "Verificar conexão real"}
                       </Button>
                     </div>
                   </div>
 
                   {checkingConnection ? (
                     <div className="mt-4 rounded-2xl border border-dashed border-sky-300 bg-sky-50/80 px-4 py-4 text-sm text-sky-800">
-                      Consultando a Meta Graph API com a conexao salva para esta
-                      Store...
+                      Consultando a Meta Graph API com a conexão salva para esta
+                      loja...
                     </div>
                   ) : null}
 
@@ -720,7 +729,7 @@ export default function StoreWhatsAppSettingsPage() {
                         <div>
                           <p className="text-sm font-semibold">{checkResult.message}</p>
                           <p className="mt-1 text-xs opacity-80">
-                            Ultima execucao: {formatCheckedAt(checkResult.checkedAt)}
+                            Última execução: {formatCheckedAt(checkResult.checkedAt)}
                           </p>
                         </div>
 
@@ -739,11 +748,11 @@ export default function StoreWhatsAppSettingsPage() {
                           value={formatAccessTokenRead(checkResult.details.accessTokenRead)}
                         />
                         <ConnectionSummaryItem
-                          label="phoneNumberId acessivel"
+                          label="phoneNumberId acessível"
                           value={formatCheckFlag(checkResult.details.checks.phoneNumberAccessible)}
                         />
                         <ConnectionSummaryItem
-                          label="Numero confere"
+                          label="Número confere"
                           value={formatCheckFlag(
                             checkResult.details.checks.displayPhoneNumberMatches
                           )}
@@ -757,7 +766,7 @@ export default function StoreWhatsAppSettingsPage() {
                           }
                         />
                         <ConnectionSummaryItem
-                          label="Numero retornado"
+                          label="Número retornado"
                           value={
                             checkResult.details.returnedPhoneNumber?.displayPhoneNumber ??
                             "-"
@@ -828,8 +837,8 @@ export default function StoreWhatsAppSettingsPage() {
                     </div>
                   ) : (
                     <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 px-4 py-4 text-sm text-slate-600">
-                      Nenhum teste real foi executado ainda para a conexao atual
-                      desta Store.
+                      Nenhum teste real foi executado ainda para a conexão atual
+                      desta loja.
                     </div>
                   )}
                 </section>
@@ -841,8 +850,8 @@ export default function StoreWhatsAppSettingsPage() {
                         Checklist operacional
                       </h3>
                       <p className="text-sm text-slate-600">
-                        Validacao minima da configuracao salva em
-                        `WhatsAppConnection` para a Store atual.
+                        Validação mínima da configuração salva para a conexão da
+                        loja atual.
                       </p>
                     </div>
 
@@ -865,7 +874,7 @@ export default function StoreWhatsAppSettingsPage() {
 
                   {data.operational.blockingIssues.length > 0 ? (
                     <div className="mt-4 rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-900">
-                      <p className="font-medium">Pendencias atuais</p>
+                      <p className="font-medium">Pendências atuais</p>
                       <ul className="mt-2 ml-5 list-disc space-y-1">
                         {data.operational.blockingIssues.map((issue) => (
                           <li key={issue}>{issue}</li>
@@ -879,17 +888,17 @@ export default function StoreWhatsAppSettingsPage() {
                   <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                     <div>
                       <h3 className="text-lg font-semibold text-slate-950">
-                        Conexao atual
+                        Conexão atual
                       </h3>
                       <p className="text-sm text-slate-600">
-                        Resumo tecnico da `WhatsAppConnection` salva para esta
-                        Store.
+                        Resumo técnico da conexão do WhatsApp salva para esta
+                        loja.
                       </p>
                     </div>
 
                     {form.formState.isDirty ? (
                       <span className="text-sm font-medium text-amber-700">
-                        Existem alteracoes pendentes de salvamento.
+                        Existem alterações pendentes de salvamento.
                       </span>
                     ) : null}
                   </div>
@@ -913,7 +922,7 @@ export default function StoreWhatsAppSettingsPage() {
                         }
                       />
                       <ConnectionSummaryItem
-                        label="Status tecnico"
+                        label="Status técnico"
                         value={
                           WHATSAPP_CONNECTION_STATUS_LABELS[
                             data.connection.status ?? "PENDING"
@@ -921,8 +930,8 @@ export default function StoreWhatsAppSettingsPage() {
                         }
                       />
                       <ConnectionSummaryItem
-                        label="Conexao ativa"
-                        value={data.connection.isActive ? "Sim" : "Nao"}
+                        label="Conexão ativa"
+                        value={data.connection.isActive ? "Sim" : "Não"}
                       />
                       <ConnectionSummaryItem
                         label="businessAccountId"
@@ -952,9 +961,9 @@ export default function StoreWhatsAppSettingsPage() {
                     </div>
                   ) : (
                     <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 px-4 py-5 text-sm text-slate-600">
-                      Nenhuma conexao tecnica cadastrada ainda. Preencha o
-                      formulario abaixo para criar a configuracao Meta desta
-                      Store.
+                      Nenhuma conexão técnica cadastrada ainda. Preencha o
+                      formulário abaixo para criar a configuração Meta desta
+                      loja.
                     </div>
                   )}
                 </section>
@@ -963,11 +972,11 @@ export default function StoreWhatsAppSettingsPage() {
                   <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                     <div className="mb-4">
                       <h3 className="text-lg font-semibold text-slate-950">
-                        Configuracao tecnica
+                        Configuração técnica
                       </h3>
                       <p className="text-sm text-slate-600">
-                        Os campos abaixo sao salvos na `WhatsAppConnection` da
-                        Store atual.
+                        Os campos abaixo são salvos na conexão WhatsApp da loja
+                        atual.
                       </p>
                     </div>
 
@@ -1000,7 +1009,7 @@ export default function StoreWhatsAppSettingsPage() {
                       </div>
 
                       <div className="space-y-2">
-                        <Label htmlFor="status">Status tecnico</Label>
+                        <Label htmlFor="status">Status técnico</Label>
                         <Controller
                           control={form.control}
                           name="status"
@@ -1107,8 +1116,8 @@ export default function StoreWhatsAppSettingsPage() {
                           {...form.register("accessToken")}
                         />
                         <p className="text-sm text-slate-500">
-                          O token permanece vinculado apenas a esta Store e nao e
-                          retornado pelo GET store-scoped no client.
+                          O token permanece vinculado apenas a esta loja e não é
+                          retornado pelo GET restrito à loja no client.
                         </p>
                         <InlineFieldError message={form.formState.errors.accessToken?.message} />
                       </div>
@@ -1120,9 +1129,9 @@ export default function StoreWhatsAppSettingsPage() {
                           render={({ field }) => (
                             <div className="flex items-center justify-between gap-4">
                               <div className="space-y-1">
-                                <Label htmlFor="isActive">Conexao ativa</Label>
+                                <Label htmlFor="isActive">Conexão ativa</Label>
                                 <p className="text-sm text-slate-600">
-                                  Quando desligada, a conexao fica salva mas deixa
+                                  Quando desligada, a conexão fica salva mas deixa
                                   de ser usada operacionalmente.
                                 </p>
                               </div>
@@ -1149,8 +1158,8 @@ export default function StoreWhatsAppSettingsPage() {
                       {saving
                         ? "Salvando..."
                         : data.connection?.id
-                          ? "Salvar configuracao"
-                          : "Criar configuracao"}
+                          ? "Salvar configuração"
+                          : "Criar configuração"}
                     </Button>
                   </div>
                 </form>

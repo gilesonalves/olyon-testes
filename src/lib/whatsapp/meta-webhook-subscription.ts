@@ -41,7 +41,6 @@ export async function subscribeWabaToApp(params: {
       console.error("whatsapp subscribed_apps failed", {
         businessAccountId,
         status: response.status,
-        data,
       })
 
       throw new MetaWebhookSubscriptionError()

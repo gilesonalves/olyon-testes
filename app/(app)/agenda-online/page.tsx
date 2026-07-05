@@ -80,8 +80,8 @@ export default function AgendaOnlinePage() {
         if (!response.ok || !json?.ok) {
           throw new Error(
             json && !json.ok
-              ? (json.message ?? "Nao foi possivel carregar o painel da agenda online.")
-              : "Nao foi possivel carregar o painel da agenda online."
+              ? (json.message ?? "Não foi possível carregar o painel da agenda online.")
+              : "Não foi possível carregar o painel da agenda online."
           )
         }
 
@@ -100,7 +100,7 @@ export default function AgendaOnlinePage() {
         setError(
           loadError instanceof Error
             ? loadError.message
-            : "Nao foi possivel carregar o painel da agenda online."
+            : "Não foi possível carregar o painel da agenda online."
         )
       } finally {
         if (alive) {
@@ -118,15 +118,15 @@ export default function AgendaOnlinePage() {
 
   async function handleCopyLink() {
     if (!publicAgendaHref) {
-      toast.error("Nenhum link publico disponivel para copiar.")
+      toast.error("Nenhum link público disponível para copiar.")
       return
     }
 
     try {
       await navigator.clipboard.writeText(getAbsoluteUrl(publicAgendaHref))
-      toast.success("Link publico copiado com sucesso.")
+      toast.success("Link público copiado com sucesso.")
     } catch {
-      toast.error("Nao foi possivel copiar o link publico.")
+      toast.error("Não foi possível copiar o link público.")
     }
   }
 
@@ -146,7 +146,7 @@ export default function AgendaOnlinePage() {
         ) : !store ? (
           <div className="rounded-3xl border border-dashed border-amber-300 bg-amber-50/80 px-5 py-10 text-center text-sm text-amber-800">
             {error ??
-              "Nenhuma loja selecionada. Escolha uma loja para acessar o link publico."}
+              "Nenhuma loja selecionada. Escolha uma loja para acessar o link público."}
           </div>
         ) : (
           <div className="space-y-6">
@@ -155,7 +155,7 @@ export default function AgendaOnlinePage() {
                 <div className="space-y-3">
                   <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-slate-500">
                     <Globe className="size-3.5" />
-                    Painel do link publico
+                    Painel do link público
                   </div>
 
                   <div>
@@ -190,16 +190,16 @@ export default function AgendaOnlinePage() {
                     Como este canal funciona
                   </h3>
                   <p className="text-sm leading-6 text-slate-600">
-                    Este link usa os dados publicos cadastrados na loja.
+                    Este link usa os dados públicos cadastrados na loja.
                   </p>
                   <p className="text-sm leading-6 text-slate-600">
-                    Telefone, endereco e informacoes institucionais sao editados na
-                    configuracao da loja.
+                    Telefone, endereço e informações institucionais são editados na
+                    configuração da loja.
                   </p>
 
                   <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3">
                     <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
-                      Slug publico
+                      Slug público
                     </p>
                     <p className="mt-1 text-sm text-slate-900">{store.slug}</p>
                   </div>
@@ -208,14 +208,14 @@ export default function AgendaOnlinePage() {
                 <div className="grid gap-3">
                   <Button asChild variant="outline">
                     <Link href="/horarios-de-atendimento">
-                      Gerenciar horarios de atendimento
+                      Gerenciar horários de atendimento
                     </Link>
                   </Button>
 
                   <Button asChild variant="outline">
                     <Link href={storeSettingsUrl}>
                       <Settings2 className="size-4" />
-                      Ir para configuracoes da loja
+                      Ir para configurações da loja
                     </Link>
                   </Button>
                 </div>

@@ -166,6 +166,7 @@ function getStateClassName(state: string | null | undefined) {
 function getStateLabel(state: string | null | undefined) {
   switch (state) {
     case "PAUSED":
+      return "Pausado"
     case "HUMAN":
     case "HUMANO":
       return "Atendimento humano"
@@ -289,11 +290,11 @@ function getApiErrorMessage(
   }
 
   if (response.status === 401) {
-    return "Sessao expirada ou loja nao selecionada."
+    return "Sessão expirada ou loja não selecionada."
   }
 
   if (response.status === 403) {
-    return "Sem permissao para executar esta acao."
+    return "Sem permissão para executar esta ação."
   }
 
   return fallback
@@ -420,7 +421,7 @@ export default function AttendancePage() {
             getApiErrorMessage(
               response,
               json && !json.ok ? json : null,
-              "Nao foi possivel carregar as conversas."
+              "Não foi possível carregar as conversas."
             )
           )
         }
@@ -432,7 +433,7 @@ export default function AttendancePage() {
         const message =
           error instanceof Error
             ? error.message
-            : "Nao foi possivel carregar as conversas."
+            : "Não foi possível carregar as conversas."
 
         setPageError(message)
         if (!options.silent) {
@@ -468,7 +469,7 @@ export default function AttendancePage() {
             getApiErrorMessage(
               response,
               json && !json.ok ? json : null,
-              "Nao foi possivel carregar o historico."
+              "Não foi possível carregar o histórico."
             )
           )
         }
@@ -479,7 +480,7 @@ export default function AttendancePage() {
         const message =
           error instanceof Error
             ? error.message
-            : "Nao foi possivel carregar o historico."
+            : "Não foi possível carregar o histórico."
 
         if (!options.silent) {
           toast.error(message)
@@ -666,7 +667,7 @@ export default function AttendancePage() {
           getApiErrorMessage(
             response,
             json && !json.ok ? json : null,
-            "Nao foi possivel enviar a mensagem."
+              "Não foi possível enviar a mensagem."
           )
         )
       }
@@ -676,7 +677,7 @@ export default function AttendancePage() {
       applyManualSendResult(selectedConversationId, json.data)
       if (json.data.handoffError) {
         toast.warning(
-          `Mensagem enviada, mas o aviso automatico falhou: ${json.data.handoffError.error}`
+          `Mensagem enviada, mas o aviso automático falhou: ${json.data.handoffError.error}`
         )
       } else {
         toast.success("Mensagem enviada.")
@@ -690,7 +691,7 @@ export default function AttendancePage() {
       const message =
         error instanceof Error
           ? error.message
-          : "Nao foi possivel enviar a mensagem."
+          : "Não foi possível enviar a mensagem."
       toast.error(message)
     } finally {
       setSending(false)
@@ -716,7 +717,7 @@ export default function AttendancePage() {
           getApiErrorMessage(
             response,
             json && !json.ok ? json : null,
-            "Nao foi possivel retomar o bot."
+              "Não foi possível retomar o bot."
           )
         )
       }
@@ -732,7 +733,7 @@ export default function AttendancePage() {
       ])
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Nao foi possivel retomar o bot."
+        error instanceof Error ? error.message : "Não foi possível retomar o bot."
       toast.error(message)
     } finally {
       setResuming(false)
@@ -752,7 +753,7 @@ export default function AttendancePage() {
           <div>
             <h1 className="text-2xl font-semibold text-slate-950">Atendimento</h1>
             <p className="mt-1 text-sm text-slate-600">
-              Converse com clientes pelo WhatsApp conectado a loja.
+              Converse com clientes pelo WhatsApp conectado à loja.
             </p>
           </div>
 
@@ -839,7 +840,7 @@ export default function AttendancePage() {
 
         <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           Mensagens livres pelo WhatsApp so podem ser enviadas dentro da janela
-          de atendimento de 24h. Fora dela, use templates aprovados.
+          de atendimento de 24 horas. Fora dela, use templates aprovados.
         </div>
 
         {pageError ? (
@@ -1031,7 +1032,7 @@ export default function AttendancePage() {
                   {loadingMessages ? (
                     <div className="flex h-48 items-center justify-center gap-2 text-sm text-slate-500">
                       <Loader2 className="size-4 animate-spin" />
-                      Carregando historico...
+                      Carregando histórico...
                     </div>
                   ) : displayedMessages.length === 0 ? (
                     <div className="flex h-48 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white text-sm text-slate-500">
@@ -1108,7 +1109,7 @@ export default function AttendancePage() {
                 >
                   {!connection ? (
                     <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                      Envio desabilitado enquanto nao houver WhatsApp conectado.
+                      Envio desabilitado enquanto não houver WhatsApp conectado.
                     </div>
                   ) : null}
 

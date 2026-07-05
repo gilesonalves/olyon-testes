@@ -175,7 +175,7 @@ export function OwnerManagement({
             <b>User ID:</b> {owner.userId}
           </div>
           <div>
-            <b>Role:</b> {owner.role}
+            <b>Perfil:</b> {owner.role}
           </div>
         </section>
 

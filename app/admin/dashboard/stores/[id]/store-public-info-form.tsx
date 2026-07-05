@@ -53,12 +53,12 @@ export function StorePublicInfoForm({
       const json = await response.json().catch(() => null)
 
       if (!response.ok || !json?.ok) {
-        toast.error(json?.message ?? "Nao foi possivel salvar os dados da loja.")
+        toast.error(json?.message ?? "Não foi possível salvar os dados da loja.")
         return
       }
 
       form.reset(toStorePublicInfoFormValues(json.data))
-      toast.success("Informacoes da loja salvas com sucesso.")
+      toast.success("Informações da loja salvas com sucesso.")
     } finally {
       setIsSubmitting(false)
     }
@@ -84,7 +84,7 @@ export function StorePublicInfoForm({
         </div>
 
         <div className="space-y-2 md:col-span-2">
-          <Label htmlFor="address">Endereco</Label>
+          <Label htmlFor="address">Endereço</Label>
           <Input
             id="address"
             placeholder="Ex: Rua das Flores, 123"
@@ -107,7 +107,7 @@ export function StorePublicInfoForm({
 
         <div className="space-y-2">
           <Label htmlFor="city">Cidade</Label>
-          <Input id="city" placeholder="Ex: Sao Paulo" {...form.register("city")} />
+          <Input id="city" placeholder="Ex: São Paulo" {...form.register("city")} />
           <InlineFieldError message={form.formState.errors.city?.message} />
         </div>
 
@@ -124,22 +124,22 @@ export function StorePublicInfoForm({
         </div>
 
         <div className="space-y-2 md:col-span-2">
-          <Label htmlFor="businessHoursSummary">Resumo do horario de funcionamento</Label>
+          <Label htmlFor="businessHoursSummary">Resumo do horário de funcionamento</Label>
           <Textarea
             id="businessHoursSummary"
             rows={3}
-            placeholder="Ex: Segunda a sexta, das 9h as 18h. Sabado, das 9h as 13h."
+            placeholder="Ex: Segunda a sexta, das 9h às 18h. Sábado, das 9h às 13h."
             {...form.register("businessHoursSummary")}
           />
           <InlineFieldError message={form.formState.errors.businessHoursSummary?.message} />
         </div>
 
         <div className="space-y-2 md:col-span-2">
-          <Label htmlFor="serviceObservations">Observacoes de atendimento</Label>
+          <Label htmlFor="serviceObservations">Observações de atendimento</Label>
           <Textarea
             id="serviceObservations"
             rows={4}
-            placeholder="Ex: Atendimento somente com horario marcado."
+            placeholder="Ex: Atendimento somente com horário marcado."
             {...form.register("serviceObservations")}
           />
           <InlineFieldError message={form.formState.errors.serviceObservations?.message} />
@@ -148,7 +148,7 @@ export function StorePublicInfoForm({
 
       <div className="flex justify-end">
         <Button type="submit" variant="primary" disabled={isSubmitting}>
-          {isSubmitting ? "Salvando..." : "Salvar informacoes"}
+          {isSubmitting ? "Salvando..." : "Salvar informações"}
         </Button>
       </div>
     </form>

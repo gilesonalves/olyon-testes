@@ -5,10 +5,10 @@ import {
 } from "@/lib/whatsapp/admin-connection"
 
 export const WHATSAPP_CONNECTION_OPERATIONAL_STATE_LABELS = {
-  missing: "Conexao ausente",
-  incomplete: "Configuracao incompleta",
-  inactive: "Conexao inativa",
-  ready: "Conexao pronta",
+  missing: "Conexão ausente",
+  incomplete: "Configuração incompleta",
+  inactive: "Conexão inativa",
+  ready: "Conexão pronta",
 } as const
 
 export type WhatsAppConnectionOperationalState =
@@ -22,7 +22,7 @@ export const WHATSAPP_CONNECTION_OPERATIONAL_FIELD_LABELS = {
   verifyToken: "verifyToken",
   accessToken: "accessToken",
   status: "Status tecnico",
-  isActive: "Conexao ativa",
+  isActive: "Conexão ativa",
 } as const
 
 export type WhatsAppConnectionOperationalField =
@@ -57,7 +57,7 @@ function createMissingCheck(
     field,
     label: WHATSAPP_CONNECTION_OPERATIONAL_FIELD_LABELS[field],
     ok: false,
-    message: "Nenhuma conexao cadastrada para esta loja.",
+    message: "Nenhuma conexão cadastrada para esta loja.",
   }
 }
 
@@ -65,20 +65,20 @@ function evaluateStatusMessage(status: WhatsAppConnectionEditableRecord["status"
   if (!status) {
     return {
       ok: false,
-      message: "Status tecnico nao informado.",
+      message: "Status técnico não informado.",
     }
   }
 
   if (status === "CONNECTED") {
     return {
       ok: true,
-      message: "Status tecnico CONNECTED e utilizavel operacionalmente.",
+      message: "Status técnico CONNECTED e utilizável operacionalmente.",
     }
   }
 
   return {
     ok: false,
-    message: `Status tecnico atual: ${WHATSAPP_CONNECTION_STATUS_LABELS[status]}. O uso operacional exige CONNECTED.`,
+    message: `Status técnico atual: ${WHATSAPP_CONNECTION_STATUS_LABELS[status]}. O uso operacional exige CONNECTED.`,
   }
 }
 
@@ -95,10 +95,10 @@ export function evaluateWhatsAppConnectionOperationalStatus(
     return {
       state: "missing",
       stateLabel: WHATSAPP_CONNECTION_OPERATIONAL_STATE_LABELS.missing,
-      summary: "Nenhuma conexao tecnica foi cadastrada para esta loja.",
+      summary: "Nenhuma conexão técnica foi cadastrada para esta loja.",
       isReady: false,
       checks,
-      blockingIssues: ["Cadastre a conexao Meta/WhatsApp da loja para iniciar a configuracao operacional."],
+      blockingIssues: ["Cadastre a conexão Meta/WhatsApp da loja para iniciar a configuração operacional."],
       completedChecks: 0,
       totalChecks: checks.length,
     }
@@ -115,8 +115,8 @@ export function evaluateWhatsAppConnectionOperationalStatus(
         connection.provider === "META_WHATSAPP"
           ? `Provider ${WHATSAPP_PROVIDER_LABELS.META_WHATSAPP} configurado.`
           : hasText(connection.provider)
-            ? `Provider atual (${connection.provider}) nao e compativel com a integracao Meta esperada.`
-            : "Provider nao informado.",
+            ? `Provider atual (${connection.provider}) não é compatível com a integração Meta esperada.`
+            : "Provider não informado.",
     },
     {
       field: "businessAccountId",

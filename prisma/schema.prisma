@@ -8,57 +8,58 @@ datasource db {
 }
 
 model User {
-  id                      String                @id @default(cuid())
-  email                   String                @unique
-  name                    String
-  createdAt               DateTime              @default(now())
-  password                String
-  globalRole              GlobalRole?
-  updatedAt               DateTime              @updatedAt
-  memberships             Membership[]
-  contacts                UserContact[]
-  profile                 UserProfile?
-  financeEntriesCreated   FinanceEntry[]        @relation("FinanceEntriesCreatedByUser")
-  billingPaymentsCreated  StoreBillingPayment[] @relation("StoreBillingPaymentsCreatedByUser")
+  id                     String                @id @default(cuid())
+  email                  String                @unique
+  name                   String
+  createdAt              DateTime              @default(now())
+  password               String
+  globalRole             GlobalRole?
+  updatedAt              DateTime              @updatedAt
+  memberships            Membership[]
+  contacts               UserContact[]
+  profile                UserProfile?
+  financeEntriesCreated  FinanceEntry[]        @relation("FinanceEntriesCreatedByUser")
+  billingPaymentsCreated StoreBillingPayment[] @relation("StoreBillingPaymentsCreatedByUser")
 }
 
 model Store {
-  id                   String                @id @default(cuid())
-  name                 String
-  createdAt            DateTime              @default(now())
-  active               Boolean               @default(true)
-  updatedAt            DateTime              @updatedAt
-  slug                 String                @unique
-  phone                String?
-  whatsappPhone        String?
-  address              String?
-  clients              Client[]
-  complement           String?
-  neighborhood         String?
-  city                 String?
-  state                String?
-  zipcode              String?
-  serviceObservations  String?
-  businessHoursSummary String?
-  appointments         Appointment[]
-  appointmentReminders AppointmentReminder[]
-  appointmentDrafts    AppointmentDraft[]
-  blockedSchedules     BlockedSchedule[]
-  conversations        Conversation[]
-  conversationMessages ConversationMessage[]
-  events               Event[]
-  financeEntries       FinanceEntry[]
-  memberships          Membership[]
-  services             Service[]
-  weekScheduleDays     WeekScheduleDay[]
-  botSettings          BotSettings?
-  WhatsAppConnection   WhatsAppConnection?
-  billing              StoreBilling?
-  billingPayments      StoreBillingPayment[]
+  id                         String                      @id @default(cuid())
+  name                       String
+  createdAt                  DateTime                    @default(now())
+  active                     Boolean                     @default(true)
+  updatedAt                  DateTime                    @updatedAt
+  slug                       String                      @unique
+  phone                      String?
+  whatsappPhone              String?
+  address                    String?
+  clients                    Client[]
+  complement                 String?
+  neighborhood               String?
+  city                       String?
+  state                      String?
+  zipcode                    String?
+  serviceObservations        String?
+  businessHoursSummary       String?
+  appointments               Appointment[]
+  appointmentReminders       AppointmentReminder[]
+  whatsappTemplateProvisions WhatsAppTemplateProvision[]
+  appointmentDrafts          AppointmentDraft[]
+  blockedSchedules           BlockedSchedule[]
+  conversations              Conversation[]
+  conversationMessages       ConversationMessage[]
+  events                     Event[]
+  financeEntries             FinanceEntry[]
+  memberships                Membership[]
+  services                   Service[]
+  weekScheduleDays           WeekScheduleDay[]
+  botSettings                BotSettings?
+  WhatsAppConnection         WhatsAppConnection?
+  billing                    StoreBilling?
+  billingPayments            StoreBillingPayment[]
 }
 
 model Membership {
-  id                        String                        @id @default(cuid())
+  id                        String                      @id @default(cuid())
   role                      MembershipRole
   userId                    String
   storeId                   String
@@ -66,8 +67,8 @@ model Membership {
   appointmentDrafts         AppointmentDraft[]
   blockedSchedules          BlockedSchedule[]
   professionalWeekSchedules MembershipWeekScheduleDay[]
-  store                     Store                         @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  user                      User                          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  store                     Store                       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  user                      User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
   services                  MembershipService[]
   types                     MembershipTypeLink[]
 
@@ -75,7 +76,7 @@ model Membership {
 }
 
 model Client {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   storeId        String
   name           String
   email          String?
@@ -85,10 +86,10 @@ model Client {
   gender         String?
   birthDate      DateTime?
   notes          String?
-  isActive       Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  store          Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  store          Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
   @@index([storeId])
   @@index([storeId, name])
@@ -220,8 +221,8 @@ model Service {
 }
 
 model UserProfile {
-  userId         String   @id
-  cpf            String?  @unique
+  userId         String    @id
+  cpf            String?   @unique
   phone          String?
   secondaryPhone String?
   gender         String?
@@ -233,9 +234,9 @@ model UserProfile {
   address        String?
   number         String?
   complement     String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model UserContact {
@@ -339,9 +340,9 @@ model AppointmentDraft {
 }
 
 model Appointment {
-  id                String            @id @default(cuid())
+  id                String                @id @default(cuid())
   storeId           String
-  status            AppointmentStatus @default(SCHEDULED)
+  status            AppointmentStatus     @default(SCHEDULED)
   serviceId         String?
   staffMembershipId String?
   customerName      String
@@ -353,11 +354,11 @@ model Appointment {
   source            Channel
   externalRef       String?
   metadata          Json?
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
-  service           Service?          @relation(fields: [serviceId], references: [id])
-  membership        Membership?       @relation(fields: [staffMembershipId], references: [id])
-  store             Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  service           Service?              @relation(fields: [serviceId], references: [id])
+  membership        Membership?           @relation(fields: [staffMembershipId], references: [id])
+  store             Store                 @relation(fields: [storeId], references: [id], onDelete: Cascade)
   draft             AppointmentDraft?
   reminders         AppointmentReminder[]
 
@@ -418,13 +419,13 @@ model WeekScheduleInterval {
 }
 
 model MembershipWeekScheduleDay {
-  id           String                          @id @default(cuid())
+  id           String                           @id @default(cuid())
   membershipId String
   weekday      Weekday
-  enabled      Boolean                         @default(false)
-  createdAt    DateTime                        @default(now())
-  updatedAt    DateTime                        @updatedAt
-  membership   Membership                      @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  enabled      Boolean                          @default(false)
+  createdAt    DateTime                         @default(now())
+  updatedAt    DateTime                         @updatedAt
+  membership   Membership                       @relation(fields: [membershipId], references: [id], onDelete: Cascade)
   intervals    MembershipWeekScheduleInterval[]
 
   @@unique([membershipId, weekday])
@@ -477,22 +478,51 @@ model BotSettings {
 }
 
 model WhatsAppConnection {
-  id                 String                   @id
-  storeId            String                   @unique
-  provider           WhatsAppProvider         @default(META_WHATSAPP)
-  phoneNumberId      String                   @unique
+  id                 String                      @id
+  storeId            String                      @unique
+  provider           WhatsAppProvider            @default(META_WHATSAPP)
+  phoneNumberId      String                      @unique
   businessAccountId  String
   displayPhoneNumber String
-  verifyToken        String                   @unique
+  verifyToken        String                      @unique
   accessToken        String
-  status             WhatsAppConnectionStatus @default(PENDING)
-  isActive           Boolean                  @default(true)
-  createdAt          DateTime                 @default(now())
+  status             WhatsAppConnectionStatus    @default(PENDING)
+  isActive           Boolean                     @default(true)
+  createdAt          DateTime                    @default(now())
   updatedAt          DateTime
-  Store              Store                    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  Store              Store                       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  templateProvisions WhatsAppTemplateProvision[]
 
   @@index([businessAccountId])
   @@index([provider, isActive])
+}
+
+model WhatsAppTemplateProvision {
+  id                String                          @id @default(cuid())
+  storeId           String
+  connectionId      String?
+  businessAccountId String
+  kind              WhatsAppTemplateProvisionKind
+  templateName      String
+  language          String                          @default("pt_BR")
+  category          String                          @default("UTILITY")
+  status            WhatsAppTemplateProvisionStatus @default(NOT_CREATED)
+  metaTemplateId    String?
+  lastSyncedAt      DateTime?
+  submittedAt       DateTime?
+  approvedAt        DateTime?
+  rejectedAt        DateTime?
+  rejectionReason   String?
+  error             String?
+  createdAt         DateTime                        @default(now())
+  updatedAt         DateTime                        @updatedAt
+  store             Store                           @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  connection        WhatsAppConnection?             @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+
+  @@unique([storeId, kind, language])
+  @@index([businessAccountId])
+  @@index([status])
+  @@index([connectionId])
 }
 
 enum GlobalRole {
@@ -527,6 +557,22 @@ enum WhatsAppConnectionStatus {
 
 enum WhatsAppProvider {
   META_WHATSAPP
+}
+
+enum WhatsAppTemplateProvisionStatus {
+  NOT_CREATED
+  PENDING
+  APPROVED
+  REJECTED
+  PAUSED
+  DISABLED
+  UNKNOWN
+  ERROR
+}
+
+enum WhatsAppTemplateProvisionKind {
+  APPOINTMENT_REMINDER_ONE_HOUR
+  APPOINTMENT_REMINDER_FIFTEEN_MINUTES
 }
 
 enum ConversationState {

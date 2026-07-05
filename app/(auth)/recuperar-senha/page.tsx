@@ -31,14 +31,14 @@ export default function RecuperarSenha() {
               render={({ field, fieldState }) => (
                 <Field data-invalid={fieldState.invalid}>
                   <FieldLabel htmlFor="email">
-                    Email
+                    E-mail
                   </FieldLabel>
                   <Input
                     {...field}
                     id="email"
                     type="email"
                     aria-invalid={fieldState.invalid}
-                    placeholder="Digite aqui seu Email"
+                    placeholder="Digite aqui seu e-mail"
 
                   />
                   {fieldState.invalid && (

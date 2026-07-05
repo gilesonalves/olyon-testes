@@ -97,7 +97,7 @@ export function StoreWhatsAppConnectionForm({
 
       if (!response.ok || !json?.ok) {
         applyFieldErrors(json?.details?.fieldErrors)
-        toast.error(json?.error ?? "Nao foi possivel salvar a conexao WhatsApp.")
+        toast.error(json?.error ?? "Não foi possível salvar a conexão do WhatsApp.")
         return
       }
 
@@ -107,8 +107,8 @@ export function StoreWhatsAppConnectionForm({
 
       toast.success(
         savedConnection?.id
-          ? "Conexao WhatsApp atualizada com sucesso."
-          : "Conexao WhatsApp criada com sucesso."
+          ? "Conexão do WhatsApp atualizada com sucesso."
+          : "Conexão do WhatsApp criada com sucesso."
       )
     } finally {
       setIsSubmitting(false)
@@ -122,7 +122,7 @@ export function StoreWhatsAppConnectionForm({
           <div>
             <p className="text-sm font-medium">Estado atual</p>
             <p className="text-sm text-muted-foreground">
-              Somente conexoes ativas sao usadas pelo webhook da Meta.
+              Somente conexões ativas são usadas pelo webhook da Meta.
             </p>
           </div>
 
@@ -140,17 +140,18 @@ export function StoreWhatsAppConnectionForm({
             </p>
             <p>
               Status tecnico salvo:{" "}
+              Status técnico salvo:{" "}
               {WHATSAPP_CONNECTION_STATUS_LABELS[savedConnection.status ?? "PENDING"]}
             </p>
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">
-            Esta loja ainda nao possui conexao tecnica cadastrada.
+            Esta loja ainda não possui conexão técnica cadastrada.
           </p>
         )}
 
         {form.formState.isDirty ? (
-          <p className="text-sm text-amber-700">Existem alteracoes pendentes de salvamento.</p>
+          <p className="text-sm text-amber-700">Existem alterações pendentes de salvamento.</p>
         ) : null}
       </div>
 
@@ -179,7 +180,7 @@ export function StoreWhatsAppConnectionForm({
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="status">Status tecnico</Label>
+          <Label htmlFor="status">Status técnico</Label>
           <Controller
             control={form.control}
             name="status"
@@ -276,7 +277,7 @@ export function StoreWhatsAppConnectionForm({
             {...form.register("accessToken")}
           />
           <p className="text-sm text-muted-foreground">
-            Este token so aparece nesta tela de detalhes da loja.
+            Este token só aparece nesta tela de detalhes da loja.
           </p>
           <InlineFieldError message={form.formState.errors.accessToken?.message} />
         </div>
@@ -288,9 +289,9 @@ export function StoreWhatsAppConnectionForm({
             render={({ field }) => (
               <div className="flex items-center justify-between gap-4">
                 <div className="space-y-1">
-                  <Label htmlFor="isActive">Conexao ativa</Label>
+                  <Label htmlFor="isActive">Conexão ativa</Label>
                   <p className="text-sm text-muted-foreground">
-                    Quando desligada, o webhook nao usa esta conexao para verificacao ou inbound.
+                    Quando desligada, o webhook não usa esta conexão para verificação ou inbound.
                   </p>
                 </div>
 
@@ -311,8 +312,8 @@ export function StoreWhatsAppConnectionForm({
           {isSubmitting
             ? "Salvando..."
             : savedConnection?.id
-              ? "Salvar conexao"
-              : "Cadastrar conexao"}
+              ? "Salvar conexão"
+              : "Cadastrar conexão"}
         </Button>
       </div>
     </form>

@@ -100,7 +100,7 @@ export default function BotSettingsPage() {
         throw new Error(
           getApiErrorMessage(
             json && !json.ok ? json : null,
-            "Nao foi possivel carregar as configuracoes do bot."
+            "Não foi possível carregar as configurações do bot."
           )
         )
       }
@@ -111,7 +111,7 @@ export default function BotSettingsPage() {
       const message =
         loadError instanceof Error
           ? loadError.message
-          : "Nao foi possivel carregar as configuracoes do bot."
+          : "Não foi possível carregar as configurações do bot."
 
       setError(message)
       toast.error(message)
@@ -161,19 +161,19 @@ export default function BotSettingsPage() {
         throw new Error(
           getApiErrorMessage(
             json && !json.ok ? json : null,
-            "Nao foi possivel salvar as configuracoes do bot."
+            "Não foi possível salvar as configurações do bot."
           )
         )
       }
 
       setSettings(json.data)
       setFormValues(toFormValues(json.data))
-      toast.success("Configuracoes do bot salvas com sucesso.")
+      toast.success("Configurações do bot salvas com sucesso.")
     } catch (saveError) {
       const message =
         saveError instanceof Error
           ? saveError.message
-          : "Nao foi possivel salvar as configuracoes do bot."
+          : "Não foi possível salvar as configurações do bot."
 
       setError(message)
       toast.error(message)
@@ -190,6 +190,7 @@ export default function BotSettingsPage() {
         <div className="flex items-center justify-between">
           <span className="font-normal text-foreground">
             Configuracoes do Bot
+            Configurações do Bot
           </span>
         </div>
       </HeaderPage>
@@ -202,7 +203,7 @@ export default function BotSettingsPage() {
               WhatsApp
             </div>
             <h1 className="mt-3 text-2xl font-semibold text-slate-950">
-              Configuracoes do Bot
+              Configurações do Bot
             </h1>
           </div>
 
@@ -220,7 +221,7 @@ export default function BotSettingsPage() {
 
         {loading ? (
           <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center text-sm text-slate-600">
-            Carregando configuracoes do bot...
+            Carregando configurações do bot...
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-5">
@@ -253,7 +254,7 @@ export default function BotSettingsPage() {
 
                 <div className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 px-4 py-3">
                   <Label htmlFor="showMenuAfterWelcome">
-                    Mostrar menu apos boas-vindas
+                    Mostrar menu após boas-vindas
                   </Label>
                   <Switch
                     id="showMenuAfterWelcome"
@@ -286,7 +287,7 @@ export default function BotSettingsPage() {
 
                 <div className="space-y-2">
                   <Label htmlFor="customerRequestedHumanMessage">
-                    Mensagem quando cliente pede atendente
+                    Mensagem quando o cliente pede atendente
                   </Label>
                   <Textarea
                     id="customerRequestedHumanMessage"

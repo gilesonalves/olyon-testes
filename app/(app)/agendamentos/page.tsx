@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import HeaderPage from "@/components/headerPage"
-import { Check, Plus, Search, UserRound } from "lucide-react"
+import { Check, Plus, RefreshCw, Search, UserRound } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   AlertDialog,
@@ -257,6 +257,7 @@ const MANUAL_APPOINTMENT_CONFLICT_REQUIRES_CONFIRMATION_CODE =
   "MANUAL_APPOINTMENT_CONFLICT_REQUIRES_CONFIRMATION"
 const EMPTY_SERVICE_SELECT_VALUE = "__empty_service__"
 const EMPTY_STAFF_SELECT_VALUE = "__empty_staff__"
+const APPOINTMENTS_POLL_INTERVAL_MS = 30_000
 
 type AgendaSelectOption = {
   value: string
@@ -1346,6 +1347,9 @@ export default function AgendamentosPage() {
   const [weeklySchedule, setWeeklySchedule] = useState<WeekScheduleDayItem[]>([])
 
   const [appointmentsLoading, setAppointmentsLoading] = useState(true)
+  const [appointmentsRefreshing, setAppointmentsRefreshing] = useState(false)
+  const [lastAppointmentsUpdatedAt, setLastAppointmentsUpdatedAt] =
+    useState<Date | null>(null)
   const [teamLoading, setTeamLoading] = useState(true)
   const [weeklyScheduleLoading, setWeeklyScheduleLoading] = useState(true)
   const [servicesLoading, setServicesLoading] = useState(false)
@@ -1415,6 +1419,7 @@ export default function AgendamentosPage() {
   const [newClientSubmitting, setNewClientSubmitting] = useState(false)
   const [newClientError, setNewClientError] = useState<string | null>(null)
   const slotValidationRequestRef = useRef(0)
+  const appointmentsRequestRef = useRef(0)
 
   const sortedTeam = useMemo(
     () => [...team].sort((left, right) => left.name.localeCompare(right.name, "pt-BR")),
@@ -1713,9 +1718,23 @@ export default function AgendamentosPage() {
     [blockDate, blockedSchedules, blockTargetMembershipId]
   )
 
-  const loadAppointments = useCallback(async (date: string) => {
-    setAppointmentsLoading(true)
-    setAppointmentsError(null)
+  const loadAppointments = useCallback(async (
+    date: string,
+    options: {
+      background?: boolean
+      reportError?: boolean
+    } = {}
+  ) => {
+    const requestId = appointmentsRequestRef.current + 1
+    appointmentsRequestRef.current = requestId
+    const isBackground = options.background === true
+
+    if (isBackground) {
+      setAppointmentsRefreshing(true)
+    } else {
+      setAppointmentsLoading(true)
+      setAppointmentsError(null)
+    }
 
     try {
       const response = await fetch(`/api/appointments?date=${encodeURIComponent(date)}`, {
@@ -1727,11 +1746,28 @@ export default function AgendamentosPage() {
         throw new Error(json.ok ? "Erro ao carregar agendamentos." : json.error)
       }
 
+      if (appointmentsRequestRef.current !== requestId) {
+        return
+      }
+
       setAppointments(json.data)
+      setAppointmentsError(null)
+      setLastAppointmentsUpdatedAt(new Date())
     } catch (e) {
-      setAppointmentsError(e instanceof Error ? e.message : "Erro ao carregar agendamentos.")
+      if (
+        appointmentsRequestRef.current === requestId &&
+        (!isBackground || options.reportError)
+      ) {
+        setAppointmentsError(
+          e instanceof Error ? e.message : "Erro ao carregar agendamentos."
+        )
+      }
     } finally {
-      setAppointmentsLoading(false)
+      if (isBackground) {
+        setAppointmentsRefreshing(false)
+      } else if (appointmentsRequestRef.current === requestId) {
+        setAppointmentsLoading(false)
+      }
     }
   }, [])
 
@@ -1867,6 +1903,34 @@ export default function AgendamentosPage() {
   useEffect(() => {
     void loadAppointments(selectedDate)
   }, [loadAppointments, selectedDate])
+
+  const appointmentPollingPaused =
+    showForm ||
+    detailsOpen ||
+    availabilityOpen ||
+    blockDialogOpen ||
+    newClientOpen ||
+    appointmentConflictPrompt !== null ||
+    blockConflict !== null ||
+    saving ||
+    blockSaving ||
+    newClientSubmitting
+
+  useEffect(() => {
+    if (appointmentPollingPaused) {
+      return
+    }
+
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState !== "visible") {
+        return
+      }
+
+      void loadAppointments(selectedDate, { background: true })
+    }, APPOINTMENTS_POLL_INTERVAL_MS)
+
+    return () => window.clearInterval(intervalId)
+  }, [appointmentPollingPaused, loadAppointments, selectedDate])
 
   useEffect(() => {
     void loadTeam()
@@ -2836,7 +2900,40 @@ export default function AgendamentosPage() {
                   />
                 </div>
 
-                
+                <div className="grid gap-2">
+                  <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Atualização
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() =>
+                      void loadAppointments(selectedDate, {
+                        background: true,
+                        reportError: true,
+                      })
+                    }
+                    disabled={appointmentsLoading || appointmentsRefreshing}
+                    className="h-11"
+                  >
+                    <RefreshCw
+                      className={cn(
+                        "size-4",
+                        appointmentsRefreshing && "animate-spin"
+                      )}
+                    />
+                    Atualizar
+                  </Button>
+                  <span className="text-xs text-slate-500">
+                    {lastAppointmentsUpdatedAt
+                      ? `Atualizado automaticamente às ${lastAppointmentsUpdatedAt.toLocaleTimeString("pt-BR", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          second: "2-digit",
+                        })}`
+                      : "Atualização automática a cada 30 segundos"}
+                  </span>
+                </div>
               </div>
 
             </div>

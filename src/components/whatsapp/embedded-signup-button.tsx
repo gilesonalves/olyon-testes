@@ -144,19 +144,19 @@ function getFriendlyEmbeddedSignupErrorMessage(
     case "AUTH_REQUIRED":
       return "Sua sessao expirou. Entre novamente para continuar."
     case "FORBIDDEN":
-      return "A loja atual nao tem permissao para alterar esta conexao."
+      return "A loja atual não tem permissão para alterar esta conexão."
     case "STORE_NOT_FOUND":
-      return "Nao foi possivel localizar a loja atual."
+      return "Não foi possível localizar a loja atual."
     case "WHATSAPP_EMBEDDED_SIGNUP_NOT_CONFIGURED":
-      return "A conexao com a Meta nao esta disponivel neste ambiente."
+      return "A conexão com a Meta não está disponível neste ambiente."
     case "WHATSAPP_EMBEDDED_SIGNUP_CONFLICT":
-      return "Este numero do WhatsApp ja esta conectado a outra loja ou em uso."
+      return "Este número do WhatsApp já está conectado a outra loja ou em uso."
     case "WHATSAPP_EMBEDDED_SIGNUP_INVALID_PAYLOAD":
-      return "Nao foi possivel concluir a conexao. Tente novamente."
+      return "Não foi possível concluir a conexão. Tente novamente."
     case "WHATSAPP_EMBEDDED_SIGNUP_FAILED":
-      return "A Meta nao concluiu a conexao da sua loja. Tente novamente ou fale com o suporte."
+      return "A Meta não concluiu a conexão da sua loja. Tente novamente ou fale com o suporte."
     default:
-      return error?.message ?? "Nao foi possivel concluir a conexao com a Meta."
+      return error?.message ?? "Não foi possível concluir a conexão com a Meta."
   }
 }
 
@@ -182,7 +182,7 @@ export function EmbeddedSignupButton({
   const initializeSdk = useEffectEvent((config: EmbeddedSignupPublicConfig) => {
     if (!window.FB) {
       setSdkState("error")
-      setSdkError("O SDK da Meta nao ficou disponivel no navegador.")
+      setSdkError("O SDK da Meta não ficou disponível no navegador.")
       return
     }
 
@@ -198,7 +198,7 @@ export function EmbeddedSignupButton({
       setSdkError(null)
     } catch {
       setSdkState("error")
-      setSdkError("Nao foi possivel inicializar o SDK da Meta.")
+      setSdkError("Não foi possível inicializar o SDK da Meta.")
     }
   })
 
@@ -224,7 +224,7 @@ export function EmbeddedSignupButton({
           throw new Error(
             json && !json.ok
               ? getFriendlyEmbeddedSignupErrorMessage(json.error)
-              : "A conexao com a Meta nao esta disponivel neste ambiente agora."
+              : "A conexão com a Meta não está disponível neste ambiente agora."
           )
         }
 
@@ -257,7 +257,7 @@ export function EmbeddedSignupButton({
         }
         handleError = () => {
           setSdkState("error")
-          setSdkError("Nao foi possivel carregar o SDK da Meta.")
+          setSdkError("Não foi possível carregar o SDK da Meta.")
         }
 
         window.fbAsyncInit = handleLoad
@@ -276,7 +276,7 @@ export function EmbeddedSignupButton({
         setSdkError(
           error instanceof Error
             ? error.message
-            : "A conexao com a Meta nao esta disponivel neste ambiente agora."
+            : "A conexão com a Meta não está disponível neste ambiente agora."
         )
       }
     }
@@ -317,18 +317,18 @@ export function EmbeddedSignupButton({
       resolveSessionMetadataRef.current?.(metadata)
       resolveSessionMetadataRef.current = null
       setEventMessage(
-        "A Meta concluiu o fluxo. O Olyon esta atualizando a conexao da sua loja."
+        "A Meta concluiu o fluxo. O Olyon está atualizando a conexão da sua loja."
       )
       return
     }
 
     if (payload.event === "CANCEL") {
-      setEventMessage("O popup da Meta foi fechado antes da conclusao da conexao.")
+      setEventMessage("O popup da Meta foi fechado antes da conclusão da conexão.")
       return
     }
 
     if (payload.event === "ERROR") {
-      setEventMessage("A Meta informou que nao conseguiu concluir a conexao.")
+      setEventMessage("A Meta informou que não conseguiu concluir a conexão.")
     }
   })
 
@@ -372,7 +372,7 @@ export function EmbeddedSignupButton({
 
     if (!code) {
       setSubmitting(false)
-      toast.error("A Meta nao concluiu a conexao da sua loja. Tente novamente.")
+      toast.error("A Meta não concluiu a conexão da sua loja. Tente novamente.")
       return
     }
 
@@ -405,14 +405,14 @@ export function EmbeddedSignupButton({
         throw new Error(
           json && !json.ok
             ? getFriendlyEmbeddedSignupErrorMessage(json.error)
-            : "Nao foi possivel concluir a conexao com a Meta."
+            : "Não foi possível concluir a conexão com a Meta."
         )
       }
 
       setEventMessage(
-        `Conexao atualizada para ${json.data.displayPhoneNumber} com status ${json.data.status}.`
+        `Conexão atualizada para ${json.data.displayPhoneNumber} com status ${json.data.status}.`
       )
-      toast.success("Conexao WhatsApp Business atualizada com sucesso.")
+      toast.success("Conexão do WhatsApp Business atualizada com sucesso.")
 
       if (onConnectionUpdated) {
         await onConnectionUpdated()
@@ -421,7 +421,7 @@ export function EmbeddedSignupButton({
       const message =
         error instanceof Error
           ? error.message
-          : "Nao foi possivel concluir o Cadastro Incorporado da Meta."
+          : "Não foi possível concluir o Cadastro Incorporado da Meta."
 
       toast.error(message)
     } finally {
@@ -433,12 +433,12 @@ export function EmbeddedSignupButton({
     const signupConfig = signupConfigRef.current
 
     if (sdkState === "error") {
-      toast.error(sdkError ?? "O SDK da Meta nao esta disponivel.")
+      toast.error(sdkError ?? "O SDK da Meta não está disponível.")
       return
     }
 
     if (sdkState !== "ready" || !window.FB || !signupConfig) {
-      toast.error("O SDK da Meta ainda esta carregando.")
+      toast.error("O SDK da Meta ainda está carregando.")
       return
     }
 
@@ -484,8 +484,8 @@ export function EmbeddedSignupButton({
               Conectar com WhatsApp Business
             </h3>
             <p className="mt-1 max-w-3xl text-sm text-slate-600">
-              Use o fluxo oficial da Meta para conectar o numero da sua loja ao
-              Olyon com seguranca.
+              Use o fluxo oficial da Meta para conectar o número da sua loja ao
+              Olyon com segurança.
             </p>
           </div>
         </div>
@@ -515,14 +515,14 @@ export function EmbeddedSignupButton({
         </Button>
 
         <p className="text-sm text-slate-500">
-          Para conectar, use uma conta que tenha permissao de administrador no
-          Gerenciador de Negocios/WhatsApp Business da Meta.
+          Para conectar, use uma conta que tenha permissão de administrador no
+          Gerenciador de Negócios/WhatsApp Business da Meta.
         </p>
       </div>
 
       <p className="mt-3 text-sm text-slate-500">
-        O Olyon nao pre-seleciona um portfolio empresarial. A Meta exibe apenas
-        portfolios e contas elegiveis para este app.
+        O Olyon não pré-seleciona um portfólio empresarial. A Meta exibe apenas
+        portfólios e contas elegíveis para este app.
       </p>
 
       {sdkError ? (

@@ -11,18 +11,18 @@ export default function ScheduleStatusCard({
   return (
     <DashboardCard
       title="Status da agenda"
-      actionLabel="Ver horarios"
+      actionLabel="Ver horários"
       actionHref="/horarios-de-atendimento"
     >
       <div className="space-y-4">
         <div className="flex items-center justify-between text-sm text-slate-600">
-          <span>Horarios livres hoje</span>
+          <span>Horários livres hoje</span>
           <span className="font-semibold text-emerald-600">
             {status.openSlotsToday}
           </span>
         </div>
         <div className="flex items-center justify-between text-sm text-slate-600">
-          <span>Horarios bloqueados</span>
+          <span>Horários bloqueados</span>
           <span className="font-semibold text-slate-900">
             {status.blockedSlotsToday}
           </span>

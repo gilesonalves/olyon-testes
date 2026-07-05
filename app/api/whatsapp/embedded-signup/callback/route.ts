@@ -12,6 +12,7 @@ import {
   MetaWebhookSubscriptionError,
   subscribeWabaToApp,
 } from "@/lib/whatsapp/meta-webhook-subscription"
+import { ensureDefaultWhatsAppTemplatesForStore } from "@/lib/whatsapp/template-provisioning"
 import { whatsAppEmbeddedSignupCallbackSchema } from "@/lib/validators/whatsapp-embedded-signup"
 
 export const runtime = "nodejs"
@@ -298,6 +299,23 @@ export async function POST(req: Request) {
       }
 
       throw error
+    }
+
+    try {
+      const provisioningResult =
+        await ensureDefaultWhatsAppTemplatesForStore(authResult.storeId)
+
+      if (provisioningResult.hasErrors) {
+        console.warn("whatsapp template provisioning failed", {
+          storeId: authResult.storeId,
+          connectionId: savedConnection.id,
+        })
+      }
+    } catch {
+      console.warn("whatsapp template provisioning failed", {
+        storeId: authResult.storeId,
+        connectionId: savedConnection.id,
+      })
     }
 
     return success(

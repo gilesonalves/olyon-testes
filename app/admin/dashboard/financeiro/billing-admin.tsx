@@ -139,7 +139,7 @@ function StoreActions({
         disabled={disabled}
         onClick={() => onMarkPaid(store)}
       >
-        Marcar pago
+        Marcar como pago
       </Button>
       <Button
         type="button"
@@ -149,7 +149,7 @@ function StoreActions({
         disabled={disabled}
         onClick={() => onManage(store)}
       >
-        Gerenciar
+        Editar assinatura
       </Button>
     </div>
   )
@@ -474,7 +474,7 @@ export function BillingAdmin() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="w-full max-w-md space-y-2">
           <div className="flex items-center justify-between gap-3">
-            <Label htmlFor="billing-search">Buscar loja ou owner</Label>
+            <Label htmlFor="billing-search">Buscar loja ou proprietário</Label>
             <p className="text-xs text-muted-foreground sm:hidden">
               {visibleStores.length} de {stores.length} lojas
             </p>
@@ -483,7 +483,7 @@ export function BillingAdmin() {
             id="billing-search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Nome da loja, owner ou e-mail"
+            placeholder="Nome da loja, proprietário ou e-mail"
           />
         </div>
 
@@ -626,7 +626,7 @@ export function BillingAdmin() {
 
                   <div className="mt-4 border-t border-gray-200 pt-3">
                     <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                      Owner
+                      Proprietário
                     </p>
                     {store.owner ? (
                       <div className="mt-1">
@@ -638,7 +638,7 @@ export function BillingAdmin() {
                         </p>
                       </div>
                     ) : (
-                      <p className="mt-1 text-sm text-gray-500">Sem owner</p>
+                      <p className="mt-1 text-sm text-gray-500">Sem proprietário</p>
                     )}
                   </div>
 
@@ -683,7 +683,7 @@ export function BillingAdmin() {
                           </dd>
                         </div>
                         <div className="flex items-center justify-between gap-3">
-                          <dt className="text-gray-500">Próximo</dt>
+                          <dt className="text-gray-500">Próximo vencimento</dt>
                           <dd className="whitespace-nowrap font-medium text-gray-900">
                             {formatDate(store.nextDueAt, billingTimeZone)}
                           </dd>
@@ -733,7 +733,7 @@ export function BillingAdmin() {
                     Loja
                   </th>
                   <th className="whitespace-nowrap px-4 py-3 font-semibold">
-                    Owner
+                    Proprietário
                   </th>
                   <th className="whitespace-nowrap px-4 py-3 font-semibold">
                     Status
@@ -789,7 +789,7 @@ export function BillingAdmin() {
                             </p>
                           </>
                         ) : (
-                          <span className="text-gray-500">Sem owner</span>
+                          <span className="text-gray-500">Sem proprietário</span>
                         )}
                       </td>
                       <td className="px-4 py-3.5">
@@ -868,7 +868,7 @@ export function BillingAdmin() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Gerenciar assinatura</DialogTitle>
+            <DialogTitle>Editar assinatura</DialogTitle>
             <DialogDescription>{manageStore?.name}</DialogDescription>
           </DialogHeader>
 

@@ -80,7 +80,7 @@ const data: {
           url: "/agenda-online",
         },
         {
-          title: "Horarios de atendimento",
+          title: "Horários de atendimento",
           url: "/horarios-de-atendimento",
         },
       ],
@@ -96,11 +96,11 @@ const data: {
       ],
     },
     {
-      title: "Servicos",
+      title: "Serviços",
       url: "#",
       items: [
         {
-          title: "Servicos",
+          title: "Serviços",
           url: "/servicos",
         },
       ],
@@ -110,7 +110,7 @@ const data: {
       url: "#",
       items: [
         {
-          title: "Entradas/Saidas",
+          title: "Entradas/Saídas",
           url: "/entradas-saidas",
         },
         {
@@ -132,7 +132,7 @@ const data: {
       url: "#",
       items: [
         {
-          title: "Usuarios",
+          title: "Usuários",
           url: "/usuarios",
         },
         {
@@ -142,7 +142,7 @@ const data: {
       ],
     },
     {
-      title: "Configuracoes",
+      title: "Configurações",
       url: "#",
       items: [
         {
@@ -150,7 +150,7 @@ const data: {
           url: "/configuracoes/loja",
         },
         {
-          title: "Configuracoes do Bot",
+          title: "Configurações do Bot",
           url: "/configuracoes/bot",
         },
         {

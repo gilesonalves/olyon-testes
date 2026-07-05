@@ -1,6 +1,8 @@
 # PROJECT_STATUS.md
 
-**Data de ultima atualizacao:** 4 de julho de 2026
+**Data de ultima atualizacao:** 5 de julho de 2026
+
+- Ajuste fino de acentuação e português em textos visíveis ao usuário concluído, sem alteração de lógica, enums, rotas ou comandos técnicos.
 
 ## Status geral do projeto Olyon
 
@@ -1411,23 +1413,26 @@ Validacao:
 
 Escopo implementado:
 
-- somente `Appointment.source = WHATSAPP`
+- `Appointment.source = WHATSAPP`, `WEB` e `ADMIN`
 - lembretes `ONE_HOUR` e `FIFTEEN_MINUTES`
 - `Appointment.startAt` como fonte final, com `scheduledFor` calculado em tempo absoluto
 - timezone usado apenas para formatar os parametros visiveis do template
 - appointments `SCHEDULED` e `CONFIRMED` elegiveis; `CANCELED`, `DONE` e `NO_SHOW` ficam fora
-- WEB e ADMIN permanecem fora do MVP ate existir normalizacao de telefone e consentimento
+- o destinatario e normalizado para o formato brasileiro com DDI 55; numeros internacionais ficam fora deste MVP
+- o telefone informado pelo cliente ou pela loja e usado para o lembrete; consentimento explicito por canal permanece fora desta etapa
 
 Persistencia e idempotencia:
 
 - criada a model `AppointmentReminder` com status `PENDING`, `PROCESSING`, `SENT`, `FAILED` e `SKIPPED`
 - migration `20260703165408_add_appointment_reminders` criada e aplicada
 - a chave unica `appointmentId + kind + appointmentStartAt` impede duplicidade entre execucoes concorrentes e permite uma nova agenda de lembretes quando o horario muda
-- o reconciliador busca appointments ativos nas proximas 24 horas, cria os dois lembretes com `createMany + skipDuplicates` e marca janelas ja perdidas como `SKIPPED`
+- o reconciliador busca appointments ativos de qualquer origem nas proximas 24 horas, ignora telefone invalido, cria os dois lembretes com `createMany + skipDuplicates` e marca janelas ja perdidas como `SKIPPED`
 - o dispatcher processa ate 50 vencidos por execucao e faz claim atomico por transicao condicional `PENDING -> PROCESSING`
-- antes do envio, o dispatcher recarrega o appointment e revalida source, status, snapshot de `startAt`, escopo da Store e telefone
-- cancelamento, remarcacao, source fora do MVP, telefone invalido e lembrete atrasado ficam registrados como `SKIPPED`
-- falha de conexao, configuracao ou Meta fica registrada como `FAILED`, com incremento de `attempts` e erro resumido
+- antes do envio, o dispatcher recarrega o appointment e revalida status, snapshot de `startAt`, escopo da Store e telefone
+- cancelamento, conclusao, no-show, remarcacao, telefone invalido e lembrete atrasado ficam registrados como `SKIPPED`
+- ausencia de conexao WhatsApp ativa fica `SKIPPED` com `STORE_WHATSAPP_NOT_CONNECTED`
+- template local nao aprovado fica `SKIPPED` com `TEMPLATE_NOT_APPROVED`
+- falha de configuracao fallback ou de chamada da Meta fica registrada como `FAILED`, com incremento de `attempts` e erro resumido
 
 Envio e rastreabilidade:
 
@@ -1437,6 +1442,7 @@ Envio e rastreabilidade:
 - os templates de 1h e 15min sao configurados separadamente por env e usam BODY posicional `{{1}} = nome do cliente` e `{{2}} = data/hora formatada`
 - envs: `WHATSAPP_APPOINTMENT_REMINDER_ONE_HOUR_TEMPLATE_NAME`, `WHATSAPP_APPOINTMENT_REMINDER_FIFTEEN_MINUTES_TEMPLATE_NAME` e `WHATSAPP_APPOINTMENT_REMINDER_TEMPLATE_LANGUAGE`
 - envio aceito pela Meta persiste `ConversationMessage OUT` com origem `appointment_reminder`, template, reminder, appointment e `providerMessageId`
+- para appointments `WEB` e `ADMIN`, a conversa WhatsApp e criada ou reaproveitada por `storeId + telefone normalizado`, permitindo exibir o lembrete em `/atendimento`
 - se a Meta aceitar o envio e apenas a persistencia da `ConversationMessage` falhar, o outbox continua `SENT` para nao reenviar uma mensagem possivelmente entregue; a falha local fica registrada
 - callbacks `sent`, `delivered`, `read` e `failed` continuam atualizando o payload da `ConversationMessage` e agora tambem atualizam `AppointmentReminder.providerStatus/statusReason`
 - nenhum log novo inclui `accessToken`
@@ -1454,7 +1460,7 @@ Riscos operacionais registrados:
 - ambos os templates precisam existir e estar aprovados em cada WABA usada
 - o scheduler precisa ter frequencia por minuto e monitoramento de falhas
 - o outbox nao faz retry automatico de `FAILED` ou `PROCESSING`, evitando duplicidade em resultados de rede incertos neste MVP
-- WEB/ADMIN continuam explicitamente fora por telefone e consentimento
+- consentimento explicito por canal pode ser modelado em uma etapa posterior; nenhum campo foi inventado neste MVP
 
 Validacao executada:
 
@@ -1462,7 +1468,9 @@ Validacao executada:
 - `yarn prisma generate`
 - `yarn eslint` sem erros; permanecem 2 warnings legados nos controllers de cadastro e recuperacao de senha
 - `yarn tsc --noEmit --pretty false --incremental false`
+- teste isolado da normalizacao brasileira cobriu telefone formatado, 10/11 digitos, DDI 55, vazio e numero curto
 - `git diff --check`
+- `yarn build`
 
 ---
 
@@ -1517,10 +1525,100 @@ Fora do MVP:
 
 ---
 
+## 9.4 Provisionamento automático de templates WhatsApp por loja
+
+Persistência e isolamento:
+
+- criada a model `WhatsAppTemplateProvision`, ligada à `Store` e opcionalmente à `WhatsAppConnection`
+- a chave única `storeId + kind + language` mantém os dois templates idempotentes e isolados por loja
+- a migration `20260705120000_add_whatsapp_template_provisions` cria os status locais `NOT_CREATED`, `PENDING`, `APPROVED`, `REJECTED`, `PAUSED`, `DISABLED`, `UNKNOWN` e `ERROR`
+- troca de WABA redefine o provisionamento local antes de qualquer novo envio
+- `accessToken` continua apenas no backend e erros persistidos passam por sanitização
+
+Provisionamento Meta:
+
+- o Olyon consulta todos os templates paginados da WABA antes de criar qualquer item
+- os templates padrão são `lembrete_agendamento_1h` e `lembrete_agendamento_15min`, em `pt_BR`, categoria `UTILITY`
+- a criação usa Graph API configurada por `META_GRAPH_API_VERSION` com fallback `v25.0`
+- o BODY usa parâmetros nomeados `cliente_nome`, `servico_nome`, `profissional_nome`, `data_agendamento` e `horario_agendamento`, incluindo exemplos exigidos pela Meta
+- não são criados header, footer ou botões
+- templates encontrados são sincronizados localmente; ausentes são criados uma única vez por tentativa concorrente
+- os templates permanecem sujeitos à análise e aprovação da Meta
+
+Integração e operação:
+
+- depois de salvar a conexão e concluir `subscribed_apps`, o Embedded Signup tenta provisionar os templates
+- falha de template não desfaz a conexão e não transforma o callback em erro 500; fica registrada como `ERROR`
+- `GET /api/store/current/whatsapp/templates` retorna o status persistido dos dois templates
+- `POST /api/store/current/whatsapp/templates/provision` provisiona ou reconcilia templates da loja da sessão
+- `POST /api/store/current/whatsapp/templates/sync` sincroniza status com a Meta
+- `POST /api/admin/stores/[id]/whatsapp/templates/provision` oferece retry restrito ao `SUPER_ADMIN`
+- a listagem técnica completa da WABA usada no teste manual foi preservada em `GET /api/store/current/whatsapp/templates/meta`
+- `/configuracoes/whatsapp` mostra cards, status, última sincronização, reprovação/erro e ações manuais
+
+Lembretes:
+
+- quando existe provisionamento local, o dispatcher só envia se o template correspondente estiver `APPROVED`
+- template local não aprovado termina como `SKIPPED` com `statusReason = TEMPLATE_NOT_APPROVED`, sem chamada de envio à Meta
+- template aprovado usa os cinco parâmetros nomeados do novo contrato
+- os envs `WHATSAPP_APPOINTMENT_REMINDER_*` permanecem apenas como fallback administrativo quando ainda não existe registro de provisionamento para a loja
+
+Deploy:
+
+- a migration precisa ser aplicada no banco de cada ambiente antes do deploy
+- após provisionar, a loja deve acompanhar a aprovação da Meta e sincronizar o status antes de esperar envios automáticos
+
+Validação executada:
+
+- `yarn prisma generate`
+- `yarn prisma validate`
+- `yarn eslint` sem erros; permanecem 2 warnings legados nos controllers de cadastro e recuperação de senha
+- `yarn tsc --noEmit --pretty false --incremental false`
+- teste isolado do payload de criação confirmou `parameter_format = NAMED` e `body_text_named_params`
+- `git diff --check`
+- `yarn build`
+
+---
+
+## 9.5 Nome real no agendamento WhatsApp e atualização automática da agenda
+
+Nome do cliente:
+
+- novos appointments criados pelo WhatsApp usam o melhor nome disponível, em vez de gravar diretamente `Cliente WhatsApp`
+- a resolução prioriza nome real do draft, cliente ativo da mesma loja identificado pelo telefone, nome salvo no contexto da conversa e `contacts[].profile.name` do payload Meta
+- valores genéricos e valores compostos apenas por telefone não são tratados como nome real
+- quando draft ou contexto ainda não possuem nome real, um nome melhor pode ser persistido sem sobrescrever informação válida existente
+- o fallback `Cliente WhatsApp` permanece apenas quando nenhuma fonte confiável possui nome
+- a criação e a remarcação do `Appointment` repetem a resolução imediatamente antes de persistir
+- `AppointmentReminder` continua consumindo `Appointment.customerName`, portanto novos lembretes usam o mesmo nome resolvido
+- não houve alteração de schema nem migration; registros antigos podem continuar com `Cliente WhatsApp`
+
+Agenda:
+
+- `/agendamentos` refaz a consulta da data selecionada a cada 30 segundos
+- o polling é silencioso e não ativa o skeleton da tela, evitando flicker
+- filtros de data, profissional e status permanecem intactos
+- polling é pausado com modais, conflitos ou salvamentos em andamento, preservando edição e remarcação
+- a consulta automática é ignorada quando a aba do navegador está oculta
+- foi adicionado botão discreto `Atualizar` e indicação do horário da última atualização
+
+Validação executada:
+
+- teste isolado da resolução de nome cobriu prioridade, fallback, telefone e profile Meta
+- `yarn eslint` sem erros; permanecem 2 warnings legados nos controllers de cadastro e recuperação de senha
+- `yarn tsc --noEmit --pretty false --incremental false`
+- `git diff --check`
+- `yarn build`
+
+---
+
 ## 10. Historico resumido
 
 | Data | Mudanca |
 |------|---------|
+| 05/07/2026 | Agendamentos: nome real do profile/cliente no fluxo WhatsApp e polling silencioso de 30 segundos em `/agendamentos` |
+| 05/07/2026 | Lembretes: cobertura ampliada para appointments WHATSAPP, WEB e ADMIN, com normalização brasileira de telefone e skips explícitos para conexão/template |
+| 05/07/2026 | WhatsApp: provisionamento automático e idempotente dos templates de lembrete por loja/WABA, status persistido, UI de acompanhamento e bloqueio de envio sem aprovação |
 | 04/07/2026 | Financeiro das lojas: billing mensal manual, vencimento automatico por `dueDay`, historico de pagamentos, painel SUPER_ADMIN, visao da loja e bloqueio seguro de lojas suspensas |
 | 03/07/2026 | WhatsApp: MVP de lembretes automaticos 1h/15min para Appointment WHATSAPP, com outbox persistente idempotente, template Meta, ConversationMessage OUT, cron protegido e callbacks de delivery |
 | 01/07/2026 | Login e owner auditados: Jhonatan possui bcrypt, Membership OWNER e Store ativa; admin ganhou edicao de dados e redefinicao segura da senha do proprietario atual |

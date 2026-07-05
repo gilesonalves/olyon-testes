@@ -94,7 +94,7 @@ export default function NewStorePage() {
             )}
           </div>
 
-          {/* Owner */}
+          {/* Proprietário */}
           <div className="space-y-2">
             <Label htmlFor="ownerName">Nome do dono</Label>
             <Input

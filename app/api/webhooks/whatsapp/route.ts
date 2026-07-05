@@ -67,6 +67,14 @@ import {
   type MetaOutboundResult,
   type WhatsAppOutboundMessage,
 } from "@/lib/whatsapp/meta-outbound"
+import {
+  extractWhatsAppProfileName,
+  getUsableWhatsAppCustomerName,
+  getWhatsAppCustomerNameFromConversationContext,
+  resolveWhatsAppCustomerName,
+  shouldReplaceWhatsAppCustomerName,
+} from "@/lib/whatsapp/customer-name"
+import { normalizeBrazilianPhoneForWhatsApp } from "@/lib/whatsapp/phone"
 
 export const runtime = "nodejs"
 
@@ -190,6 +198,49 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
 
 function toOptionalString(value: unknown) {
   return typeof value === "string" && value.length > 0 ? value : null
+}
+
+async function findClientNameForWhatsAppContact(params: {
+  db: Prisma.TransactionClient
+  storeId: string
+  phone: string
+}) {
+  const normalizedPhone = normalizeBrazilianPhoneForWhatsApp(params.phone)
+
+  if (!normalizedPhone) {
+    return null
+  }
+
+  const localPhone = normalizedPhone.slice(2)
+  const searchSuffix = localPhone.slice(-4)
+  const clients = await params.db.client.findMany({
+    where: {
+      storeId: params.storeId,
+      isActive: true,
+      OR: [
+        { phone: { contains: searchSuffix } },
+        { secondaryPhone: { contains: searchSuffix } },
+      ],
+    },
+    orderBy: {
+      updatedAt: "desc",
+    },
+    take: 50,
+    select: {
+      name: true,
+      phone: true,
+      secondaryPhone: true,
+    },
+  })
+
+  const matchedClient = clients.find(
+    (client) =>
+      normalizeBrazilianPhoneForWhatsApp(client.phone) === normalizedPhone ||
+      normalizeBrazilianPhoneForWhatsApp(client.secondaryPhone) ===
+        normalizedPhone
+  )
+
+  return getUsableWhatsAppCustomerName(matchedClient?.name)
 }
 
 function toOptionalBoolean(value: unknown) {
@@ -964,6 +1015,7 @@ function buildBotContext(context: unknown): BotConversationContext {
 
   return {
     timezone: typeof record.timezone === "string" ? record.timezone : null,
+    customerName: getWhatsAppCustomerNameFromConversationContext(record),
     mainMenuShown: record.mainMenuShown === true,
     priceListPage:
       typeof record.priceListPage === "number" &&
@@ -1653,6 +1705,75 @@ async function processIncomingWhatsAppMessage(
 
       const timeZone = resolveConversationTimezone(conversation.context)
       let conversationContext = getConversationContextRecord(conversation.context)
+      const activeDraftForCustomerName = await tx.appointmentDraft.findFirst({
+        where: {
+          storeId: currentStoreId,
+          conversationId: conversation.id,
+          status: "DRAFT",
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+        select: {
+          id: true,
+          customerName: true,
+        },
+      })
+      const profileCustomerName = extractWhatsAppProfileName(
+        incomingMessage.raw
+      )
+      const clientCustomerName = await findClientNameForWhatsAppContact({
+        db: tx,
+        storeId: currentStoreId,
+        phone: incomingMessage.from,
+      })
+      const conversationCustomerName =
+        getWhatsAppCustomerNameFromConversationContext(conversationContext)
+      const resolvedCustomerName = resolveWhatsAppCustomerName({
+        draftName: activeDraftForCustomerName?.customerName,
+        clientName: clientCustomerName,
+        conversationName: conversationCustomerName,
+        profileName: profileCustomerName,
+      })
+
+      if (
+        activeDraftForCustomerName &&
+        shouldReplaceWhatsAppCustomerName(
+          activeDraftForCustomerName.customerName,
+          resolvedCustomerName
+        )
+      ) {
+        await tx.appointmentDraft.update({
+          where: {
+            id: activeDraftForCustomerName.id,
+          },
+          data: {
+            customerName: resolvedCustomerName,
+          },
+        })
+      }
+
+      if (
+        shouldReplaceWhatsAppCustomerName(
+          conversationCustomerName,
+          resolvedCustomerName
+        )
+      ) {
+        conversationContext = {
+          ...conversationContext,
+          customerName: resolvedCustomerName,
+        }
+
+        await tx.conversation.update({
+          where: {
+            id: conversation.id,
+          },
+          data: {
+            context: toJsonValue(conversationContext),
+          },
+        })
+      }
+
       const effectiveIncomingText = getEffectiveInboundText(
         incomingMessage.text,
         incomingMessage.selectedOptionId
@@ -2764,6 +2885,8 @@ async function processIncomingWhatsAppMessage(
             conversationId: conversation.id,
             status: "DRAFT",
             channel: "WHATSAPP",
+            customerName:
+              getUsableWhatsAppCustomerName(resolvedCustomerName) ?? undefined,
             customerPhone: incomingMessage.from,
           },
         })
@@ -3914,13 +4037,23 @@ async function processIncomingWhatsAppMessage(
               ? { ...(originalAppointment.metadata as Record<string, unknown>) }
               : {}
 
+          const appointmentCustomerName = resolveWhatsAppCustomerName({
+            draftName: draft.customerName,
+            clientName: clientCustomerName,
+            conversationName:
+              getWhatsAppCustomerNameFromConversationContext(
+                conversationContext
+              ),
+            profileName: profileCustomerName,
+            collectedName: originalAppointment.customerName,
+          })
           const newAppointment = await tx.appointment.create({
             data: {
               storeId: currentStoreId,
               status: "SCHEDULED",
               serviceId: draft.service.id,
               staffMembershipId: draft.staffMembershipId,
-              customerName: draft.customerName?.trim() || originalAppointment.customerName,
+              customerName: appointmentCustomerName,
               customerPhone: draft.customerPhone ?? originalAppointment.customerPhone ?? incomingMessage.from,
               customerEmail: draft.customerEmail ?? originalAppointment.customerEmail ?? undefined,
               startAt: draft.startAt,
@@ -3964,7 +4097,7 @@ async function processIncomingWhatsAppMessage(
           await clearSchedulingSelectionContext()
           createdAppointmentId = newAppointment.id
           await appendBotReply(
-            `Agendamento remarcado! ${draft.service.name} com ${draft.membership.user.name} em ${formatDateTimeForBot(newAppointment.startAt, timeZone)}.`,
+            `Agendamento remarcado${getUsableWhatsAppCustomerName(appointmentCustomerName) ? `, ${appointmentCustomerName}` : ""}! ${draft.service.name} com ${draft.membership.user.name} em ${formatDateTimeForBot(newAppointment.startAt, timeZone)}.`,
             {
               reason: "APPOINTMENT_RESCHEDULED",
               appointmentId: newAppointment.id,
@@ -4018,13 +4151,23 @@ async function processIncomingWhatsAppMessage(
             continue
           }
 
+          const appointmentCustomerName = resolveWhatsAppCustomerName({
+            draftName: draft.customerName,
+            clientName: clientCustomerName,
+            conversationName:
+              getWhatsAppCustomerNameFromConversationContext(
+                conversationContext
+              ),
+            profileName: profileCustomerName,
+            collectedName: resolvedCustomerName,
+          })
           const appointment = await tx.appointment.create({
             data: {
               storeId: currentStoreId,
               status: "SCHEDULED",
               serviceId: draft.service.id,
               staffMembershipId: draft.staffMembershipId,
-              customerName: draft.customerName?.trim() || "Cliente WhatsApp",
+              customerName: appointmentCustomerName,
               customerPhone: draft.customerPhone ?? incomingMessage.from,
               customerEmail: draft.customerEmail ?? undefined,
               startAt: draft.startAt,
@@ -4052,7 +4195,7 @@ async function processIncomingWhatsAppMessage(
 
           createdAppointmentId = appointment.id
           await appendBotReply(
-            `Agendamento confirmado! ${draft.service.name} com ${draft.membership.user.name} em ${formatDateTimeForBot(appointment.startAt, timeZone)}.`,
+            `Agendamento confirmado${getUsableWhatsAppCustomerName(appointmentCustomerName) ? `, ${appointmentCustomerName}` : ""}! ${draft.service.name} com ${draft.membership.user.name} em ${formatDateTimeForBot(appointment.startAt, timeZone)}.`,
             {
               appointmentId: appointment.id,
               staffMembershipId: draft.staffMembershipId,

@@ -1,8 +1,9 @@
 import { z } from "zod"
 
-const META_GRAPH_API_VERSION = "v25.0"
+const DEFAULT_META_GRAPH_API_VERSION = "v25.0"
 const META_GRAPH_TIMEOUT_MS = 10_000
 const RESPONSE_PREVIEW_MAX_LENGTH = 500
+const MAX_TEMPLATE_LIST_PAGES = 20
 
 const metaGraphErrorSchema = z
   .object({
@@ -31,6 +32,7 @@ const metaTemplateSchema = z
     status: z.string().min(1),
     category: z.string().min(1),
     language: z.string().min(1),
+    rejected_reason: z.string().nullable().optional(),
     components: z.array(metaTemplateComponentSchema).default([]),
   })
   .passthrough()
@@ -38,6 +40,23 @@ const metaTemplateSchema = z
 const metaTemplatesResponseSchema = z
   .object({
     data: z.array(metaTemplateSchema),
+    paging: z
+      .object({
+        cursors: z
+          .object({
+            after: z.string().optional(),
+          })
+          .optional(),
+      })
+      .optional(),
+  })
+  .passthrough()
+
+const metaTemplateCreationResponseSchema = z
+  .object({
+    id: z.string().optional(),
+    status: z.string().optional(),
+    category: z.string().optional(),
   })
   .passthrough()
 
@@ -82,9 +101,31 @@ export type MetaWhatsAppTemplateSendComponent = {
   parameters?: MetaWhatsAppTemplateTextParameter[]
 }
 
+export type MetaWhatsAppTemplateNamedParameterExample = {
+  param_name: string
+  example: string
+}
+
+export type MetaWhatsAppTemplateCreationComponent = {
+  type: "BODY"
+  text: string
+  example: {
+    body_text_named_params: MetaWhatsAppTemplateNamedParameterExample[]
+  }
+}
+
 export type ListMetaWhatsAppTemplatesParams = {
   wabaId: string
   accessToken: string
+}
+
+export type CreateMetaWhatsAppTemplateParams = {
+  wabaId: string
+  accessToken: string
+  name: string
+  language: string
+  category: "UTILITY"
+  components: MetaWhatsAppTemplateCreationComponent[]
 }
 
 export type SendMetaWhatsAppTemplateParams = {
@@ -103,6 +144,13 @@ export type MetaWhatsAppTemplateSendResult = {
   graphMessageId: string | null
   graphError: MetaGraphErrorSummary | null
   responsePreview: string | null
+}
+
+export type MetaWhatsAppTemplateCreationResult = {
+  id: string | null
+  status: string | null
+  category: string | null
+  graphResponse: unknown
 }
 
 export class MetaWhatsAppTemplatesError extends Error {
@@ -142,8 +190,11 @@ function buildGraphUrl(
   query?: Record<string, string | null | undefined>
 ) {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`
+  const graphApiVersion =
+    process.env.META_GRAPH_API_VERSION?.trim() ||
+    DEFAULT_META_GRAPH_API_VERSION
   const url = new URL(
-    `https://graph.facebook.com/${META_GRAPH_API_VERSION}${normalizedPath}`
+    `https://graph.facebook.com/${graphApiVersion}${normalizedPath}`
   )
 
   if (query) {
@@ -260,19 +311,116 @@ export async function listMetaWhatsAppTemplates(
     })
   }
 
-  const url = buildGraphUrl(`/${encodeURIComponent(wabaId)}/message_templates`, {
-    fields: "id,name,status,category,language,components",
-    limit: "100",
-  })
+  const templates: MetaWhatsAppTemplate[] = []
+  let after: string | null = null
+
+  for (let page = 0; page < MAX_TEMPLATE_LIST_PAGES; page += 1) {
+    const url = buildGraphUrl(`/${encodeURIComponent(wabaId)}/message_templates`, {
+      fields:
+        "id,name,status,category,language,rejected_reason,components",
+      limit: "100",
+      after,
+    })
+    const { response, responseJson, responsePreview } = await fetchMetaGraph(
+      url,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      },
+      "Timeout ao listar templates WhatsApp na Meta Graph API."
+    )
+    const graphError = summarizeGraphError(responseJson)
+
+    if (!response.ok) {
+      throw new MetaWhatsAppTemplatesError(
+        getGraphErrorMessage(
+          graphError,
+          `A Meta retornou status ${response.status} ao listar templates WhatsApp.`
+        ),
+        {
+          statusCode: 502,
+          metaStatusCode: response.status,
+          graphError,
+          responsePreview,
+        }
+      )
+    }
+
+    const parsed = metaTemplatesResponseSchema.safeParse(responseJson)
+
+    if (!parsed.success) {
+      throw new MetaWhatsAppTemplatesError(
+        "A Meta respondeu a lista de templates em formato inesperado.",
+        {
+          statusCode: 502,
+          metaStatusCode: response.status,
+          graphError,
+          responsePreview,
+        }
+      )
+    }
+
+    templates.push(...parsed.data.data)
+    after = parsed.data.paging?.cursors?.after ?? null
+
+    if (!after) {
+      return templates
+    }
+  }
+
+  throw new MetaWhatsAppTemplatesError(
+    "A listagem de templates da Meta excedeu o limite seguro de paginacao.",
+    { statusCode: 502 }
+  )
+}
+
+export async function createMetaWhatsAppTemplate(
+  params: CreateMetaWhatsAppTemplateParams
+): Promise<MetaWhatsAppTemplateCreationResult> {
+  const wabaId = params.wabaId.trim()
+  const accessToken = params.accessToken.trim()
+  const name = params.name.trim()
+  const language = params.language.trim()
+
+  if (!wabaId) {
+    throw new MetaWhatsAppTemplatesError("WABA ID nao informado.", {
+      statusCode: 400,
+    })
+  }
+
+  if (!accessToken) {
+    throw new MetaWhatsAppTemplatesError("Access token nao informado.", {
+      statusCode: 400,
+    })
+  }
+
+  if (!name || !language) {
+    throw new MetaWhatsAppTemplatesError(
+      "Nome e idioma do template sao obrigatorios.",
+      { statusCode: 400 }
+    )
+  }
+
+  const url = buildGraphUrl(`/${encodeURIComponent(wabaId)}/message_templates`)
   const { response, responseJson, responsePreview } = await fetchMetaGraph(
     url,
     {
-      method: "GET",
+      method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
       },
+      body: JSON.stringify({
+        name,
+        language,
+        category: params.category,
+        parameter_format: "NAMED",
+        components: params.components,
+      }),
     },
-    "Timeout ao listar templates WhatsApp na Meta Graph API."
+    "Timeout ao criar template WhatsApp na Meta Graph API."
   )
   const graphError = summarizeGraphError(responseJson)
 
@@ -280,7 +428,7 @@ export async function listMetaWhatsAppTemplates(
     throw new MetaWhatsAppTemplatesError(
       getGraphErrorMessage(
         graphError,
-        `A Meta retornou status ${response.status} ao listar templates WhatsApp.`
+        `A Meta retornou status ${response.status} ao criar o template WhatsApp.`
       ),
       {
         statusCode: 502,
@@ -291,11 +439,11 @@ export async function listMetaWhatsAppTemplates(
     )
   }
 
-  const parsed = metaTemplatesResponseSchema.safeParse(responseJson)
+  const parsed = metaTemplateCreationResponseSchema.safeParse(responseJson)
 
   if (!parsed.success) {
     throw new MetaWhatsAppTemplatesError(
-      "A Meta respondeu a lista de templates em formato inesperado.",
+      "A Meta respondeu a criacao do template em formato inesperado.",
       {
         statusCode: 502,
         metaStatusCode: response.status,
@@ -305,7 +453,12 @@ export async function listMetaWhatsAppTemplates(
     )
   }
 
-  return parsed.data.data
+  return {
+    id: parsed.data.id ?? null,
+    status: parsed.data.status ?? null,
+    category: parsed.data.category ?? null,
+    graphResponse: responseJson,
+  }
 }
 
 export async function sendMetaWhatsAppTemplate(

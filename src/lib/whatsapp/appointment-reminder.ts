@@ -6,19 +6,25 @@ import {
 import {
   AppointmentReminderKind,
   Prisma,
+  WhatsAppTemplateProvisionStatus,
   prisma,
 } from "@/lib/prisma"
 import {
+  formatDateKeyForBot,
   formatDateTimeForBot,
+  getDateKeyInTimeZone,
   getBotTimezone,
+  getTimeKeyInTimeZone,
 } from "@/lib/bot/datetime"
 import { findActiveWhatsAppConnectionByStoreId } from "@/lib/whatsapp/connection"
+import { getProvisionKindForReminder } from "@/lib/whatsapp/template-provisioning"
 
 const DEFAULT_TEMPLATE_LANGUAGE = "pt_BR"
 
 type AppointmentReminderTemplateConfig = {
   name: string
   language: string
+  source: "provisioned" | "environment"
 }
 
 export type AppointmentReminderSendResult =
@@ -32,8 +38,9 @@ export type AppointmentReminderSendResult =
   | {
       ok: false
       statusReason:
-        | "WHATSAPP_CONNECTION_NOT_FOUND"
+        | "STORE_WHATSAPP_NOT_CONNECTED"
         | "REMINDER_TEMPLATE_NOT_CONFIGURED"
+        | "TEMPLATE_NOT_APPROVED"
         | "META_TEMPLATE_SEND_FAILED"
         | "META_TEMPLATE_SEND_ERROR"
       error: string
@@ -79,17 +86,68 @@ export function getAppointmentReminderTemplateConfig(
     config: {
       name: templateName.value,
       language,
+      source: "environment",
     },
   }
 }
 
-export function normalizeWhatsAppReminderRecipient(value: string | null) {
-  if (!value) {
-    return null
+async function resolveAppointmentReminderTemplateConfig(params: {
+  storeId: string
+  kind: AppointmentReminderKind
+  connection: {
+    id: string
+    businessAccountId: string
+  }
+}): Promise<
+  | { ok: true; config: AppointmentReminderTemplateConfig }
+  | {
+      ok: false
+      statusReason: "REMINDER_TEMPLATE_NOT_CONFIGURED" | "TEMPLATE_NOT_APPROVED"
+      error: string
+    }
+> {
+  const provision = await prisma.whatsAppTemplateProvision.findUnique({
+    where: {
+      storeId_kind_language: {
+        storeId: params.storeId,
+        kind: getProvisionKindForReminder(params.kind),
+        language: DEFAULT_TEMPLATE_LANGUAGE,
+      },
+    },
+  })
+
+  if (!provision) {
+    const fallback = getAppointmentReminderTemplateConfig(params.kind)
+
+    return fallback.ok
+      ? fallback
+      : {
+          ok: false,
+          statusReason: "REMINDER_TEMPLATE_NOT_CONFIGURED",
+          error: fallback.error,
+        }
   }
 
-  const digits = value.replace(/\D/g, "")
-  return digits.length >= 8 && digits.length <= 15 ? digits : null
+  if (
+    provision.status !== WhatsAppTemplateProvisionStatus.APPROVED ||
+    provision.connectionId !== params.connection.id ||
+    provision.businessAccountId !== params.connection.businessAccountId
+  ) {
+    return {
+      ok: false,
+      statusReason: "TEMPLATE_NOT_APPROVED",
+      error: `Template ${provision.templateName} não está aprovado para a conexão WhatsApp atual.`,
+    }
+  }
+
+  return {
+    ok: true,
+    config: {
+      name: provision.templateName,
+      language: provision.language,
+      source: "provisioned",
+    },
+  }
 }
 
 function getSendError(result: MetaWhatsAppTemplateSendResult) {
@@ -164,6 +222,7 @@ async function persistReminderConversationMessage(params: {
             kind: "template",
             templateName: params.template.name,
             languageCode: params.template.language,
+            templateSource: params.template.source,
           },
           provider: "meta",
           whatsappConnectionId: params.connection.id,
@@ -193,37 +252,84 @@ export async function sendAppointmentReminderTemplate(params: {
   to: string
   customerName: string
   serviceName: string | null
+  professionalName: string | null
   appointmentStartAt: Date
 }): Promise<AppointmentReminderSendResult> {
-  const templateConfig = getAppointmentReminderTemplateConfig(params.kind)
+  const connection = await findActiveWhatsAppConnectionByStoreId(params.storeId)
+
+  if (!connection) {
+    return {
+      ok: false,
+      statusReason: "STORE_WHATSAPP_NOT_CONNECTED",
+      error: "Conexão WhatsApp ativa e conectada da loja não encontrada.",
+      providerMessageId: null,
+      providerStatus: null,
+    }
+  }
+
+  const templateConfig = await resolveAppointmentReminderTemplateConfig({
+    storeId: params.storeId,
+    kind: params.kind,
+    connection,
+  })
 
   if (!templateConfig.ok) {
     return {
       ok: false,
-      statusReason: "REMINDER_TEMPLATE_NOT_CONFIGURED",
+      statusReason: templateConfig.statusReason,
       error: templateConfig.error,
       providerMessageId: null,
       providerStatus: null,
     }
   }
 
-  const connection = await findActiveWhatsAppConnectionByStoreId(params.storeId)
-
-  if (!connection) {
-    return {
-      ok: false,
-      statusReason: "WHATSAPP_CONNECTION_NOT_FOUND",
-      error: "Conexao WhatsApp ativa da loja nao encontrada.",
-      providerMessageId: null,
-      providerStatus: null,
-    }
-  }
-
   const attemptedAt = new Date()
+  const timeZone = getBotTimezone()
   const formattedStartAt = formatDateTimeForBot(
     params.appointmentStartAt,
-    getBotTimezone()
+    timeZone
   )
+  const provisionedBodyParameters =
+    templateConfig.config.source === "provisioned"
+      ? [
+          {
+            type: "text" as const,
+            parameter_name: "cliente_nome",
+            text: params.customerName,
+          },
+          {
+            type: "text" as const,
+            parameter_name: "servico_nome",
+            text: params.serviceName?.trim() || "Serviço não informado",
+          },
+          {
+            type: "text" as const,
+            parameter_name: "profissional_nome",
+            text: params.professionalName?.trim() || "Profissional não informado",
+          },
+          {
+            type: "text" as const,
+            parameter_name: "data_agendamento",
+            text: formatDateKeyForBot(
+              getDateKeyInTimeZone(params.appointmentStartAt, timeZone)
+            ),
+          },
+          {
+            type: "text" as const,
+            parameter_name: "horario_agendamento",
+            text: getTimeKeyInTimeZone(params.appointmentStartAt, timeZone),
+          },
+        ]
+      : [
+          {
+            type: "text" as const,
+            text: params.customerName,
+          },
+          {
+            type: "text" as const,
+            text: formattedStartAt,
+          },
+        ]
 
   let sendResult: MetaWhatsAppTemplateSendResult
 
@@ -237,16 +343,7 @@ export async function sendAppointmentReminderTemplate(params: {
       components: [
         {
           type: "body",
-          parameters: [
-            {
-              type: "text",
-              text: params.customerName,
-            },
-            {
-              type: "text",
-              text: formattedStartAt,
-            },
-          ],
+          parameters: provisionedBodyParameters,
         },
       ],
     })
