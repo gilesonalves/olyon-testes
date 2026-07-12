@@ -1,6 +1,8 @@
 # PROJECT_STATUS.md
 
-**Data de ultima atualizacao:** 5 de julho de 2026
+**Data de ultima atualizacao:** 12 de julho de 2026
+
+- Embedded Signup WhatsApp/Meta ajustado no `FB.login` para usar `extras.sessionInfoVersion = "3"` e `extras.version = "v4"`, alinhado ao popup oficial da Meta; validacao manual pendente com conta admin e conta externa.
 
 - Ajuste fino de acentuação e português em textos visíveis ao usuário concluído, sem alteração de lógica, enums, rotas ou comandos técnicos.
 
@@ -118,9 +120,11 @@
 [x] Roteamento inbound nativo por `phoneNumberId`
 [x] Onboarding/admin minimo da `WhatsAppConnection` por `Store`
 [x] Base tecnica do Cadastro Incorporado WhatsApp/Meta implementada na tela autenticada da loja
+[x] Embedded Signup WhatsApp/Meta com extras do popup oficial da Meta no `FB.login`
 [x] `/configuracoes/whatsapp` refinada para visao simples da loja com status amigavel e CTA de conexao
 [x] Diagnostico tecnico da `WhatsAppConnection` restrito a `SUPER_ADMIN`, sempre vinculado a uma `Store` da sessao atual
 [ ] Validacao real de coexistencia via Embedded Signup pendente de aprovacao final da Meta
+[ ] Validacao manual do popup Embedded Signup com conta admin e conta externa apos ajuste de extras
 [x] Envio outbound real de texto via Meta Graph API usando a `WhatsAppConnection` da loja
 [x] Teste real store-scoped da conexao Meta/WhatsApp atual da loja
 [x] Check real da conexao Meta/WhatsApp alinhado ao endpoint `GET /v25.0/{phoneNumberId}` ja validado externamente
@@ -1371,6 +1375,13 @@ Validacao executada:
 - `yarn eslint` concluiu sem erros e manteve 2 warnings legados fora do escopo nos controllers de cadastro e recuperacao de senha
 - `yarn tsc --noEmit --pretty false --incremental false` concluiu sem erros
 
+Atualizacao de 12 de julho de 2026:
+
+- o `FB.login` manteve `config_id`, `response_type: "code"`, `override_default_response_type`, `state` e envio para `submitSignupCode(response)`
+- os `extras` foram alinhados ao popup oficial da Meta com `sessionInfoVersion: "3"` e `version: "v4"`
+- objetivo do ajuste: corrigir o popup `Recurso indisponivel` em contas externas/novas antes do callback do Olyon
+- validacao manual pendente com uma conta admin que ja conecta e uma conta externa/nova
+
 ---
 
 ## 9.1 Diagnostico e gerenciamento do owner criado pelo admin
@@ -1616,6 +1627,7 @@ Validação executada:
 
 | Data | Mudanca |
 |------|---------|
+| 12/07/2026 | WhatsApp Embedded Signup: extras do `FB.login` alinhados ao popup oficial da Meta com `sessionInfoVersion: "3"` e `version: "v4"` para validar o erro `Recurso indisponivel` em contas externas |
 | 05/07/2026 | Agendamentos: nome real do profile/cliente no fluxo WhatsApp e polling silencioso de 30 segundos em `/agendamentos` |
 | 05/07/2026 | Lembretes: cobertura ampliada para appointments WHATSAPP, WEB e ADMIN, com normalização brasileira de telefone e skips explícitos para conexão/template |
 | 05/07/2026 | WhatsApp: provisionamento automático e idempotente dos templates de lembrete por loja/WABA, status persistido, UI de acompanhamento e bloqueio de envio sem aprovação |

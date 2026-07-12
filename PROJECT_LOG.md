@@ -1,3 +1,20 @@
+## 12 de julho de 2026 - Ajuste de extras do Embedded Signup WhatsApp/Meta
+
+### Objetivo
+
+Alinhar os `extras` do `FB.login` do Cadastro Incorporado WhatsApp/Meta com o popup oficial da Meta, buscando corrigir o erro `Recurso indisponivel` que aparece para contas externas/novas antes do callback do Olyon.
+
+### Registro
+
+- O launcher manteve `config_id`, `response_type: "code"`, `override_default_response_type`, `state` e o envio para `submitSignupCode(response)`.
+- Os `extras` antigos com `setup: {}` e `featureType: "whatsapp_business_app_onboarding"` foram substituidos por `sessionInfoVersion: "3"` e `version: "v4"`.
+- Nenhum backend, validator, schema Prisma, env, webhook, template ou assinatura `subscribed_apps` foi alterado neste ajuste.
+
+### Validacao
+
+- Validacao manual pendente com uma conta admin que ja conecta.
+- Validacao manual pendente com uma conta externa/nova que reproduzia `Recurso indisponivel`.
+
 ## 4 de julho de 2026 - Ajuste fino de acentuação e português em textos visíveis
 
 ### Objetivo

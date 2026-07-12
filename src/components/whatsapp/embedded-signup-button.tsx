@@ -461,8 +461,8 @@ export function EmbeddedSignupButton({
         override_default_response_type: true,
         state: sessionMetadataRef.current.state,
         extras: {
-          setup: {},
-          featureType: "whatsapp_business_app_onboarding",
+          sessionInfoVersion: "3",
+          version: "v4",
         },
       }
     )
