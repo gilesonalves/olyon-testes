@@ -1,8 +1,8 @@
 # PROJECT_STATUS.md
 
-**Data de ultima atualizacao:** 12 de julho de 2026
+**Data de ultima atualizacao:** 16 de agosto de 2026
 
-- Embedded Signup WhatsApp/Meta ajustado no `FB.login` para usar `extras.sessionInfoVersion = "3"` e `extras.version = "v4"`, alinhado ao popup oficial da Meta; validacao manual pendente com conta admin e conta externa.
+- Embedded Signup WhatsApp/Meta ajustado no `FB.login` para combinar `extras.setup = {}`, `extras.featureType = "whatsapp_business_app_onboarding"`, `extras.sessionInfoVersion = "3"` e `extras.version = "v4"`; validacao manual pendente na Vercel com conta admin e conta externa.
 
 - Ajuste fino de acentuação e português em textos visíveis ao usuário concluído, sem alteração de lógica, enums, rotas ou comandos técnicos.
 

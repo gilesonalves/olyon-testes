@@ -1,3 +1,21 @@
+## 16 de agosto de 2026 - Restauracao dos parametros de onboarding no Embedded Signup
+
+### Objetivo
+
+Corrigir o popup `Recurso indisponivel` do Cadastro Incorporado WhatsApp/Meta combinando os parametros de onboarding com a versao atual dos metadados da sessao.
+
+### Registro
+
+- O `FB.login` passou a enviar novamente `extras.setup: {}` e `featureType: "whatsapp_business_app_onboarding"`.
+- Foram preservados `sessionInfoVersion: "3"`, `version: "v4"`, `config_id`, `response_type: "code"`, `override_default_response_type`, `state` e o envio para `submitSignupCode(response)`.
+- Nenhum callback, validator, schema Prisma, migration, env, webhook, layout, template, atendimento ou outro modulo foi alterado.
+
+### Validacao
+
+- `yarn lint` concluido com zero erros e dois warnings preexistentes fora do escopo, em controllers de cadastro e recuperacao de senha.
+- `yarn tsc --noEmit` concluido sem erros.
+- Validacao manual na Vercel pendente com conta admin e conta externa/nova.
+
 ## 12 de julho de 2026 - Ajuste de extras do Embedded Signup WhatsApp/Meta
 
 ### Objetivo
