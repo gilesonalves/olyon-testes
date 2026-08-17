@@ -7339,3 +7339,13 @@ Evitar que novos agendamentos WhatsApp apareçam como `Cliente WhatsApp` quando 
 - `yarn build`
 
 Todos os comandos terminaram com sucesso. O lint manteve somente os dois warnings legados nos controllers de cadastro e recuperação de senha.
+
+
+## 2026-08-16 — Correção do Embedded Signup para usuários externos
+
+- Corrigido o launcher do Embedded Signup adicionando `extras.setup = {}` e `featureType = "whatsapp_business_app_onboarding"`.
+- Confirmado que a URL do popup passou a conter `config_id`, `response_type=code`, `override_default_response_type=true`, `setup` e `featureType`.
+- Teste mostrou que conta com função de Testador acessava o fluxo, mas a mesma conta removida de Testador recebia “Recurso indisponível”.
+- Causa raiz confirmada: `public_profile` ainda estava em modo de teste/acesso não aumentado.
+- Após aumentar acesso de `public_profile`, o fluxo funcionou com conta externa sem função no app.
+- Regra confirmada: clientes reais não devem ser adicionados como Testadores do app Meta.

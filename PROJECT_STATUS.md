@@ -1687,3 +1687,24 @@ Validação executada:
 - Refatoração do webhook inbound registrada com foco em idempotência, assinatura Meta e transação única
 - `app/api/webhooks/whatsapp/route.ts` endurecido para produção
 - Próximo foco: validar manualmente duplicate inbound, retry da Meta, assinatura e concorrência básica por conversa
+
+## Meta Embedded Signup — Estado validado
+
+- Embedded Signup funcionando para contas externas após:
+  - App publicado
+  - Verificação de acesso aprovada
+  - App Review aprovado
+  - Verificação de uso de dados concluída
+  - `public_profile` com acesso aumentado
+  - `business_management` com acesso aumentado
+  - `whatsapp_business_management` com acesso aumentado
+  - `whatsapp_business_messaging` com acesso aumentado
+
+### Pré-requisitos para cliente conectar WhatsApp no Olyon
+
+- Conta Facebook ativa e sem restrições.
+- Portfólio empresarial no Meta Business Suite.
+- Usuário com acesso total/admin ao portfólio.
+- Acesso ao número de telefone.
+- Para coexistência, número ativo no app WhatsApp Business.
+- Cliente não deve ser adicionado como Testador, Desenvolvedor ou Administrador do app Meta.
